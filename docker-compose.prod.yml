@@ -1,0 +1,45 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       securisite
+      POSTGRES_USER:     securisite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securisite -d securisite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV:     production
+      PORT:         3000
+      DATABASE_URL: postgresql://securisite:${POSTGRES_PASSWORD}@postgres:5432/securisite
+      JWT_SECRET:   ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SécuriSite — SOC / Centre de Sûreté</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+<!-- ===== Login ===== -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="login-brand">
+      <img class="app-logo app-logo-login" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
+      <h2>SécuriSite</h2>
+      <p>SOC // Identification Requise</p>
+    </div>
+    <div class="form-group" style="margin-bottom:14px"><label>Identifiant / Email</label><input type="text" id="loginUser" value="admin" placeholder="Identifiant ou email"></div>
+    <div class="form-group" style="margin-bottom:18px"><label>Mot de passe</label><input type="password" id="loginPass" value="securisite" placeholder="Mot de passe"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="doLogin()">Connexion</button>
+    <div id="loginError" style="display:none" class="login-error"></div>
+    <p style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:14px;font-family:var(--font-mono);letter-spacing:1px">DÉMO : admin / securisite</p>
+  </div>
+</div>
+
+<!-- ===== App ===== -->
+<div class="app" id="app" style="display:none">
+
+<aside class="sidebar">
+  <div class="brand">
+    <h1><img class="app-logo app-logo-sidebar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité"> SécuriSite</h1>
+    <p>SOC // Centre de Sûreté</p>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">Pilotage</div>
+    <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Tableau de bord</div>
+    <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span> Main courante</div>
+    <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span> Journal d'incidents</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">Contrôle d'accès</div>
+    <div class="nav-item" data-page="vehicules"><span class="nav-icon">🚗</span> Accès véhicules</div>
+    <div class="nav-item" data-page="lapi"><span class="nav-icon">📷</span> Lecture plaque (LAPI)</div>
+    <div class="nav-item" data-page="pietons"><span class="nav-icon">🚶</span> Accès piétons</div>
+    <div class="nav-item" data-page="visiteurs"><span class="nav-icon">👥</span> Visiteurs</div>
+    <div class="nav-item" data-page="employes"><span class="nav-icon">👤</span> Employés</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">Infrastructure</div>
+    <div class="nav-item" data-page="parking"><span class="nav-icon">🅿️</span> Parking</div>
+    <div class="nav-item" data-page="badges"><span class="nav-icon">🪪</span> Badges & QR</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-title">Analyse</div>
+    <div class="nav-item" data-page="rapports"><span class="nav-icon">📈</span> Rapports</div>
+    <div class="nav-item admin-only" data-page="utilisateurs"><span class="nav-icon">🛡️</span> Utilisateurs système</div>
+    <div class="nav-item" data-page="parametres"><span class="nav-icon">⚙️</span> Paramètres</div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <img class="app-logo app-logo-topbar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
+      <div class="page-title" id="pageTitle">Tableau de bord</div>
+      <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
+    </div>
+    <div class="topbar-right">
+      <select id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
+        <option value="fr-ar">FR / AR</option>
+        <option value="fr">Français</option>
+        <option value="ar">العربية</option>
+      </select>
+      <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
+      <div class="user-chip">
+        <div class="avatar" id="userAvatar">A</div>
+        <div class="user-info"><strong id="userName">Administrateur</strong><span>Agent de sûreté</span></div>
+      </div>
+      <button class="btn btn-outline btn-logout" title="Déconnexion" onclick="doLogout()">🚪 Déconnexion</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="clean-hero" id="cleanHeroStatus">
+      <div class="clean-orb">
+        <div class="clean-orb-ring"></div>
+        <img src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
+      </div>
+      <div class="clean-hero-copy">
+        <div class="clean-eyebrow">Centre de contrôle sécurité</div>
+        <h2>Votre site est sous surveillance active</h2>
+        <p>Suivez les accès, incidents, visiteurs et mouvements en temps réel depuis un tableau de bord clair.</p>
+        <div class="clean-actions">
+          <button class="btn btn-primary" onclick="runDashboardAnalysis()">Analyser maintenant</button>
+          <button class="btn btn-outline" onclick="navTo('rapports')">Voir les rapports</button>
+        </div>
+      </div>
+      <div class="clean-score">
+        <span>État système</span>
+        <strong id="cleanStatusText">OK</strong>
+      </div>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card success"><div class="kpi-label">Présents sur site</div><div class="kpi-value" id="kpi-presents">0</div><div class="kpi-trend">Actualisation temps réel</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Visiteurs aujourd'hui</div><div class="kpi-value" id="kpi-visiteurs">0</div><div class="kpi-trend">En attente / validés</div></div>
+      <div class="kpi-card warning"><div class="kpi-label">Véhicules entrés</div><div class="kpi-value" id="kpi-vehicules">0</div><div class="kpi-trend">24 dernières heures</div></div>
+      <div class="kpi-card danger"><div class="kpi-label">Incidents ouverts</div><div class="kpi-value" id="kpi-incidents">0</div><div class="kpi-trend down">À traiter</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">📊 Flux d'accès — 7 derniers jours</div></div><div class="card-body"><canvas id="chartFlux" height="180"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🥧 Répartition des accès</div></div><div class="card-body"><canvas id="chartRepartition" height="180"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">🚦 Activité récente</div><button class="btn btn-sm btn-outline" onclick="loadDashboard()">↻ Actualiser</button></div><div class="card-body" id="activiteRecente" style="max-height:340px;overflow-y:auto"></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">⚠️ Alertes & incidents en cours</div><button class="btn btn-sm btn-accent" onclick="navTo('incidents')">Tout voir</button></div><div class="card-body" id="alertesEnCours" style="max-height:340px;overflow-y:auto"></div></div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">🅿️ Vue rapide du parking</div><button class="btn btn-sm btn-outline" onclick="navTo('parking')">Voir le parking</button></div><div class="card-body"><div class="kpi-grid" id="parkingQuickStats"></div></div></div>
+    <div class="card" id="adminDashboardCard" style="display:none">
+      <div class="card-header">
+        <div class="card-title">🛡️ Administration système</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-primary" onclick="openUserModal()">+ Utilisateur</button>
+          <button class="btn btn-sm btn-outline" onclick="ensureSystemAdmin()">Créer admin système</button>
+          <button class="btn btn-sm btn-outline" onclick="loadAdminDashboard()">↻ Actualiser</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="kpi-grid" id="adminSystemStats" style="margin-bottom:16px"></div>
+        <div class="table-wrap"><table id="tableUsersDashboard"><thead><tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>Créé le</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN COURANTE -->
+  <div class="page" id="page-maincourante">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">✍️ Saisir une nouvelle entrée</div><span class="live-indicator"><span class="live-dot"></span> Horodatage auto</span></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label>Poste</label><select id="mcPoste"><option value="PC Sûreté">PC Sûreté</option><option value="Poste 1">Poste 1 — Entrée principale</option><option value="Poste 2">Poste 2 — Accueil visiteurs</option><option value="Poste 3">Poste 3 — Quai logistique</option><option value="Rondier 1">Rondier 1 — Périmètre</option><option value="Rondier 2">Rondier 2 — Bâtiments</option><option value="Rondier 3">Rondier 3 — Parkings</option><option value="Chef de poste">Chef de poste</option></select></div>
+            <div class="form-group"><label>Agent en service</label><input type="text" id="mcAgent" placeholder="Nom de l'agent"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Type d'événement</label><select id="mcType"><option value="Information">📋 Information</option><option value="Ronde">🚶 Ronde / Patrouille</option><option value="Communication">📞 Communication</option><option value="Anomalie">⚠️ Anomalie</option><option value="Incident">🚨 Incident</option><option value="Intervention">🛠️ Intervention</option><option value="Contrôle">🔍 Contrôle</option><option value="Relève">🔄 Relève</option><option value="Visite">👥 Visite</option><option value="Autre">📝 Autre</option></select></div>
+            <div class="form-group"><label>Priorité</label><select id="mcPriorite"><option value="normale">🟢 Normale</option><option value="importante">🟡 Importante</option><option value="critique">🔴 Critique</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Lieu / Zone</label><input type="text" id="mcLieu" placeholder="Ex: Tourniquet, Parking A..."></div>
+            <div class="form-group"><label>Date / Heure</label><input type="datetime-local" id="mcDatetime"></div>
+          </div>
+          <div class="form-row full"><div class="form-group"><label>Description</label><textarea id="mcDescription" rows="4" placeholder="Décrire l'événement..."></textarea></div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-accent" onclick="ajouterMainCourante()">📝 Enregistrer</button>
+            <button class="btn btn-outline" onclick="resetMainCouranteForm()">↻ Effacer</button>
+            <button class="btn btn-outline" onclick="quickMC('Ronde','Ronde de surveillance effectuée. RAS.')">+ Ronde RAS</button>
+            <button class="btn btn-outline" onclick="quickMC('Relève','Prise de service.')">+ Prise service</button>
+          </div>
+        </div>
+      </div>
+      <div class="card"><div class="card-header"><div class="card-title">📊 Statistiques de la journée</div></div><div class="card-body"><div class="kpi-grid" id="mcStats" style="margin-bottom:0"></div><div style="margin-top:16px"><div class="card-title" style="font-size:13px;margin-bottom:10px">Agents en service</div><div id="mcAgentsActifs"></div></div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📖 Journal en temps réel</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="mcFiltrePoste" onchange="renderMainCourante()" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px"><option value="">Tous postes</option><option>PC Sûreté</option><option>Poste 1</option><option>Poste 2</option><option>Poste 3</option><option>Rondier 1</option><option>Rondier 2</option><option>Rondier 3</option><option>Chef de poste</option></select>
+          <select id="mcFiltreType" onchange="renderMainCourante()" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px"><option value="">Tous types</option><option>Information</option><option>Ronde</option><option>Communication</option><option>Anomalie</option><option>Incident</option><option>Intervention</option><option>Contrôle</option><option>Relève</option><option>Visite</option></select>
+          <select id="mcFiltrePrio" onchange="renderMainCourante()" style="padding:6px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px"><option value="">Toute priorité</option><option value="normale">Normale</option><option value="importante">Importante</option><option value="critique">Critique</option></select>
+          <button class="btn btn-sm btn-success" onclick="exportMainCouranteCSV()">📥 CSV</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:0">
+        <div class="toolbar" style="margin:16px 0">
+          <div class="search-box"><input type="text" id="mcSearch" placeholder="Rechercher..." oninput="renderMainCourante()"></div>
+          <div class="date-filter"><label>Du</label><input type="datetime-local" id="mcDateDeb" onchange="renderMainCourante()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="mcDateFin" onchange="renderMainCourante()"></div>
+          <div class="date-presets"><button class="date-preset" onclick="applyPreset('mc','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('mc','24h')">24h</button><button class="date-preset" onclick="applyPreset('mc','7j')">7j</button><button class="date-preset" onclick="applyPreset('mc','reset')">Tout</button></div>
+        </div>
+        <div id="mcTimeline" style="max-height:600px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INCIDENTS -->
+  <div class="page" id="page-incidents">
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="searchIncident" placeholder="Rechercher un incident..." oninput="renderIncidents()"></div>
+      <select id="filtreIncidentStatut" onchange="renderIncidents()"><option value="">Tous statuts</option><option value="ouvert">Ouvert</option><option value="encours">En cours</option><option value="resolu">Résolu</option></select>
+      <select id="filtreIncidentGravite" onchange="renderIncidents()"><option value="">Toute gravité</option><option value="critique">Critique</option><option value="majeur">Majeur</option><option value="mineur">Mineur</option></select>
+      <button class="btn btn-accent" onclick="openIncidentModal()">+ Déclarer un incident</button>
+    </div>
+    <div class="toolbar">
+      <div class="date-filter"><label>Du</label><input type="datetime-local" id="incDateDeb" onchange="renderIncidents()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="incDateFin" onchange="renderIncidents()"></div>
+      <div class="date-presets"><button class="date-preset" onclick="applyPreset('inc','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('inc','24h')">24h</button><button class="date-preset" onclick="applyPreset('inc','7j')">7 jours</button><button class="date-preset" onclick="applyPreset('inc','30j')">30 jours</button><button class="date-preset" onclick="applyPreset('inc','reset')">Tout</button></div>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card danger"><div class="kpi-label">Critiques</div><div class="kpi-value" id="incCritiques">0</div></div>
+      <div class="kpi-card warning"><div class="kpi-label">Majeurs</div><div class="kpi-value" id="incMajeurs">0</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Mineurs</div><div class="kpi-value" id="incMineurs">0</div></div>
+      <div class="kpi-card success"><div class="kpi-label">Résolus</div><div class="kpi-value" id="incResolus">0</div></div>
+    </div>
+    <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableIncidents"><thead><tr><th>Réf.</th><th>Date</th><th>Type</th><th>Lieu</th><th>Gravité</th><th>Statut</th><th>Agent</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- VEHICULES -->
+  <div class="page" id="page-vehicules">
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="searchVehicule" placeholder="Plaque, conducteur..." oninput="renderVehicules()"></div>
+      <select id="filtreVehiculeType" onchange="renderVehicules()"><option value="">Tous types</option><option value="VL">VL</option><option value="PL">PL</option><option value="utilitaire">Utilitaire</option><option value="2R">2R</option></select>
+      <select id="filtreVehiculeStatut" onchange="renderVehicules()"><option value="">Tous statuts</option><option value="dans">Sur site</option><option value="dehors">Sorti</option></select>
+      <button class="btn btn-success" onclick="openVehiculeModal('entree')">↘️ Entrée</button>
+      <button class="btn btn-outline" onclick="openVehiculeModal('sortie')">↗️ Sortie</button>
+    </div>
+    <div class="toolbar">
+      <div class="date-filter"><label>Du</label><input type="datetime-local" id="vehDateDeb" onchange="renderVehicules()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="vehDateFin" onchange="renderVehicules()"></div>
+      <div class="date-presets"><button class="date-preset" onclick="applyPreset('veh','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('veh','24h')">24h</button><button class="date-preset" onclick="applyPreset('veh','7j')">7j</button><button class="date-preset" onclick="applyPreset('veh','reset')">Tout</button></div>
+    </div>
+    <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableVehicules"><thead><tr><th>Plaque</th><th>Type</th><th>Conducteur</th><th>Société</th><th>Motif</th><th>Entrée</th><th>Sortie</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- LAPI -->
+  <div class="page" id="page-lapi">
+    <div id="lapiBanner" class="lapi-status-banner info">📷 Module LAPI prêt. Cliquez « Activer la caméra » puis le bouton <strong>CAPTURER</strong>.</div>
+    <div class="lapi-grid">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📹 Flux caméra</div><select id="lapiCameraSelect" onchange="changerCamera()" style="padding:5px 8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px"></select></div>
+        <div class="card-body">
+          <div class="camera-frame" id="lapiFrame">
+            <div class="camera-placeholder" id="lapiPlaceholder"><div style="font-size:48px;margin-bottom:10px">📷</div><div>CAMÉRA INACTIVE</div><div style="font-size:10px;margin-top:6px">Activer ou importer une image</div></div>
+            <video id="lapiVideo" autoplay playsinline muted style="display:none"></video>
+            <canvas id="lapiCanvas" style="display:none"></canvas>
+            <img id="lapiSnapshot" style="display:none" alt="">
+            <div class="camera-overlay" id="lapiOverlay" style="display:none"><div class="targeting-rect"></div></div>
+            <div class="camera-status live" id="lapiStatus" style="display:none">EN DIRECT</div>
+          </div>
+          <div class="camera-controls">
+            <button class="btn btn-primary" id="btnActivateCam" onclick="activerCamera()">▶️ Activer</button>
+            <button class="btn btn-outline" id="btnStopCam" onclick="arreterCamera()" style="display:none">⏹️ Arrêter</button>
+            <button class="btn btn-outline" onclick="document.getElementById('lapiFile').click()">📁 Importer</button>
+            <input type="file" id="lapiFile" accept="image/*" capture="environment" style="display:none" onchange="chargerImage(event)">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-left:auto;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1px"><input type="checkbox" id="lapiAuto"> Auto (3s)</label>
+          </div>
+          <div style="text-align:center;margin-top:14px">
+            <button class="btn-capture" id="btnCapture" onclick="capturerPlaque()" disabled><span class="dot"></span> CAPTURER LA PLAQUE</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🔍 Plaque détectée</div><span id="lapiOCRBadge" class="badge muted">En attente</span></div>
+        <div class="card-body">
+          <div class="plate-display empty" id="lapiPlateText">— Aucune plaque —</div>
+          <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:3px;font-family:var(--font-mono);letter-spacing:1px"><span>CONFIANCE OCR</span><span id="lapiConfidenceVal">0%</span></div><div class="confidence-bar"><div class="confidence-fill" id="lapiConfidenceBar" style="width:0%"></div></div></div>
+          <div id="lapiVehiculeInfo" style="margin-bottom:14px"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Plaque corrigée</label><input type="text" id="lapiPlateEdit" style="text-transform:uppercase;font-family:var(--font-mono);font-weight:700;letter-spacing:2px"></div>
+            <div class="form-group"><label>Type</label><select id="lapiType"><option value="VL">VL</option><option value="PL">PL</option><option value="utilitaire">Utilitaire</option><option value="2R">2R</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Conducteur</label><input type="text" id="lapiConducteur" placeholder="Nom"></div>
+            <div class="form-group"><label>Motif</label><select id="lapiMotif"><option>Livraison</option><option>Visite</option><option>Maintenance</option><option>Personnel</option><option>Autre</option></select></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-success" onclick="lapiEntree()">↘️ Entrée</button>
+            <button class="btn btn-outline" onclick="lapiSortie()">↗️ Sortie</button>
+            <button class="btn btn-danger" onclick="lapiAlerter()">🚨 Alerter</button>
+            <button class="btn btn-outline" onclick="resetLapi()">↻ Effacer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">📜 Lectures récentes</div><button class="btn btn-sm btn-outline" onclick="clearLapiHistory()">🗑️ Vider</button></div><div class="card-body"><div id="lapiHistoryThumbs" class="captured-thumbs"></div><div id="lapiHistoryEmpty" class="empty-state">Aucune lecture</div></div></div>
+    <div class="card"><div class="card-header"><div class="card-title">📊 Journal LAPI</div></div><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableLapi"><thead><tr><th>Date</th><th>Plaque</th><th>Confiance</th><th>Statut</th><th>Action</th><th>Détails</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- PIETONS -->
+  <div class="page" id="page-pietons">
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="searchPieton" placeholder="Nom, badge, point..." oninput="renderPietons()"></div>
+      <select id="filtrePietonAcces" onchange="renderPietons()"><option value="">Tous accès</option><option value="entree">Entrées</option><option value="sortie">Sorties</option><option value="refus">Refus</option></select>
+      <select id="filtrePietonPoint" onchange="renderPietons()"><option value="">Tous points</option><option>Tourniquet Principal</option><option>Porte Nord</option><option>Porte Sud</option><option>Sas Visiteurs</option></select>
+      <button class="btn btn-primary" onclick="openPietonModal()">+ Saisir un passage</button>
+    </div>
+    <div class="toolbar">
+      <div class="date-filter"><label>Du</label><input type="datetime-local" id="pieDateDeb" onchange="renderPietons()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="pieDateFin" onchange="renderPietons()"></div>
+      <div class="date-presets"><button class="date-preset" onclick="applyPreset('pie','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('pie','24h')">24h</button><button class="date-preset" onclick="applyPreset('pie','7j')">7j</button><button class="date-preset" onclick="applyPreset('pie','reset')">Tout</button></div>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card success"><div class="kpi-label">Entrées 24h</div><div class="kpi-value" id="pietonEnt">0</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Sorties 24h</div><div class="kpi-value" id="pietonSort">0</div></div>
+      <div class="kpi-card danger"><div class="kpi-label">Refus 24h</div><div class="kpi-value" id="pietonRef">0</div></div>
+      <div class="kpi-card warning"><div class="kpi-label">Suspectes</div><div class="kpi-value" id="pietonSusp">0</div></div>
+    </div>
+    <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tablePietons"><thead><tr><th>Date</th><th>Nom</th><th>Badge</th><th>Type</th><th>Point</th><th>Sens</th><th>Résultat</th><th>Notes</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- VISITEURS -->
+  <div class="page" id="page-visiteurs">
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="searchVisiteur" placeholder="Nom, hôte, société..." oninput="renderVisiteurs()"></div>
+      <select id="filtreVisiteurStatut" onchange="renderVisiteurs()"><option value="">Tous</option><option value="attendu">Attendu</option><option value="present">Sur site</option><option value="parti">Sorti</option></select>
+      <button class="btn btn-accent" onclick="openVisiteurModal()">+ Préenregistrer</button>
+    </div>
+    <div class="toolbar">
+      <div class="date-filter"><label>Du</label><input type="datetime-local" id="visDateDeb" onchange="renderVisiteurs()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="visDateFin" onchange="renderVisiteurs()"></div>
+      <div class="date-presets"><button class="date-preset" onclick="applyPreset('vis','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('vis','7j')">7j</button><button class="date-preset" onclick="applyPreset('vis','reset')">Tout</button></div>
+    </div>
+    <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableVisiteurs"><thead><tr><th>Visiteur</th><th>Société</th><th>Hôte</th><th>Motif</th><th>Arrivée</th><th>Badge</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- EMPLOYES -->
+  <div class="page" id="page-employes">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab(this,'tabEmployes')">Personnel local</div>
+      <div class="tab" onclick="switchTab(this,'tabAtlas')">⟳ Affectations ATLAS</div>
+      <div class="tab" onclick="switchTab(this,'tabEmpAcces')">Accès du jour</div>
+    </div>
+
+    <div id="tabEmployes">
+      <div class="toolbar">
+        <div class="search-box"><input type="text" id="searchEmploye" placeholder="Nom, matricule..." oninput="renderEmployes()"></div>
+        <select id="filtreEmpService" onchange="renderEmployes()"><option value="">Tous services</option><option>Direction</option><option>Production</option><option>Logistique</option><option>Maintenance</option><option>Administration</option><option>Sûreté</option></select>
+        <select id="filtreEmpStatut" onchange="renderEmployes()"><option value="">Tous statuts</option><option value="actif">Actif</option><option value="absent">Absent</option><option value="suspendu">Suspendu</option></select>
+        <button class="btn btn-primary" onclick="openEmployeModal()">+ Nouvel employé</button>
+      </div>
+      <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableEmployes"><thead><tr><th>Matricule</th><th>Nom</th><th>Service</th><th>Fonction</th><th>Badge</th><th>Niveau</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+    </div>
+
+    <div id="tabAtlas" style="display:none">
+      <div class="kpi-grid" id="atlasKpis" style="margin-bottom:16px"></div>
+      <div class="toolbar">
+        <div class="search-box"><input type="text" id="searchAtlas" placeholder="Nom, matricule, site..." oninput="renderAffectationsAtlas()"></div>
+        <select id="filtreAtlasSite" onchange="renderAffectationsAtlas()"><option value="">Tous les sites</option></select>
+        <select id="filtreAtlasGroupe" onchange="renderAffectationsAtlas()">
+          <option value="">Tous groupes</option>
+          <option value="A">Groupe A</option>
+          <option value="B">Groupe B</option>
+          <option value="C">Groupe C</option>
+          <option value="D">Groupe D</option>
+        </select>
+        <select id="filtreAtlasStatut" onchange="renderAffectationsAtlas()">
+          <option value="">Tous statuts</option>
+          <option value="actif">Actif</option>
+          <option value="inactif">Inactif</option>
+        </select>
+      </div>
+      <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableAtlas"><thead><tr><th>Matricule</th><th>Nom</th><th>Site affecté</th><th>Groupe</th><th>Fonction</th><th>Statut</th><th>Date affectation</th></tr></thead><tbody></tbody></table></div></div></div>
+    </div>
+
+    <div id="tabEmpAcces" style="display:none">
+      <div class="toolbar">
+        <div class="date-filter"><label>Du</label><input type="datetime-local" id="empAccDateDeb" onchange="renderEmpAcces()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="empAccDateFin" onchange="renderEmpAcces()"></div>
+        <div class="date-presets"><button class="date-preset" onclick="applyPreset('empAcc','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('empAcc','24h')">24h</button><button class="date-preset" onclick="applyPreset('empAcc','7j')">7j</button><button class="date-preset" onclick="applyPreset('empAcc','reset')">Tout</button></div>
+      </div>
+      <div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableEmpAcces"><thead><tr><th>Heure</th><th>Matricule</th><th>Nom</th><th>Service</th><th>Sens</th><th>Point</th></tr></thead><tbody></tbody></table></div></div></div>
+    </div>
+  </div>
+
+  <!-- PARKING -->
+  <div class="page" id="page-parking">
+    <div class="kpi-grid" id="parkingKpis"></div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🗺️ Plan d'occupation</div><div style="display:flex;gap:14px;font-size:10px;align-items:center;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1px"><span><span class="spot" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span> Libre</span><span><span class="spot occupied" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span> Occupé</span><span><span class="spot reserved" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span> Réservé</span><span><span class="spot handicap" style="display:inline-block;width:12px;height:12px;vertical-align:middle"></span> PMR</span></div></div>
+      <div class="card-body"><div class="parking-zones" id="parkingZones"></div></div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">📋 Mouvements parking</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="date-filter"><label>Du</label><input type="datetime-local" id="parkDateDeb" onchange="renderParking()"><span class="sep">→</span><label>Au</label><input type="datetime-local" id="parkDateFin" onchange="renderParking()"></div><div class="date-presets"><button class="date-preset" onclick="applyPreset('park','today')">Aujourd'hui</button><button class="date-preset" onclick="applyPreset('park','24h')">24h</button><button class="date-preset" onclick="applyPreset('park','reset')">Tout</button></div></div></div><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableParkingMouvements"><thead><tr><th>Heure</th><th>Plaque</th><th>Place</th><th>Zone</th><th>Action</th><th>Durée</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- BADGES -->
+  <div class="page" id="page-badges">
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">🪪 Générateur de badge</div></div><div class="card-body">
+        <div class="form-row"><div class="form-group"><label>Nom complet</label><input type="text" id="badgeNom" placeholder="Marie Dupont"></div><div class="form-group"><label>Type</label><select id="badgeType"><option value="V">Visiteur</option><option value="E">Employé</option><option value="P">Prestataire</option><option value="T">Temporaire</option></select></div></div>
+        <div class="form-row"><div class="form-group"><label>Société</label><input type="text" id="badgeSociete"></div><div class="form-group"><label>Validité</label><input type="datetime-local" id="badgeValidite"></div></div>
+        <div class="form-row"><div class="form-group"><label>Niveau accès</label><select id="badgeNiveau"><option value="N1">N1 — Accueil</option><option value="N2">N2 — Bureaux</option><option value="N3">N3 — Production</option><option value="N4">N4 — Sensible</option></select></div><div class="form-group"><label>Référence</label><input type="text" id="badgeRef" readonly></div></div>
+        <button class="btn btn-primary" onclick="genererBadge()">Générer</button>
+        <button class="btn btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+      </div></div>
+      <div class="card"><div class="card-header"><div class="card-title">📱 Aperçu badge & QR</div></div><div class="card-body">
+        <div id="badgePreview" style="border:2px solid var(--primary);padding:16px;background:var(--surface)">
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px"><div><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono)">SécuriSite</div><div style="font-size:18px;font-weight:700;color:var(--text-bright);font-family:var(--font-display);text-transform:uppercase;letter-spacing:1px" id="prevNom">—</div><div style="font-size:11px;color:var(--text-muted)" id="prevSociete">—</div></div><span class="badge info" id="prevType">VISITEUR</span></div>
+          <div class="qr-panel" id="qrContainer"><p style="color:#666;font-size:11px">Le QR apparaîtra ici</p></div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:1px"><span>Réf : <strong id="prevRef">—</strong></span><span>Valide : <strong id="prevValidite">—</strong></span></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">📜 Historique des badges</div></div><div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableBadges"><thead><tr><th>Réf.</th><th>Nom</th><th>Type</th><th>Niveau</th><th>Émis</th><th>Valide</th><th>État</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div></div>
+  </div>
+
+  <!-- RAPPORTS -->
+  <div class="page" id="page-rapports">
+    <div class="toolbar">
+      <div class="form-group" style="margin:0"><label>Période</label><select id="rapportPeriode" onchange="renderRapports()"><option value="7">7 jours</option><option value="30" selected>30 jours</option><option value="90">90 jours</option></select></div>
+      <button class="btn btn-success" onclick="exportCSV()">📥 Export CSV</button>
+      <button class="btn btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+    </div>
+    <div class="kpi-grid" id="rapportKpis"></div>
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">Évolution des accès</div></div><div class="card-body"><canvas id="chartRapportFlux" height="200"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">Incidents par type</div></div><div class="card-body"><canvas id="chartRapportIncidents" height="200"></canvas></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">Top points d'accès</div></div><div class="card-body"><canvas id="chartRapportPoints" height="200"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">Heures de pointe</div></div><div class="card-body"><canvas id="chartRapportHeures" height="200"></canvas></div></div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">Synthèse exécutive</div></div><div class="card-body" id="syntheseExec"></div></div>
+  </div>
+
+  <!-- UTILISATEURS -->
+  <div class="page" id="page-utilisateurs">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">🛡️ Créer un utilisateur</div></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label>Identifiant</label><input type="text" id="userCreateUsername" placeholder="ex: agent.poste1"></div>
+            <div class="form-group"><label>Rôle</label><select id="userCreateRole"><option value="agent">Agent</option><option value="admin">Administrateur</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Nom complet</label><input type="text" id="userCreateName" placeholder="Nom de l'utilisateur"></div>
+            <div class="form-group"><label>Mot de passe</label><input type="password" id="userCreatePassword" placeholder="Mot de passe initial"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="createUserFromModule()">Créer</button>
+            <button class="btn btn-outline" onclick="resetUserForm()">Effacer</button>
+            <button class="btn btn-outline" onclick="ensureSystemAdmin()">Créer admin système</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 Synthèse utilisateurs</div><button class="btn btn-sm btn-outline" onclick="loadUsersModule()">↻ Actualiser</button></div>
+        <div class="card-body"><div class="kpi-grid" id="usersModuleStats" style="margin-bottom:0"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">👥 Comptes applicatifs</div></div>
+      <div class="card-body" style="padding:0"><div class="table-wrap"><table id="tableUsersModule"><thead><tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>Créé le</th><th>Actions</th></tr></thead><tbody></tbody></table></div></div>
+    </div>
+  </div>
+
+  <!-- PARAMETRES -->
+  <div class="page" id="page-parametres">
+    <div class="grid-2">
+      <div class="card"><div class="card-header"><div class="card-title">🏢 Site</div></div><div class="card-body">
+        <div class="form-row full"><div class="form-group"><label>Nom du site</label><input type="text" id="setSiteNom"></div></div>
+        <div class="form-row"><div class="form-group"><label>Adresse</label><input type="text" id="setSiteAdr"></div><div class="form-group"><label>Téléphone</label><input type="text" id="setSiteTel"></div></div>
+        <button class="btn btn-primary" onclick="sauverParametres()">Enregistrer</button>
+      </div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🔐 Niveaux d'accès</div></div><div class="card-body"><table><thead><tr><th>Code</th><th>Libellé</th><th>Zones</th></tr></thead><tbody><tr><td><span class="badge muted">N1</span></td><td>Accueil</td><td>Hall, accueil</td></tr><tr><td><span class="badge info">N2</span></td><td>Bureaux</td><td>Hall, bureaux</td></tr><tr><td><span class="badge warning">N3</span></td><td>Production</td><td>+ ateliers</td></tr><tr><td><span class="badge danger">N4</span></td><td>Zone sensible</td><td>Toutes zones</td></tr></tbody></table></div></div>
+    </div>
+  </div>
+
+  </div>
+</div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modalContent"></div></div>
+
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

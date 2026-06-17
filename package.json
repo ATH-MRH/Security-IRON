@@ -1,0 +1,27 @@
+{
+  "name": "securisite",
+  "version": "1.0.0",
+  "description": "SécuriSite — SOC / Centre de Sûreté du Site (gestion d'événements, accès, parking, LAPI)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "init-db": "node backend/seed.js"
+  },
+  "keywords": [
+    "security",
+    "soc",
+    "access-control",
+    "lapi",
+    "parking"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.21.0"
+  }
+}
