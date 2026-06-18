@@ -148,10 +148,28 @@ const SCHEMA = [
 ];
 
 async function init() {
+  const bcrypt = require('bcryptjs');
   const client = await pool.connect();
   try {
     for (const stmt of SCHEMA) await client.query(stmt);
     console.log('[DB] Schéma PostgreSQL initialisé');
+    // Crée les comptes par défaut si la table users est vide
+    const { rows } = await client.query('SELECT COUNT(*) AS n FROM users');
+    if (parseInt(rows[0].n, 10) === 0) {
+      const defaults = [
+        ['admin',        'securisite',    'Administrateur',         'admin'],
+        ['system_admin', 'securisite2026','Administrateur système', 'admin'],
+        ['agent',        'agent',         'Agent de sûreté',        'agent'],
+      ];
+      for (const [u, p, n, r] of defaults) {
+        const hash = await bcrypt.hash(p, 10);
+        await client.query(
+          'INSERT INTO users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+          [u, hash, n, r]
+        );
+      }
+      console.log('[DB] Comptes par défaut créés : admin/securisite, system_admin/securisite2026, agent/agent');
+    }
   } finally {
     client.release();
   }
