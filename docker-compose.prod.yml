@@ -1,0 +1,29 @@
+services:
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET}
+      SECURISITE_DATA_DIR: /app/data
+    volumes:
+      - securisite_data:/app/data
+    ports:
+      - "3000:3000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  securisite_data:

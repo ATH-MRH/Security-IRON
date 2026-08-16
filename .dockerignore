@@ -1,0 +1,11 @@
+node_modules
+.env
+.git
+.gitignore
+.DS_Store
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+*.log
+docker-compose*.yml
+README.md
