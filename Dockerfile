@@ -7,6 +7,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=node:node . .
 
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
 ENV NODE_ENV=production
 EXPOSE 3000
 USER node
