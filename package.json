@@ -11,7 +11,8 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis portable",
-    "dist:mac": "electron-builder --mac dmg"
+    "dist:mac": "electron-builder --mac dmg",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [
     "security",
@@ -79,5 +80,8 @@
       ],
       "category": "Utility"
     }
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

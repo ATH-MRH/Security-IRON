@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SécuriSite — SOC / Centre de Sûreté</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/alerts.css">
 <script src="vendor/chart.umd.min.js"></script>
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -36,7 +37,8 @@
     <p>SOC // Centre de Sûreté</p>
   </div>
   <div class="nav-section">
-    <div class="nav-title">Pilotage</div>
+    <div class="nav-title">Command Center</div>
+    <div class="nav-item" data-page="alertes"><span class="nav-icon">◉</span> Centre d’alertes</div>
     <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Tableau de bord</div>
     <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span> Main courante</div>
     <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span> Journal d'incidents</div>
@@ -75,7 +77,7 @@
         <option value="fr">Français</option>
         <option value="ar">العربية</option>
       </select>
-      <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
+      <button class="btn-icon" title="Notifications" onclick="AlertCenter.notifications()">🔔<span class="notif-dot"></span></button>
       <div class="user-chip">
         <div class="avatar" id="userAvatar">A</div>
         <div class="user-info"><strong id="userName">Administrateur</strong><span>Agent de sûreté</span></div>
@@ -86,6 +88,13 @@
 
   <div class="content">
 
+  <section class="page" id="page-alertes">
+    <div class="ac-header"><div><div class="clean-eyebrow">SÉCURISITE 2.0 / COMMAND</div><h2>Centre d’alertes</h2><p>Qualifier, prendre en charge et documenter chaque événement.</p></div><div class="ac-actions"><button class="btn btn-outline" id="ac-rules" onclick="AlertCenter.rules()">Règles & escalades</button><button class="btn btn-primary" onclick="AlertCenter.createForm()">+ Nouvelle alerte</button></div></div>
+    <div id="ac-kpis"></div>
+    <div class="ac-toolbar"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher un site, un agent, un événement…" oninput="AlertCenter.renderList()"><select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderList()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select><select id="ac-status" aria-label="État" onchange="AlertCenter.renderList()"><option value="open">En cours</option><option value="all">Tous les états</option></select><button class="btn btn-outline" onclick="AlertCenter.load()">Actualiser</button></div>
+    <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
+    <div class="ac-layout"><div id="ac-list"></div><section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section></div>
+  </section>
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
     <div class="clean-hero" id="cleanHeroStatus">
@@ -524,6 +533,7 @@
 
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/alerts.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

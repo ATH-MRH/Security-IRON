@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt  = require('bcryptjs');
 const db      = require('./database');
+const alerts  = require('./alerts');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -235,11 +236,16 @@ router.get('/pietons', async (req, res, next) => {
 router.post('/pietons', async (req, res, next) => {
   try {
     const p   = req.body;
-    const row = await db.get(
+    const row = db.transaction(() => {
+    const record = db.run(
       `INSERT INTO pietons (id, datetime, nom, badge, type, point, sens, resultat, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [uid('PED'), p.datetime||now(), p.nom, p.badge, p.type, p.point, p.sens, p.resultat, p.notes||'', req.user?.username || null]
     );
+    const result = record.rows[0];
+    alerts.fromBadge(result, req.user);
+    return result;
+    });
     res.json(row);
   } catch (e) { next(e); }
 });
@@ -277,12 +283,17 @@ router.post('/incidents', async (req, res, next) => {
   try {
     const i   = req.body;
     const c   = int((await db.get('SELECT COUNT(*) as c FROM incidents')).c);
-    const row = await db.get(
+    const row = db.transaction(() => {
+    const record = db.run(
       `INSERT INTO incidents (id, ref, datetime, type, lieu, gravite, statut, agent, description, actions, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [uid('INC'), i.ref || 'INC-'+(2026100+c), i.datetime||now(), i.type,
        i.lieu, i.gravite, i.statut||'ouvert', i.agent || req.user?.username || null, i.description||'', i.actions||'', req.user?.username || null]
     );
+    const result = record.rows[0];
+    alerts.fromIncident(result, req.user);
+    return result;
+    });
     res.json(row);
   } catch (e) { next(e); }
 });

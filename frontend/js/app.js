@@ -49,8 +49,9 @@ function navTo(page){
   if(page!=='lapi' && lapiStream){ try{ arreterCamera(); }catch{} }
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===page));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+page));
-  const titles = {dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:"Journal d'incidents",vehicules:'Accès véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Employés',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres'};
+  const titles = {alertes:'Centre d’alertes',dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:"Journal d'incidents",vehicules:'Accès véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Employés',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres'};
   document.getElementById('pageTitle').textContent = titles[page] || page;
+  if(page==='alertes') AlertCenter.load();
   if(page==='dashboard') loadDashboard();
   if(page==='maincourante') loadMaincourante();
   if(page==='incidents') loadIncidents();
@@ -1434,7 +1435,8 @@ async function sauverParametres(){
 
 /* ===== INIT ===== */
 function initApp(){
-  loadDashboard();
+  AlertCenter.start();
+  navTo('alertes');
   initI18nObserver();
   setInterval(()=>{
     if(document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();

@@ -6,7 +6,7 @@ journal d'incidents, main courante temps réel, LAPI (lecture automatique de pla
 
 ## Stack
 
-- **Backend** : Node.js + Express + SQLite (better-sqlite3)
+- **Backend** : Node.js + Express + SQLite intégré à Node.js (node:sqlite)
 - **Frontend** : HTML / CSS / JavaScript (vanilla, sans framework)
 - **Auth** : JWT
 - **OCR LAPI** : Tesseract.js (côté navigateur)
@@ -15,7 +15,7 @@ journal d'incidents, main courante temps réel, LAPI (lecture automatique de pla
 
 ## Prérequis
 
-- Node.js 18+ (recommandé 20+)
+- Node.js 22.13+ (SQLite intégré requis)
 - npm
 
 ## Installation
@@ -115,3 +115,21 @@ Toutes les routes sont sous `/api/`. JWT requis sauf `/api/auth/login`.
 ## Licence
 
 MIT
+
+
+## SécuriSite 2.0 — première livraison Alert Core
+
+Le centre d’alertes devient l’écran d’accueil après connexion. Il ajoute les niveaux 1–4,
+le suivi opérationnel, l’acquittement SOC, les escalades persistantes, les notifications
+internes, les demandes de fausse alerte et un journal non modifiable depuis l’API.
+Les incidents majeurs/critiques et les refus répétés d’un badge alimentent ce centre.
+
+```bash
+npm run server
+npm test
+```
+
+La migration ajoute des tables sans supprimer les données existantes. Les tests utilisent
+une base temporaire et un serveur local sur un port libre.
+
+Voir [la portée, les règles et les limites de cette livraison](docs/alert-core.md).

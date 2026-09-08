@@ -1,0 +1,13 @@
+.ac-header,.ac-toolbar,.ac-actions,.ac-alert-top {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ac-header {justify-content:space-between;margin-bottom:22px}.ac-header h2{font-size:26px;margin:7px 0}.ac-header p{color:var(--text-muted)}
+#ac-kpis {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:24px}
+.ac-toolbar {margin-bottom:18px}.ac-toolbar input{flex:1;min-width:180px}.ac-toolbar input,.ac-toolbar select,#ac-comment{padding:12px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:6px}
+.ac-layout {display:grid;grid-template-columns:minmax(270px,0.9fr) minmax(350px,1.2fr);gap:22px;align-items:start}
+.ac-alert {display:flex;flex-direction:column;gap:9px;text-align:left;width:100%;padding:18px;margin-bottom:10px;color:var(--text);background:var(--bg-2);border:1px solid var(--border);border-left:4px solid #519cbf;border-radius:8px;cursor:pointer;font:inherit}
+.ac-alert:hover,.ac-alert.selected{outline:2px solid #599fa8;outline-offset:-2px}.ac-alert:focus-visible{outline:3px solid #85dce7}
+.ac-alert small{color:var(--text-muted)}.ac-alert-top{justify-content:space-between;width:100%}.ac-level-2{border-left-color:#edb24b}.ac-level-3{border-left-color:#ed7852}.ac-level-4{border-left-color:#ed4563}
+#ac-detail{padding:24px;background:var(--bg-2);border:1px solid var(--border);border-radius:10px;overflow-wrap:anywhere}.ac-detail-head h2{margin:9px 0}.ac-detail-head p{margin-bottom:12px}
+.ac-facts{display:grid;grid-template-columns:140px 1fr;gap:10px;margin:24px 0}.ac-facts dt{color:var(--text-muted)}.ac-facts dd{margin:0}.ac-actions{margin:18px 0}#ac-comment{display:block;width:100%;margin:10px 0;box-sizing:border-box}
+.ac-description{white-space:pre-wrap}.ac-warning{border-left:3px solid #edb24b;padding:12px;background:#edb24b15}.ac-timeline-title{margin:26px 0 18px}.ac-timeline{list-style:none;padding-left:15px;border-left:1px solid var(--border)}.ac-timeline li{padding:0 0 20px 10px}.ac-timeline small{display:block;color:var(--text-muted);margin:5px 0}.ac-timeline p{margin:6px 0;white-space:pre-wrap}
+#ac-message,#new-alert-error,#rule-error{color:#df526b;margin:10px 0}#ac-sync{font-size:12px;color:var(--text-muted)}
+@media(max-width:1000px){.ac-layout{grid-template-columns:1fr}#ac-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}

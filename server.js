@@ -23,6 +23,7 @@ const auth   = require('./backend/auth');
 const routes = require('./backend/routes');
 const sync   = require('./backend/sync');
 const camera = require('./backend/camera');
+const alerts = require('./backend/alerts');
 
 const app = express();
 app.use(cors());
@@ -31,7 +32,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement
 app.use('/api/camera', camera);                   // proxy caméras IP (avant JWT : les <img> n'envoient pas de token)
+app.use('/api/alerts', auth.authMiddleware, alerts.router);
 app.use('/api', auth.authMiddleware, routes);
+
+app.use('/api', (req,res) => res.status(404).json({error:'Route API introuvable'}));
 
 app.use(express.static(path.join(__dirname, 'frontend')));
 app.get(/^(?!\/api).*$/, (req, res) => {
@@ -50,7 +54,7 @@ app.use((err, req, res, next) => {
 function start(opts = {}) {
   const port = opts.port !== undefined ? opts.port : PORT;
   const host = opts.host; // undefined => toutes les interfaces
-  return db.init().then(() => new Promise((resolve, reject) => {
+  return db.init().then(() => { alerts.init(); return new Promise((resolve, reject) => {
     const server = host
       ? app.listen(port, host, done)
       : app.listen(port, done);
@@ -62,9 +66,14 @@ function start(opts = {}) {
       console.log(`║  http://localhost:${actual}                     ║`);
       console.log(`║  Identifiants démo : admin / securisite  ║`);
       console.log(`╚═══════════════════════════════════════════╝`);
+      const escalationTimer = setInterval(() => {
+        try { alerts.escalateDue(); } catch (e) { console.error('[ALERTS]', e); }
+      }, 1000);
+      escalationTimer.unref();
+      server.on('close', () => clearInterval(escalationTimer));
       resolve({ server, port: actual });
     }
-  }));
+  }); });
 }
 
 // Lancement direct en ligne de commande (node server.js)
