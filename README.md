@@ -6,7 +6,7 @@ journal d'incidents, main courante temps réel, LAPI (lecture automatique de pla
 
 ## Stack
 
-- **Backend** : Node.js + Express + SQLite intégré à Node.js (node:sqlite)
+- **Backend** : Node.js + Express + SQLite (better-sqlite3)
 - **Frontend** : HTML / CSS / JavaScript (vanilla, sans framework)
 - **Auth** : JWT
 - **OCR LAPI** : Tesseract.js (côté navigateur)
@@ -15,7 +15,7 @@ journal d'incidents, main courante temps réel, LAPI (lecture automatique de pla
 
 ## Prérequis
 
-- Node.js 22.13+ (SQLite intégré requis)
+- Node.js 18+ (recommandé 20+)
 - npm
 
 ## Installation

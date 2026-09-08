@@ -306,16 +306,8 @@ function resetUserForm(){
   const role = document.getElementById('userCreateRole'); if(role) role.value='agent';
 }
 
-function openNotifications(){
-  const incidents = (cache.incidents||[]).filter(i=>i.statut!=='resolu').slice(0,8);
-  const visiteurs = (cache.visiteurs||[]).filter(v=>v.statut==='attendu').slice(0,5);
-  const body = `
-    <div class="card-title" style="font-size:13px;margin-bottom:10px">Incidents à suivre</div>
-    ${incidents.length?incidents.map(i=>`<div class="alert-item ${i.gravite==='critique'?'danger':'warning'}"><div class="alert-content"><div class="alert-title">${escapeHtml(i.ref)} — ${escapeHtml(i.type)}</div><div class="alert-meta">${escapeHtml(i.lieu)} • ${fmtDateTime(i.datetime)}</div></div></div>`).join(''):'<div class="empty-state" style="padding:12px">Aucune alerte incident</div>'}
-    <div class="card-title" style="font-size:13px;margin:16px 0 10px">Visiteurs attendus</div>
-    ${visiteurs.length?visiteurs.map(v=>`<div class="alert-item info"><div class="alert-content"><div class="alert-title">${escapeHtml(v.prenom||'')} ${escapeHtml(v.nom||'')}</div><div class="alert-meta">${escapeHtml(v.societe||'')} • ${fmtDateTime(v.arrivee)}</div></div></div>`).join(''):'<div class="empty-state" style="padding:12px">Aucun visiteur en attente</div>'}`;
-  showModal('Notifications', body, closeModal, 'Fermer');
-}
+function openNotifications(){ return NotificationBell.open(); }
+
 function drawChartFlux(){
   const ctx = document.getElementById('chartFlux');
   if(chartFluxInst) chartFluxInst.destroy();

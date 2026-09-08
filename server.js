@@ -35,8 +35,6 @@ app.use('/api/camera', camera);                   // proxy caméras IP (avant JW
 app.use('/api/alerts', auth.authMiddleware, alerts.router);
 app.use('/api', auth.authMiddleware, routes);
 
-app.use('/api', (req,res) => res.status(404).json({error:'Route API introuvable'}));
-
 app.use(express.static(path.join(__dirname, 'frontend')));
 app.get(/^(?!\/api).*$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));

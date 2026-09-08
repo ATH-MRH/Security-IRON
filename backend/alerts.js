@@ -145,6 +145,7 @@ router.post('/:id/actions', (req,res) => {
     return get(a.id,req.user);
   }); res.json(result);
 });
+router.use((req,res) => res.status(404).json({error:'Route Alert Core introuvable'}));
 router.use((err,req,res,next) => {
   if (err.status && err.status < 500) return res.status(err.status).json({error:err.message});
   next(err);

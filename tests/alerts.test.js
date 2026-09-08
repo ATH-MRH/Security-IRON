@@ -5,13 +5,15 @@ const os = require('node:os');
 const path = require('node:path');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(),'securisite-alert-test-'));
 process.env.SECURISITE_DATA_DIR=dir;
+process.env.SECURISITE_DB_PATH=path.join(dir,'securisite.db');
 const { start } = require('../server');
 const db = require('../backend/database');
 const alerts = require('../backend/alerts');
 let server, base, admin, agent;
 async function request(method,url,body,token=admin) {
   const r=await fetch(base+'/api'+url,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
-  return {status:r.status,body:await r.json()};
+  const contentType=r.headers.get('content-type');
+  return {status:r.status,contentType,body:contentType?.includes('application/json')?await r.json():await r.text()};
 }
 before(async()=>{
   const started=await start({port:0,host:'127.0.0.1'});server=started.server;base='http://127.0.0.1:'+started.port;
@@ -85,4 +87,33 @@ test('incident and repeated badge refusals feed the alert center',async()=>{
   const rows=(await request('GET','/alerts')).body;
   assert.ok(rows.some(a=>a.origin==='INCIDENT'&&a.comment.includes(incident.body.ref)));
   assert.equal(rows.filter(a=>a.origin==='REGLE_BADGE'&&a.equipment==='badge:TEST-42').length,1);
+});
+
+test('404 JSON is scoped to alerts; other APIs retain the historical HTML response',async()=>{
+  for (const [method,url] of [['GET','/alerts/route-inexistante'],['GET','/alerts/route/inexistante'],['DELETE','/alerts']]) {
+    const r=await request(method,url);assert.equal(r.status,404);assert.match(r.contentType,/application\/json/);assert.equal(typeof r.body.error,'string');
+  }
+  const legacy=await request('GET','/route-inexistante');assert.equal(legacy.status,404);assert.match(legacy.contentType,/text\/html/);assert.match(legacy.body,/Cannot GET/);
+});
+test('visitors retain expected, check-in and check-out lifecycle and existing permissions',async()=>{
+  const created=await request('POST','/visiteurs',{prenom:'Test',nom:'Visiteur'},agent);assert.equal(created.status,200);assert.equal(created.body.statut,'attendu');
+  const id=created.body.id;
+  assert.ok((await request('GET','/visiteurs',null,agent)).body.some(v=>v.id===id&&v.statut==='attendu'));
+  assert.equal((await request('DELETE','/visiteurs/'+id,null,agent)).status,403);
+  assert.equal((await request('PUT','/visiteurs/'+id+'/checkin',{},agent)).body.statut,'present');
+  assert.equal((await request('PUT','/visiteurs/'+id+'/checkout',{},agent)).body.statut,'parti');
+  assert.equal((await request('GET','/visiteurs',null,null)).status,401);
+});
+test('alert acknowledgement and incident resolution do not remove other bell families',async()=>{
+  const vis=(await request('POST','/visiteurs',{prenom:'Persistent',nom:'Visitor'},agent)).body;
+  const inc=(await request('POST','/incidents',{type:'Non-regression',lieu:'Site',gravite:'critique'},agent)).body;
+  const a=(await request('GET','/alerts',null,agent)).body.find(a=>a.origin==='INCIDENT'&&a.comment.includes(inc.ref));assert.ok(a);
+  await request('POST',`/alerts/${a.id}/actions`,{action:'ACQUITTEE'});
+  assert.ok((await request('GET','/incidents',null,agent)).body.some(i=>i.id===inc.id&&i.statut!=='resolu'));
+  assert.ok((await request('GET','/visiteurs',null,agent)).body.some(v=>v.id===vis.id&&v.statut==='attendu'));
+  assert.equal((await request('PUT','/incidents/'+inc.id,{statut:'resolu'},agent)).body.statut,'resolu');
+  assert.equal((await request('GET','/alerts/'+a.id,null,agent)).body.status,'ACQUITTEE');
+  assert.ok((await request('GET','/visiteurs',null,agent)).body.some(v=>v.id===vis.id&&v.statut==='attendu'));
+  assert.equal((await request('DELETE','/incidents/'+inc.id,null,agent)).status,403);
+  assert.equal((await request('GET','/incidents',null,null)).status,401);
 });
