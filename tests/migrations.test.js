@@ -132,15 +132,28 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
-const { migrate, assertCurrent } = require('../backend/db/migrate');
+const { migrate: runMigrations, assertCurrent: checkCurrent } = require('../backend/db/migrate');
 const { backup } = require('../backend/db/backup');
 const baselineFile = path.join(__dirname, '../backend/db/migrations/001_baseline.js');
+
+// Existing A2.1 cases explicitly exercise the frozen version-001 catalog.
+const baselineDirectories = new WeakMap();
+function migrate(db, options = {}) {
+  return runMigrations(db, { directory: baselineDirectories.get(db), ...options });
+}
+function assertCurrent(db, options = {}) {
+  return checkCurrent(db, { directory: baselineDirectories.get(db), ...options });
+}
 
 function fixture(t, disk = false) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'securisite-migration-test-'));
   const file = path.join(directory, 'source.db');
   const db = new DatabaseSync(disk ? file : ':memory:');
   db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;');
+  const baselineDirectory = path.join(directory, 'baseline-only');
+  fs.mkdirSync(baselineDirectory);
+  fs.copyFileSync(baselineFile, path.join(baselineDirectory, '001_baseline.js'));
+  baselineDirectories.set(db, baselineDirectory);
   t.after(() => { db.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   return { db, directory, file };
 }
@@ -402,4 +415,291 @@ test('backup path: parent traversal after a symlink is resolved by filesystem se
   const destination=alias+path.sep+'..'+path.sep+'not-created';
   assert.throws(()=>backup(db,{directory:destination,migrationsDirectory:dir}),/backupDirectory en conflit/);
   assert.equal(fs.existsSync(path.join(dir,'not-created')),false);
+});
+
+// A2.2 runs against the real, complete migration catalog.
+const { randomUUID } = require('node:crypto');
+function currentDatabase(t) {
+  const { db } = fixture(t);
+  runMigrations(db);
+  return db;
+}
+function local(db) {
+  return {
+    tenant: db.prepare("SELECT * FROM tenants WHERE code='local'").get(),
+    site: db.prepare("SELECT * FROM sites WHERE code='main'").get(),
+  };
+}
+function tenantRow(db, code = randomUUID()) {
+  const id = randomUUID();
+  db.prepare('INSERT INTO tenants(id,code,name,created_at) VALUES(?,?,?,?)').run(id,code,'Client test','2026-01-01');
+  return id;
+}
+function siteRow(db, tenant, code = randomUUID()) {
+  const id = randomUUID();
+  db.prepare('INSERT INTO sites(id,tenant_id,code,name,timezone,created_at) VALUES(?,?,?,?,?,?)').run(id,tenant,code,'Site test','UTC','2026-01-01');
+  return id;
+}
+function zoneRow(db, site, tenant, code = randomUUID(), kind = null, status = 'active') {
+  const id = randomUUID();
+  db.prepare('INSERT INTO zones(id,site_id,tenant_id,code,name,kind,status,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id,site,tenant,code,'Zone test',kind,status,'2026-01-01');
+  return id;
+}
+function historicalLocations(db) {
+  seedHistorical(db);seedAlert(db);
+  db.exec(`UPDATE incidents SET lieu='Hall';
+    INSERT INTO incidents(id,lieu) VALUES('INC-2','Hall');
+    INSERT INTO main_courante(id,lieu) VALUES('MC-1','Hall libre');
+    INSERT INTO pietons(id,point) VALUES('P-1','Entrée libre');
+    INSERT INTO parking_mouvements(id,zone) VALUES('PM-1','P texte');
+    INSERT INTO parking_zones(zone,nom) VALUES('P','Parking historique');
+    INSERT INTO employes(id,site_id,site_nom) VALUES('E-1',123,'Site ATLAS');
+    INSERT INTO parametres VALUES('adresse','  Adresse historique  ');`);
+}
+
+test('A2.2: fresh database applies 001 then 002 without backup', t => {
+  const {db}=fixture(t);
+  assert.deepEqual(runMigrations(db,{backupDatabase:()=>{throw new Error('Unexpected backup');}}),{applied:[1,2],backup:null});
+  assert.deepEqual(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map(r=>r.version),[1,2]);
+  checkCurrent(db);
+});
+test('A2.2: exactly one local tenant with stable UUID and independent name', t => {
+  const {db}=fixture(t);migrate(db);seedHistorical(db);runMigrations(db,{backupDatabase:memoryBackup});
+  const {tenant}=local(db);
+  assert.equal(tenant.id,'507486ba-d55e-5142-9ac2-196da97866df');
+  assert.equal(tenant.name,'Client local');assert.equal(tenant.status,'active');
+  assert.ok(Number.isFinite(Date.parse(tenant.created_at)));
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tenants').get().n,1);
+});
+test('A2.2: exactly one main site with stable UUID, UTC and no inferred mapping', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db);
+  assert.equal(site.id,'fa831124-0323-581e-993c-1f4332a36282');
+  assert.equal(site.tenant_id,tenant.id);assert.equal(site.status,'active');assert.equal(site.timezone,'UTC');
+  for(const field of ['address','latitude','longitude','external_ref'])assert.equal(site[field],null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sites').get().n,1);
+});
+test('A2.2: historical site name and address are trimmed without changing parameters', t => {
+  const {db}=fixture(t);migrate(db);
+  db.exec("INSERT INTO parametres VALUES('site','  Site historique  '),('adresse','  Adresse historique  ')");
+  const before=snapshot(db).parametres;runMigrations(db,{backupDatabase:memoryBackup});
+  assert.equal(local(db).site.name,'Site historique');assert.equal(local(db).site.address,'Adresse historique');
+  assert.deepEqual(snapshot(db).parametres,before);
+});
+for(const value of [undefined,'','   ',null])test(`A2.2: empty or absent parameters fall back (${String(value)})`,t=>{
+  const {db}=fixture(t);migrate(db);
+  if(value!==undefined)for(const key of ['site','adresse'])db.prepare('INSERT INTO parametres VALUES(?,?)').run(key,value);
+  runMigrations(db,{backupDatabase:memoryBackup});
+  assert.equal(local(db).site.name,'Site principal');assert.equal(local(db).site.address,null);
+});
+test('A2.2: historical location strings produce no zones and all business rows remain identical', t => {
+  const {db}=fixture(t);migrate(db);historicalLocations(db);
+  const before=snapshot(db),ddl=objects(db);runMigrations(db,{backupDatabase:memoryBackup});
+  const after=snapshot(db);
+  for(const [table,rows] of Object.entries(before))assert.deepEqual(after[table],rows,table);
+  assert.deepEqual(objects(db).filter(object=>ddl.some(old=>old.name===object.name)),ddl);
+  assert.equal(after.zones.length,0);
+});
+test('A2.2: rerun preserves all rows and timestamps, with no duplicates or backup', t => {
+  const db=currentDatabase(t),before=snapshot(db),ledger=db.prepare('SELECT * FROM schema_migrations').all();
+  assert.deepEqual(runMigrations(db,{backupDatabase:()=>{throw new Error('Unexpected backup');}}),{applied:[],backup:null});
+  assert.deepEqual(snapshot(db),before);assert.deepEqual(db.prepare('SELECT * FROM schema_migrations').all(),ledger);
+});
+test('A2.2: direct migration replay preserves existing natural keys and edited names', t => {
+  const db=currentDatabase(t);
+  db.exec("UPDATE tenants SET name='Client conservé'; UPDATE sites SET name='Site conservé'");
+  const before=snapshot(db);
+  require('../backend/db/migrations/002_tenants_sites_zones').up(db);
+  assert.deepEqual(snapshot(db),before);
+});
+test('A2.2: site foreign key rejects nonexistent tenant and deletion of referenced tenant', t => {
+  const db=currentDatabase(t);
+  assert.throws(()=>siteRow(db,randomUUID()),/FOREIGN KEY/);
+  assert.throws(()=>db.exec('DELETE FROM tenants'),/FOREIGN KEY/);
+});
+test('A2.2: zone foreign keys and indexes target the declared parents', t => {
+  const db=currentDatabase(t);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_list(zones)').all().map(r=>[r.from,r.table,r.to]).sort(),[['site_id','sites','id'],['tenant_id','tenants','id']]);
+  for(const [index,column] of [['idx_sites_tenant','tenant_id'],['idx_zones_site','site_id'],['idx_zones_tenant','tenant_id']]){
+    assert.deepEqual(db.prepare(`PRAGMA index_info(${index})`).all().map(r=>r.name),[column]);
+  }
+  const {site,tenant}=local(db);zoneRow(db,site.id,tenant.id);
+  assert.throws(()=>db.exec('DELETE FROM sites'),/FOREIGN KEY/);
+});
+test('A2.2: zone insert rejects missing site with controlled error', t => {
+  const db=currentDatabase(t);assert.throws(()=>zoneRow(db,randomUUID(),local(db).tenant.id),/site parent inexistant/);
+});
+test('A2.2: zone insert rejects another or nonexistent tenant with controlled error', t => {
+  const db=currentDatabase(t);
+  for(const tenant of [tenantRow(db),randomUUID()])assert.throws(()=>zoneRow(db,local(db).site.id,tenant),/tenant incompatible/);
+  assert.equal(snapshot(db).zones.length,0);
+});
+test('A2.2: coherent zone insert and transfer to another site of same tenant succeed', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db),id=zoneRow(db,site.id,tenant.id);
+  const other=siteRow(db,tenant.id);
+  db.prepare('UPDATE zones SET site_id=? WHERE id=?').run(other,id);
+  assert.equal(db.prepare('SELECT site_id FROM zones WHERE id=?').get(id).site_id,other);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+test('A2.2: zone update rejects missing site and tenant mismatch without mutation', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db),id=zoneRow(db,site.id,tenant.id),other=tenantRow(db),otherSite=siteRow(db,other);
+  const before=snapshot(db).zones;
+  assert.throws(()=>db.prepare('UPDATE zones SET site_id=? WHERE id=?').run(randomUUID(),id),/site parent inexistant/);
+  assert.throws(()=>db.prepare('UPDATE zones SET tenant_id=? WHERE id=?').run(other,id),/tenant incompatible/);
+  assert.throws(()=>db.prepare('UPDATE zones SET site_id=? WHERE id=?').run(otherSite,id),/tenant incompatible/);
+  assert.deepEqual(snapshot(db).zones,before);
+  db.prepare('UPDATE zones SET site_id=?,tenant_id=? WHERE id=?').run(otherSite,other,id);
+  assert.equal(db.prepare('SELECT tenant_id FROM zones WHERE id=?').get(id).tenant_id,other);
+});
+test('A2.2: changing parent tenant cannot make existing zones inconsistent', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db),other=tenantRow(db);zoneRow(db,site.id,tenant.id);
+  assert.throws(()=>db.prepare('UPDATE sites SET tenant_id=? WHERE id=?').run(other,site.id),/incompatible avec les zones/);
+  assert.equal(local(db).site.tenant_id,tenant.id);
+  const empty=siteRow(db,tenant.id);
+  db.prepare('UPDATE sites SET tenant_id=? WHERE id=?').run(other,empty);
+  assert.equal(db.prepare('SELECT tenant_id FROM sites WHERE id=?').get(empty).tenant_id,other);
+});
+test('A2.2: tenant code is globally unique', t => {
+  const db=currentDatabase(t);assert.throws(()=>tenantRow(db,'local'),/UNIQUE/);
+});
+test('A2.2: site code is unique per tenant, reusable by another tenant', t => {
+  const db=currentDatabase(t);assert.throws(()=>siteRow(db,local(db).tenant.id,'main'),/UNIQUE/);
+  assert.ok(siteRow(db,tenantRow(db),'main'));
+});
+test('A2.2: zone code is unique per site, reusable by another site', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db);zoneRow(db,site.id,tenant.id,'entry');
+  assert.throws(()=>zoneRow(db,site.id,tenant.id,'entry'),/UNIQUE/);
+  assert.ok(zoneRow(db,siteRow(db,tenant.id),tenant.id,'entry'));
+});
+test('A2.2: tenant status allows only the three specified values', t => {
+  const db=currentDatabase(t);
+  for(const status of ['active','suspended','archived'])db.prepare('UPDATE tenants SET status=?').run(status);
+  assert.throws(()=>db.exec("UPDATE tenants SET status='deleted'"),/CHECK/);
+  assert.throws(()=>db.exec('UPDATE tenants SET status=NULL'),/NOT NULL/);
+});
+test('A2.2: zone kind and status enforce their exact domains', t => {
+  const db=currentDatabase(t),{tenant,site}=local(db);
+  for(const kind of [null,'perimeter','parking','building','access_point','other']){
+    for(const status of ['active','archived'])assert.ok(zoneRow(db,site.id,tenant.id,randomUUID(),kind,status));
+  }
+  assert.throws(()=>zoneRow(db,site.id,tenant.id,randomUUID(),'guessed'),/CHECK/);
+  assert.throws(()=>zoneRow(db,site.id,tenant.id,randomUUID(),null,'suspended'),/CHECK/);
+  assert.throws(()=>db.exec("UPDATE zones SET kind='invalid'"),/CHECK/);
+  assert.throws(()=>db.exec('UPDATE zones SET status=NULL'),/NOT NULL/);
+});
+test('A2.2: error at ledger write rolls back schema and backfill; retry uses stable IDs', t => {
+  const {db}=fixture(t);migrate(db);historicalLocations(db);
+  db.exec("CREATE TRIGGER fail_002 BEFORE INSERT ON schema_migrations WHEN NEW.version=2 BEGIN SELECT RAISE(ABORT,'injected A2.2 failure'); END;");
+  const before=snapshot(db),ddl=objects(db);
+  assert.throws(()=>runMigrations(db,{backupDatabase:memoryBackup}),/injected A2.2 failure/);
+  assert.equal(db.isTransaction,false);assert.deepEqual(snapshot(db),before);assert.deepEqual(objects(db),ddl);
+  assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get().v,1);
+  db.exec('DROP TRIGGER fail_002');runMigrations(db,{backupDatabase:memoryBackup});
+  assert.equal(local(db).tenant.id,'507486ba-d55e-5142-9ac2-196da97866df');
+  assert.equal(local(db).site.id,'fa831124-0323-581e-993c-1f4332a36282');
+});
+test('A2.2: 001 to 002 backs up original database; reopened database needs no further backup', t => {
+  const {db,file}=fixture(t,true);migrate(db);historicalLocations(db);const before=snapshot(db);
+  const result=runMigrations(db);assert.deepEqual(result.applied,[2]);assert.ok(result.backup);
+  const copy=new DatabaseSync(result.backup,{readOnly:true});
+  try{
+    assert.deepEqual(snapshot(copy),before);
+    assert.equal(copy.prepare('SELECT MAX(version) AS v FROM schema_migrations').get().v,1);
+    assert.equal(copy.prepare("SELECT name FROM sqlite_schema WHERE name='tenants'").get(),undefined);
+  }finally{copy.close();}
+  // A separate process opens the migrated file through the same runner as startup.
+  const child=spawnSync(process.execPath,['-e',`const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('PRAGMA foreign_keys=ON');try{console.log(JSON.stringify(require('./backend/db/migrate').migrate(db,{backupDatabase:()=>{throw Error('Unexpected backup')}})))}finally{db.close()}`,file],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
+  assert.equal(child.status,0,child.stderr);assert.deepEqual(JSON.parse(child.stdout),{applied:[],backup:null});
+});
+test('A2.2 diagnostic: structured historical counts without database writes or migration', t => {
+  const {db,file}=fixture(t,true);migrate(db);historicalLocations(db);
+  const before=snapshot(db),ddl=objects(db);db.exec('PRAGMA wal_checkpoint(TRUNCATE)');const bytes=fs.readFileSync(file);
+  const child=spawnSync(process.execPath,[path.join(__dirname,'../backend/scripts/report-historical-locations.js'),file],{encoding:'utf8'});
+  assert.equal(child.status,0,child.stderr);const report=JSON.parse(child.stdout);
+  assert.deepEqual(report.parametres,{site:'Nom de site historique',adresse:'  Adresse historique  '});
+  assert.deepEqual(report.employes,[{site_id:123,site_nom:'Site ATLAS'}]);
+  assert.deepEqual(report.incidents_lieu,[{value:'Hall',count:2}]);
+  assert.deepEqual(report.main_courante_lieu,[{value:'Hall libre',count:1}]);
+  assert.deepEqual(report.pietons_point,[{value:'Entrée libre',count:1}]);
+  assert.deepEqual(report.parking_zones,[{code:'P',nom:'Parking historique'}]);
+  assert.deepEqual(report.parking_mouvements_zone,[{value:'P texte',count:1}]);
+  assert.deepEqual(report.security_alerts_site,[{value:'Site texte',count:1}]);
+  assert.deepEqual(report.security_alerts_zone,[{value:'Zone texte',count:1}]);assert.deepEqual(report.unavailable,[]);
+  assert.deepEqual(snapshot(db),before);assert.deepEqual(objects(db),ddl);assert.deepEqual(fs.readFileSync(file),bytes);
+});
+test('A2.2 diagnostic: absent alerts and empty sources remain explicit', t => {
+  const {db}=fixture(t);historical(db);
+  const result=require('../backend/scripts/report-historical-locations').report(db);
+  assert.equal(result.security_alerts_site,null);assert.equal(result.security_alerts_zone,null);
+  assert.deepEqual(result.incidents_lieu,[]);assert.deepEqual(result.parametres,{site:null,adresse:null});
+  assert.ok(result.unavailable.some(item=>item.table==='security_alerts'));
+  assert.equal(db.prepare("SELECT name FROM sqlite_schema WHERE name='schema_migrations'").get(),undefined);
+});
+test('A2.2 diagnostic: missing input file fails without creating it', t => {
+  const {directory}=fixture(t);const file=path.join(directory,'missing.db');
+  const before=fs.readdirSync(directory);
+  const child=spawnSync(process.execPath,[path.join(__dirname,'../backend/scripts/report-historical-locations.js'),file],{encoding:'utf8'});
+  assert.equal(child.status,1);assert.equal(child.stdout,'');assert.match(child.stderr,/Diagnostic historique/);
+  assert.equal(fs.existsSync(file),false);assert.deepEqual(fs.readdirSync(directory),before);
+});
+
+for (const status of ['active','suspended','archived']) test(`A2.2 correction: site status ${status} accepted`, t => {
+  const db=currentDatabase(t),id=siteRow(db,local(db).tenant.id);
+  db.prepare('UPDATE sites SET status=? WHERE id=?').run(status,id);
+  assert.equal(db.prepare('SELECT status FROM sites WHERE id=?').get(id).status,status);
+});
+test('A2.2 correction: invalid site status refuses insert/update and transaction rolls back', t => {
+  const db=currentDatabase(t),before=snapshot(db);
+  db.exec('BEGIN');
+  try {
+    siteRow(db,local(db).tenant.id);
+    assert.throws(()=>db.prepare('INSERT INTO sites(id,tenant_id,code,name,timezone,status,created_at) VALUES(?,?,?,?,?,?,?)').run(randomUUID(),local(db).tenant.id,'invalid','Test','UTC','invalid-status','2026-01-01'),/CHECK/);
+  } finally { db.exec('ROLLBACK'); }
+  assert.deepEqual(snapshot(db),before);
+  assert.throws(()=>db.exec("UPDATE sites SET status='invalid-status'"),/CHECK/);
+  assert.deepEqual(snapshot(db),before);
+});
+function diagnosticFixture(t) {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'a22-zero-write-test-'));
+  const source=path.join(directory,'source'),temp=path.join(directory,'temp');fs.mkdirSync(source);fs.mkdirSync(temp);
+  t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+  const file=path.join(source,'review.db');
+  const capture=()=>Object.fromEntries(fs.readdirSync(source).sort().map(name=>[name,fs.readFileSync(path.join(source,name))]));
+  const run=()=>spawnSync(process.execPath,[path.join(__dirname,'../backend/scripts/report-historical-locations.js'),file],{encoding:'utf8',env:{...process.env,TMPDIR:temp,TMP:temp,TEMP:temp}});
+  return {source,temp,file,capture,run};
+}
+test('A2.2 correction: closed WAL source stays a single file over two diagnostics, no temp residue', t => {
+  const f=diagnosticFixture(t),db=new DatabaseSync(f.file);
+  db.exec("PRAGMA journal_mode=WAL; CREATE TABLE parametres(cle TEXT,valeur TEXT); INSERT INTO parametres VALUES('site','Closed WAL');");db.close();
+  assert.deepEqual(fs.readdirSync(f.source),['review.db']);const before=f.capture();
+  for(let i=0;i<2;i++){
+    const child=f.run();assert.equal(child.status,0,child.stderr);assert.equal(JSON.parse(child.stdout).parametres.site,'Closed WAL');
+    assert.deepEqual(f.capture(),before);assert.deepEqual(fs.readdirSync(f.temp),[]);
+  }
+});
+test('A2.2 correction: uncheckpointed WAL data visible, source main/WAL/SHM unchanged', t => {
+  const f=diagnosticFixture(t),db=new DatabaseSync(f.file);
+  try {
+    db.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE parametres(cle TEXT,valeur TEXT); PRAGMA wal_checkpoint(TRUNCATE);");
+    const main=fs.readFileSync(f.file);
+    db.exec("INSERT INTO parametres VALUES('site','Only in WAL');");assert.deepEqual(fs.readFileSync(f.file),main);
+    assert.ok(fs.statSync(f.file+'-wal').size>0);const before=f.capture();
+    for(let i=0;i<2;i++){
+      const child=f.run();assert.equal(child.status,0,child.stderr);assert.equal(JSON.parse(child.stdout).parametres.site,'Only in WAL');
+      assert.deepEqual(f.capture(),before);assert.deepEqual(fs.readdirSync(f.temp),[]);
+    }
+  } finally {db.close();}
+});
+test('A2.2 correction: missing source creates neither source nor temp files', t => {
+  const f=diagnosticFixture(t);const child=f.run();assert.equal(child.status,1);assert.match(child.stderr,/ENOENT/);
+  assert.deepEqual(fs.readdirSync(f.source),[]);assert.deepEqual(fs.readdirSync(f.temp),[]);
+});
+test('A2.2 correction: invalid SQLite input cleans isolated copy after error', t => {
+  const f=diagnosticFixture(t);fs.writeFileSync(f.file,'not a SQLite database');const before=f.capture();
+  const child=f.run();assert.equal(child.status,1);assert.match(child.stderr,/Diagnostic historique/);assert.equal(child.stdout,'');
+  assert.deepEqual(f.capture(),before);assert.deepEqual(fs.readdirSync(f.temp),[]);
+});
+test('A2.2 correction: source rollback journal refuses report without source or temp changes', t => {
+  const f=diagnosticFixture(t);const db=new DatabaseSync(f.file);db.exec('CREATE TABLE data(id)');db.close();fs.writeFileSync(f.file+'-journal','pending');
+  const before=f.capture(),child=f.run();assert.equal(child.status,1);assert.match(child.stderr,/Journal source présent/);
+  assert.deepEqual(f.capture(),before);assert.deepEqual(fs.readdirSync(f.temp),[]);
 });
