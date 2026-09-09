@@ -51,110 +51,11 @@ function exec(sql, params) {
   return { rows: [], rowCount: info.changes, lastInsertRowid: info.lastInsertRowid };
 }
 
-/* ── Schéma (dialecte SQLite) ─────────────────────────────────────────────── */
-const ISO = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
-const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    nom_complet   TEXT,
-    role          TEXT DEFAULT 'agent',
-    created_at    TEXT DEFAULT (${ISO})
-  )`,
-  `CREATE TABLE IF NOT EXISTS employes (
-    id        TEXT PRIMARY KEY,
-    matricule TEXT UNIQUE,
-    prenom    TEXT,
-    nom       TEXT,
-    service   TEXT,
-    fonction  TEXT,
-    badge     TEXT,
-    niveau    TEXT,
-    statut    TEXT,
-    creation  TEXT,
-    atlas_id          INTEGER,
-    site_id           INTEGER,
-    site_nom          TEXT,
-    groupe            TEXT,
-    date_affectation  TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS visiteurs (
-    id      TEXT PRIMARY KEY,
-    prenom  TEXT, nom TEXT, societe TEXT, hote TEXT, motif TEXT,
-    arrivee TEXT, badge TEXT, statut TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS vehicules (
-    id            TEXT PRIMARY KEY,
-    plaque TEXT, type TEXT, conducteur TEXT, societe TEXT, motif TEXT,
-    entree TEXT, sortie TEXT, statut TEXT, place_parking TEXT, lapi_photo TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS pietons (
-    id TEXT PRIMARY KEY,
-    datetime TEXT, nom TEXT, badge TEXT, type TEXT, point TEXT,
-    sens TEXT, resultat TEXT, notes TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS incidents (
-    id TEXT PRIMARY KEY,
-    ref TEXT UNIQUE, datetime TEXT, type TEXT, lieu TEXT, gravite TEXT,
-    statut TEXT, agent TEXT, description TEXT, actions TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS badges (
-    ref TEXT PRIMARY KEY,
-    nom TEXT, type TEXT, niveau TEXT, emis TEXT, validite TEXT, etat TEXT, societe TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS parking_zones (
-    zone TEXT PRIMARY KEY,
-    nom TEXT, total INTEGER, reserve INTEGER, handicap INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS parking_places (
-    num TEXT PRIMARY KEY,
-    zone TEXT REFERENCES parking_zones(zone),
-    etat TEXT, plaque TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS parking_mouvements (
-    id TEXT PRIMARY KEY,
-    datetime TEXT, plaque TEXT, place TEXT, zone TEXT, action TEXT, duree INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS main_courante (
-    id TEXT PRIMARY KEY,
-    datetime TEXT, poste TEXT, agent TEXT, type TEXT, lieu TEXT,
-    description TEXT, priorite TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS lapi_lectures (
-    id TEXT PRIMARY KEY,
-    datetime TEXT, plaque_detectee TEXT, plaque_raw TEXT, confiance INTEGER,
-    image TEXT, statut TEXT, action TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS parametres (
-    cle TEXT PRIMARY KEY,
-    valeur TEXT
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_employes_atlas   ON employes(atlas_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_employes_site    ON employes(site_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_pietons_dt       ON pietons(datetime)`,
-  `CREATE INDEX IF NOT EXISTS idx_incidents_dt     ON incidents(datetime)`,
-  `CREATE INDEX IF NOT EXISTS idx_vehicules_entree ON vehicules(entree)`,
-  `CREATE INDEX IF NOT EXISTS idx_mc_dt            ON main_courante(datetime)`,
-  `CREATE INDEX IF NOT EXISTS idx_lapi_dt          ON lapi_lectures(datetime)`,
-];
-
-// Ajoute une colonne si elle n'existe pas (migration douce des bases existantes)
-function ensureColumn(table, col, type) {
-  const cols = sdb.prepare(`PRAGMA table_info(${table})`).all();
-  if (!cols.some(c => c.name === col)) {
-    sdb.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
-  }
-}
-
+// The migration runner is the only owner of schema initialization.
+const migrations = require('./db/migrate');
 async function init() {
+  migrations.migrate(sdb);
   const bcrypt = require('bcryptjs');
-  for (const stmt of SCHEMA) sdb.exec(stmt);
-
-  // Traçabilité : compte connecté ayant créé l'enregistrement (journal d'audit)
-  const auditTables = ['employes', 'visiteurs', 'vehicules', 'pietons', 'incidents',
-                       'badges', 'main_courante', 'lapi_lectures', 'parking_mouvements'];
-  for (const t of auditTables) ensureColumn(t, 'created_by', 'TEXT');
 
   console.log('[DB] Schéma SQLite initialisé →', dbPath);
 
@@ -194,6 +95,7 @@ const db = {
   run:   (sql, params = []) => exec(sql, params),   // synchrone, pour les transactions
   transaction,
   init,
+  assertSchemaReady: () => migrations.assertCurrent(sdb),
   dbPath,
 };
 

@@ -10,35 +10,9 @@ function atomic(fn) {
   catch (error) { sql().exec('ROLLBACK TO ' + name); sql().exec('RELEASE ' + name); throw error; }
 }
 
+// Compatibility entry point: schema creation belongs exclusively to database.init().
 function init() {
-  sql().exec(`
-    CREATE TABLE IF NOT EXISTS security_alerts (
-      id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      site TEXT NOT NULL, zone TEXT NOT NULL, type TEXT NOT NULL, level INTEGER NOT NULL CHECK(level BETWEEN 1 AND 4),
-      origin TEXT NOT NULL, created_by INTEGER NOT NULL, username TEXT NOT NULL,
-      status TEXT NOT NULL, owner TEXT, acknowledged_at TEXT, resolved_at TEXT,
-      comment TEXT NOT NULL DEFAULT '', latitude REAL, longitude REAL, equipment TEXT NOT NULL DEFAULT '',
-      cancellation_requested INTEGER NOT NULL DEFAULT 0, escalation_step INTEGER NOT NULL DEFAULT 0,
-      policy TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS alert_audit (
-      id INTEGER PRIMARY KEY, alert_id TEXT NOT NULL REFERENCES security_alerts(id),
-      created_at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL
-    );
-    CREATE TRIGGER IF NOT EXISTS alert_audit_no_update BEFORE UPDATE ON alert_audit BEGIN SELECT RAISE(ABORT, 'Audit immuable'); END;
-    CREATE TRIGGER IF NOT EXISTS alert_audit_no_delete BEFORE DELETE ON alert_audit BEGIN SELECT RAISE(ABORT, 'Audit immuable'); END;
-    CREATE TABLE IF NOT EXISTS alert_notifications (
-      id INTEGER PRIMARY KEY, alert_id TEXT NOT NULL REFERENCES security_alerts(id), user_id INTEGER NOT NULL,
-      created_at TEXT NOT NULL, message TEXT NOT NULL, read_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS alert_config_audit (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, actor TEXT NOT NULL, previous TEXT NOT NULL, current TEXT NOT NULL);
-    CREATE TRIGGER IF NOT EXISTS alert_config_no_update BEFORE UPDATE ON alert_config_audit BEGIN SELECT RAISE(ABORT, 'Audit immuable'); END;
-    CREATE TRIGGER IF NOT EXISTS alert_config_no_delete BEFORE DELETE ON alert_config_audit BEGIN SELECT RAISE(ABORT, 'Audit immuable'); END;
-    CREATE TABLE IF NOT EXISTS alert_rules (id INTEGER PRIMARY KEY CHECK(id=1), config TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS alert_status_idx ON security_alerts(status, level, created_at);
-    CREATE INDEX IF NOT EXISTS alert_notification_user_idx ON alert_notifications(user_id, id);
-  `);
-  sql().prepare('INSERT OR IGNORE INTO alert_rules VALUES (1,?)').run(JSON.stringify({ escalation: [30,60,120], incidentCritical: true, badgeThreshold: 3, badgeWindowSeconds: 120 }));
+  db.assertSchemaReady();
 }
 
 function appendAudit(id, stamp, actor, action, detail) {
