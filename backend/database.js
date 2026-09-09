@@ -1,102 +1,155 @@
-/**
- * SécuriSite — Moteur de base de données LOCAL (SQLite)
- * ------------------------------------------------------
- * Produit autonome vendu sur clé USB : aucune dépendance serveur.
- * La base est un simple fichier sur le PC du client.
- *
- * Cette couche expose la MÊME interface que l'ancienne version PostgreSQL
- * (query / get / all / init / transaction) afin de ne quasiment rien changer
- * dans routes.js / auth.js. Les placeholders façon Postgres ($1,$2,…) sont
- * automatiquement convertis en placeholders SQLite (?).
- */
-const path = require('path');
-const fs   = require('fs');
-const { DatabaseSync } = require('node:sqlite');   // SQLite intégré à Node (aucune compilation)
+/** PostgreSQL infrastructure only. PG-1 does not create or migrate business tables. */
+const { Pool } = require('pg');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const fs = require('node:fs');
+const transactionContext = new AsyncLocalStorage();
 
-/* ── Emplacement du fichier base ──────────────────────────────────────────
- * Dans l'app Electron, main.js définit SECURISITE_DB_PATH vers un dossier
- * inscriptible (userData). En exécution Node simple, on retombe sur ./data.  */
-const dataDir = process.env.SECURISITE_DATA_DIR || path.join(__dirname, '..', 'data');
-fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = process.env.SECURISITE_DB_PATH || path.join(dataDir, 'securisite.db');
-
-const sdb = new DatabaseSync(dbPath);
-sdb.exec('PRAGMA journal_mode = WAL');   // meilleure robustesse / concurrence lecture
-sdb.exec('PRAGMA foreign_keys = ON');
-
-/* ── Conversion $1,$2,… → ?  (+ undefined → null) ─────────────────────────── */
-function convert(sql, params) {
-  if (!params || params.length === 0) return [sql, []];
-  const ordered = [];
-  const newSql = sql.replace(/\$(\d+)/g, (_, n) => {
-    const v = params[Number(n) - 1];
-    ordered.push(v === undefined ? null : v);
-    return '?';
-  });
-  return [newSql, ordered];
-}
-
-// Un statement qui RENVOIE des lignes (SELECT / PRAGMA / …RETURNING) doit
-// passer par .all(), sinon better-sqlite3 lève « does not return data ».
-const RETURNS_ROWS = /^\s*(select|pragma|with|explain)/i;
-function isReader(sql) {
-  return RETURNS_ROWS.test(sql) || /\breturning\b/i.test(sql);
-}
-
-function exec(sql, params) {
-  const [s, p] = convert(sql, params);
-  const stmt = sdb.prepare(s);
-  if (isReader(s)) return { rows: stmt.all(...p) };
-  const info = stmt.run(...p);
-  return { rows: [], rowCount: info.changes, lastInsertRowid: info.lastInsertRowid };
-}
-
-// The migration runner is the only owner of schema initialization.
-const migrations = require('./db/migrate');
-async function init() {
-  migrations.migrate(sdb);
-  const bcrypt = require('bcryptjs');
-
-  console.log('[DB] Schéma SQLite initialisé →', dbPath);
-
-  const { c } = sdb.prepare('SELECT COUNT(*) AS c FROM users').get();
-  if (c === 0) {
-    const defaults = [
-      ['admin',        'securisite',     'Administrateur',         'admin'],
-      ['system_admin', 'securisite2026', 'Administrateur système', 'admin'],
-      ['agent',        'agent',          'Agent de sûreté',        'agent'],
-    ];
-    const ins = sdb.prepare(
-      'INSERT OR IGNORE INTO users (username, password_hash, nom_complet, role) VALUES (?,?,?,?)'
-    );
-    for (const [u, p, n, r] of defaults) ins.run(u, await bcrypt.hash(p, 10), n, r);
-    console.log('[DB] Comptes par défaut créés : admin/securisite, system_admin/securisite2026, agent/agent');
+function configuration(env = process.env) {
+  const localMode = ['test','development'].includes(env.NODE_ENV);
+  const number = (name, fallback, max = 2147483647) => {
+    const raw = env[name] ?? String(fallback);
+    if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > max) throw new Error('Configuration PostgreSQL invalide : ' + name);
+    return Number(raw);
+  };
+  let host, port, database, user, password;
+  if (env.DATABASE_URL) {
+    try {
+      const url = new URL(env.DATABASE_URL);
+      if (!['postgres:','postgresql:'].includes(url.protocol) || url.search || url.hash) throw new Error();
+      host = url.hostname.replace(/^\[|\]$/g, '');
+      port = Number(url.port || 5432);
+      database = decodeURIComponent(url.pathname.slice(1));
+      user = decodeURIComponent(url.username);
+      password = decodeURIComponent(url.password);
+      if (!host || !user || !database || database.includes('/') || port < 1 || port > 65535) throw new Error();
+    } catch { throw new Error('DATABASE_URL invalide : URI PostgreSQL complète sans paramètres attendue'); }
+  } else {
+    host = env.PGHOST; database = env.PGDATABASE; user = env.PGUSER; password = env.PGPASSWORD;
+    port = number('PGPORT',5432,65535);
+    if (!host || !database || !user) throw new Error('Configuration PostgreSQL requise : DATABASE_URL ou PGHOST/PGDATABASE/PGUSER/PGPASSWORD');
   }
+  if (!password && !localMode) throw new Error('Authentification PostgreSQL explicite requise hors développement/test');
+  const sslMode = env.PGSSL ?? 'verify-full';
+  if (!['disable','verify-full'].includes(sslMode)) throw new Error('PGSSL doit être disable ou verify-full');
+  const ssl = sslMode === 'disable' ? false : { rejectUnauthorized: true };
+  if (env.PGSSLROOTCERT) {
+    if (!ssl) throw new Error('PGSSLROOTCERT nécessite PGSSL=verify-full');
+    try { ssl.ca = fs.readFileSync(env.PGSSLROOTCERT, 'utf8'); }
+    catch { throw new Error('Certificat PostgreSQL PGSSLROOTCERT illisible'); }
+  }
+  return {
+    host, port, database, user, password: password || (() => ''), ssl,
+    max: number('PGPOOL_MAX',10,1000),
+    connectionTimeoutMillis: number('PGCONNECT_TIMEOUT_MS',5000),
+    idleTimeoutMillis: number('PGIDLE_TIMEOUT_MS',30000),
+    statement_timeout: number('PGSTATEMENT_TIMEOUT_MS',15000),
+    idle_in_transaction_session_timeout: number('PGTRANSACTION_IDLE_TIMEOUT_MS',60000),
+    application_name: 'securisite',
+  };
 }
 
-/* ── Transaction (remplace l'ancien pool.connect + BEGIN/COMMIT) ──────────── */
-function transaction(fn) {
-  sdb.exec('BEGIN');
+// Preserve the primary error; immutable errors are retained as cause of a wrapper.
+function withSecondary(primary, name, secondary) {
+  if (!secondary || secondary === primary) return primary;
   try {
-    const r = fn();
-    sdb.exec('COMMIT');
-    return r;
-  } catch (e) {
-    sdb.exec('ROLLBACK');
-    throw e;
+    Object.defineProperty(primary, name, { value: secondary, enumerable: false, configurable: true });
+    return primary;
+  } catch {
+    const wrapped = new Error('Erreur transactionnelle PostgreSQL avec erreur secondaire', { cause: primary });
+    if (primary?.code) wrapped.code = primary.code;
+    Object.defineProperty(wrapped, name, { value: secondary });
+    return wrapped;
   }
 }
 
-const db = {
-  raw: sdb,
-  query: async (sql, params = []) => exec(sql, params),
-  get:   async (sql, params = []) => exec(sql, params).rows[0],
-  all:   async (sql, params = []) => exec(sql, params).rows,
-  run:   (sql, params = []) => exec(sql, params),   // synchrone, pour les transactions
-  transaction,
-  init,
-  assertSchemaReady: () => migrations.assertCurrent(sdb),
-  dbPath,
-};
+function createDatabase(env = process.env, { PoolClass = Pool } = {}) {
+  const pool = new PoolClass(configuration(env));
+  let closing = null;
+  // Never log connection config, SQL, URL, password or raw driver error details.
+  pool.on('error', () => { console.error('[DB] Connexion PostgreSQL inactive interrompue'); });
+  function outsideTransaction() {
+    if (transactionContext.getStore()) throw new Error('Utiliser le client transactionnel ; pool et transactions imbriquées interdits');
+    if (closing) throw new Error('Pool PostgreSQL fermé');
+  }
+  async function query(sql, params = []) {
+    outsideTransaction();
+    return pool.query(sql, params);
+  }
+  const get = async (sql, params = []) => (await query(sql, params)).rows[0] ?? null;
+  const all = async (sql, params = []) => (await query(sql, params)).rows;
+  async function transaction(callback) {
+    outsideTransaction();
+    if (typeof callback !== 'function') throw new TypeError('Callback transactionnel requis');
+    const connection = await pool.connect();
+    let begun = false, destroy = false, active = false, clientError;
+    const onClientError = error => { clientError ||= error; destroy = true; };
+    connection.on('error', onClientError);
+    const client = Object.freeze({
+      query: async (sql, params = []) => {
+        if (!active) throw new Error('Client transactionnel hors durée de vie');
+        if (clientError) throw clientError;
+        return connection.query(sql, params);
+      },
+      get: async (sql, params = []) => (await client.query(sql, params)).rows[0] ?? null,
+      all: async (sql, params = []) => (await client.query(sql, params)).rows,
+    });
+    try {
+      await connection.query('BEGIN'); begun = true;
+      if (clientError) throw clientError;
+      active = true;
+      const result = await transactionContext.run(true, () => callback(client));
+      active = false;
+      if (clientError) throw clientError;
+      const commit = await connection.query('COMMIT');
+      if (clientError) throw clientError;
+      // PostgreSQL can answer ROLLBACK to COMMIT if a caller swallowed a SQL error.
+      if (commit.command === 'ROLLBACK') throw new Error('Transaction PostgreSQL annulée après erreur SQL');
+      return result;
+    } catch (error) {
+      active = false;
+      if (begun) {
+        try { await connection.query('ROLLBACK'); }
+        catch (rollbackError) {
+          destroy = true;
+          error = withSecondary(error, 'rollbackError', rollbackError);
+        }
+      } else destroy = true;
+      throw withSecondary(error, 'clientError', clientError);
+    } finally {
+      active = false;
+      connection.removeListener('error', onClientError);
+      connection.release(destroy);
+    }
+  }
+  async function init() {
+    try { await query('SELECT 1 AS ok'); }
+    catch (error) { throw new Error('Connexion PostgreSQL impossible', { cause: error }); }
+  }
+  function close() {
+    if (transactionContext.getStore()) return Promise.reject(new Error('Fermeture du pool interdite dans une transaction'));
+    if (!closing) closing = pool.end();
+    return closing;
+  }
+  return { query, get, all, transaction, init, close,
+    stats: () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }) };
+}
 
-module.exports = db;
+// Requiring this module does not open a connection or read/create a database file.
+let instance, singletonClosing;
+const current = () => {
+  if (singletonClosing) throw new Error('Pool PostgreSQL fermé');
+  return instance || (instance = createDatabase());
+};
+module.exports = {
+  configuration, createDatabase,
+  query: async (...args) => current().query(...args),
+  get: async (...args) => current().get(...args),
+  all: async (...args) => current().all(...args),
+  transaction: async (...args) => current().transaction(...args),
+  init: async () => current().init(),
+  close: () => {
+    if (transactionContext.getStore()) return Promise.reject(new Error('Fermeture du pool interdite dans une transaction'));
+    if (!singletonClosing) singletonClosing = instance ? instance.close() : Promise.resolve();
+    return singletonClosing;
+  },
+};
