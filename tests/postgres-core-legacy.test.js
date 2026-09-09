@@ -65,7 +65,11 @@ async function fixture(t, apply = true) {
   const url = new URL(baseEnv.DATABASE_URL); url.pathname = '/' + name;
   const env = { ...baseEnv, DATABASE_URL: url.href };
   const db = new Client(configuration(env)); clients.push(db); await db.connect();
-  const options = { directory, migrationEnv: env, lockTimeoutMs: 2000, retryDelayMs: 10 };
+  // This suite validates version 001, independently of later catalogue additions.
+  const coreDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'securisite-pg22-core-'));
+  temporary.push(coreDirectory);
+  fs.copyFileSync(path.join(directory, filename), path.join(coreDirectory, filename));
+  const options = { directory: coreDirectory, migrationEnv: env, lockTimeoutMs: 2000, retryDelayMs: 10 };
   const run = overrides => migrate({ ...options, ...overrides });
   const result = apply ? await run() : null;
   return { db, env, run, result,
