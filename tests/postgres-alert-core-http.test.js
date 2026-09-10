@@ -160,7 +160,7 @@ test('error mapping keeps business errors verbatim and never leaks a technical f
   try {
     const unavailable = await request('GET', '/alerts/rules');
     assert.equal(unavailable.status, 503);
-    assert.deepEqual(unavailable.body, { error: 'Centre d’alertes momentanément indisponible' });
+    assert.deepEqual(unavailable.body, { error: 'Centre d’alertes indisponible' });
     assert.doesNotMatch(JSON.stringify(unavailable.body), /id=1|ALERT_|absente/);
   } finally {
     await db.query('INSERT INTO public.alert_rules(id,config) VALUES(1,$1)', [JSON.stringify(defaultRules)]);

@@ -24,14 +24,22 @@ router.use((req, res) => res.status(404).json({ error: 'Route Alert Core introuv
 
 // Mapping transport : les erreurs métier gardent leur statut et leur message ; les erreurs
 // techniques restent génériques et ne divulguent ni SQL, ni code pilote, ni pile.
-const UNAVAILABLE = new Set(['ALERT_LOCK_TIMEOUT', 'ALERT_SCHEMA_UNAVAILABLE', 'ALERT_CONFIG_MISSING']);
+// TRANSIENT : conflit transitoire (interblocage, sérialisation, verrou indisponible,
+// expiration du verrou Alert Core) -> 503 rejouable. UNAVAILABLE : schéma/configuration
+// Alert Core indisponible -> 503 non rejouable immédiatement.
+const TRANSIENT = new Set(['40P01', '40001', '55P03', 'ALERT_LOCK_TIMEOUT']);
+const UNAVAILABLE = new Set(['ALERT_SCHEMA_UNAVAILABLE', 'ALERT_CONFIG_MISSING']);
 router.use((err, req, res, next) => { // signature à 4 arguments : gestionnaire d'erreurs Express
   if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
     return res.status(err.status).json({ error: err.message });
   }
-  if (UNAVAILABLE.has(err.code)) {
+  if (TRANSIENT.has(err && err.code)) {
+    console.error('[ALERTS] transitoire', err.code);
+    return res.status(503).json({ error: 'Opération temporairement indisponible' });
+  }
+  if (UNAVAILABLE.has(err && err.code)) {
     console.error('[ALERTS] indisponible', err.code);
-    return res.status(503).json({ error: 'Centre d’alertes momentanément indisponible' });
+    return res.status(503).json({ error: 'Centre d’alertes indisponible' });
   }
   console.error('[ALERTS] erreur technique', err && (err.code || err.name) || 'inconnue');
   res.status(500).json({ error: 'Erreur serveur' });

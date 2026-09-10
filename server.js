@@ -18,12 +18,16 @@ if (fs.existsSync(envFile)) {
 
 const PORT = process.env.PORT || 3000;
 
-const db     = require('./backend/database');
-const auth   = require('./backend/auth');
-const routes = require('./backend/routes');
-const sync   = require('./backend/sync');
-const camera = require('./backend/camera');
-const alerts = require('./backend/alerts');
+const db        = require('./backend/database');
+const readiness = require('./backend/db/postgresql/readiness');
+const auth      = require('./backend/auth');
+const routes    = require('./backend/routes');
+const sync      = require('./backend/sync');
+const camera    = require('./backend/camera');
+const alerts    = require('./backend/alerts');
+
+// Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
+const SHUTDOWN_GRACE_MS = 10000;
 
 const app = express();
 app.use(cors());
@@ -47,15 +51,17 @@ app.use((err, req, res, next) => {
 
 /**
  * Démarre le serveur. Retourne une promesse résolue avec { server, port, stop }.
- * Ordre : readiness base → readiness schéma Alert Core → écoute HTTP → timer d'escalade.
- * Un échec de readiness rejette sans jamais ouvrir l'écoute ni programmer le timer.
- * @param {{ port?: number|string, host?: string }} opts
+ * Ordre : connexion base → attestation readiness (lecture seule) → écoute HTTP → timer.
+ * Toute dérive de readiness rejette sans jamais ouvrir l'écoute ni programmer le timer.
+ * @param {{ port?: number|string, host?: string, graceMs?: number }} opts
  */
 function start(opts = {}) {
   const port = opts.port !== undefined ? opts.port : PORT;
   const host = opts.host; // undefined => toutes les interfaces
+  const graceMs = opts.graceMs !== undefined ? opts.graceMs : SHUTDOWN_GRACE_MS;
   return db.init()
-    .then(() => alerts.init())            // lecture seule : catalogues + configuration id=1
+    .then(() => readiness.assertReady(db)) // registre, versions 001/002, 18 tables, config,
+                                           // fonction/triggers append-only, privilèges runtime
     .then(() => new Promise((resolve, reject) => {
       const server = host
         ? app.listen(port, host, done)
@@ -63,11 +69,7 @@ function start(opts = {}) {
       server.on('error', reject);
       function done() {
         const actual = server.address().port;
-        console.log(`╔═══════════════════════════════════════════╗`);
-        console.log(`║  SécuriSite SOC                           ║`);
-        console.log(`║  http://localhost:${actual}                     ║`);
-        console.log(`║  Identifiants démo : admin / securisite  ║`);
-        console.log(`╚═══════════════════════════════════════════╝`);
+        console.log(`SécuriSite SOC — écoute sur http://localhost:${actual}`);
         // Timer async sans chevauchement : un cycle en cours (ou un arrêt demandé)
         // fait ignorer le tic suivant ; une erreur n'interrompt pas le timer.
         let running = false, stopping = false, inflight = Promise.resolve();
@@ -81,14 +83,21 @@ function start(opts = {}) {
         }, 1000);
         escalationTimer.unref();
         server.on('close', () => clearInterval(escalationTimer));
-        // Arrêt gracieux minimal : plus de nouveau cycle, on laisse finir le cycle
-        // courant, on ferme l'écoute puis le pool. Idempotent.
+        // Arrêt gracieux borné : plus de nouveau cycle ; on attend le cycle courant
+        // puis la fermeture de l'écoute, chacun plafonné par la même échéance ;
+        // au-delà de graceMs on ferme le pool quand même. Idempotent.
         let closing = null;
-        const stop = () => (closing ||= (stopping = true, clearInterval(escalationTimer), inflight
-          .catch(() => {})
-          .then(() => new Promise(closed => server.close(closed)))
-          .then(() => db.close())
-          .catch(() => {})));
+        const stop = () => (closing ||= (async () => {
+          stopping = true;
+          clearInterval(escalationTimer);
+          let fired;
+          const deadline = new Promise(res => { fired = setTimeout(res, graceMs); fired.unref(); });
+          await Promise.race([inflight.catch(() => {}), deadline]);   // laisse finir le cycle courant
+          await Promise.race([new Promise(closed => server.close(closed)), deadline]); // ferme l'écoute
+          clearTimeout(fired);
+          if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+          await db.close().catch(() => {});                           // pool fermé en dernier
+        })());
         resolve({ server, port: actual, stop });
       }
     }));
