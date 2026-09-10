@@ -25,9 +25,15 @@ git clone <votre-repo>
 cd securisite
 npm install
 cp .env.example .env
-# (optionnel) éditez .env pour changer le port ou le secret JWT
-npm run init-db          # initialise la base SQLite + données de démo
-npm run server           # interface web locale
+# éditez .env : DATABASE_URL/PG*, JWT_SECRET, PGSSL…
+
+# Provisioning PostgreSQL (voir docs/postgresql-deployment.md) :
+npm run db:roles         # rôles OWNER / MIGRATOR / APP + CONNECT
+npm run db:migrate       # migrations versionnées (rôle MIGRATOR)
+npm run db:roles         # complète les GRANT (schéma désormais présent)
+SECURISITE_ADMIN_PASSWORD='…' npm run db:create-admin   # premier administrateur
+
+npm run server           # démarre l'API (rôle APP ; readiness en lecture seule)
 ```
 
 Ouvrez ensuite [http://localhost:3000](http://localhost:3000)

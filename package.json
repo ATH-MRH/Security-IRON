@@ -6,7 +6,9 @@
   "scripts": {
     "server": "node server.js",
     "dev": "node --watch server.js",
-    "init-db": "node backend/seed.js",
+    "db:roles": "node backend/db/postgresql/provision-roles.js",
+    "db:migrate": "node backend/db/postgresql/migrate-cli.js",
+    "db:create-admin": "node backend/db/postgresql/create-admin.js",
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
