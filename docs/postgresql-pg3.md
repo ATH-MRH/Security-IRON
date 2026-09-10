@@ -235,3 +235,45 @@ Comparaison automatique des noms d'échecs globaux avec PG-3.2A : mêmes dix tes
 Le nombre `123` et le texte `"123"` partagent la même représentation de verrou advisory. Seules les entrées de type `number` sont converties par `String(badge)` avant le hash ; les chaînes conservent leurs octets UTF-8. Cette représentation correspond à la comparaison PostgreSQL avec `pietons.badge TEXT` et à l’équipement `badge:123`. Aucun autre traitement du service ne change. `null` et `undefined` restent ignorés par `fromBadge`, comme au HEAD `5219313f91b68637021f4f1387e38a6d749e8234` ; un appel direct à `lockBadge` avec ces valeurs reste rejeté.
 
 Onze tests supplémentaires couvrent la comparaison TEXT, la déduplication, les identités de clés distinctes et la parité directe avec le service historique chargé en mémoire : trois refus TEXT, création avec le nombre `123`, rollback, puis même résultat fonctionnel avec le service corrigé. Les producteurs texte/texte, nombre/nombre et nombre/texte sont exécutés dans des processus distincts ; `pg_blocking_pids` confirme leur attente réelle, la clé est identique et une seule alerte est créée. Avant correction, les nouveaux tests reproduisent `ERR_INVALID_ARG_TYPE` dès le passage numérique.
+
+## PG-3.3A — Intégration transport Alert Core async
+
+Ce lot porte uniquement la couche HTTP Alert Core et le démarrage serveur au service async de PG-3.2. Il ne modifie ni le repository, ni le service, ni PG-1, ni les migrations, ni les dépendances, ni le frontend. Restent explicitement hors périmètre : multitenant, memberships, RLS, SOS, push, IA, l'A2.3 SQLite (référence historique conservée dans le worktree `feature/securisite-alert-core`), et les transactions des routes incidents/piétons de `backend/routes.js` — encore synchrones, prévues pour un lot suivant.
+
+### `backend/alerts.js`
+
+- **Encapsulation async.** Express 4 ne relaie pas les rejets de promesse : `wrap(handler)` résout `handler(req, res, next)` puis renvoie tout rejet — synchrone ou asynchrone — à `next`. Le middleware de revalidation utilisateur et les neuf handlers passent par `wrap` et attendent leur appel de service. L'ordre d'enregistrement des routes est conservé (`/rules`, `/rules/audit`, `/notifications`, `/notifications/:id/read`, `/`, `POST /`, `/:id`, `/:id/actions`), ainsi que le 404 JSON `Route Alert Core introuvable` et le garde `admin` synchrone.
+- **Revalidation utilisateur.** `service.currentUser(req.user.id)` est désormais attendu ; identité inconnue → `401 Session révoquée` ; erreur technique → `next`.
+- **Mapping transport sécurisé.** Le gestionnaire d'erreurs du routeur est terminal : il ne rappelle jamais `next(err)` et n'atteint donc pas le gestionnaire global. Une erreur métier (`err.status` entier 400–499, message rédigé par `fail`) est renvoyée telle quelle. `ALERT_LOCK_TIMEOUT`, `ALERT_SCHEMA_UNAVAILABLE` et `ALERT_CONFIG_MISSING` deviennent `503 Centre d’alertes momentanément indisponible`. Toute autre erreur — SQL, `SyntaxError` de configuration, invariant interne — devient `500 Erreur serveur`. Aucun message pilote, SQL, `err.stack` ni `err.detail` n'est exposé ni journalisé ; seul `err.code`/`err.name` est tracé côté serveur. `ALERT_LOCK_TIMEOUT` n'avait « aucun status HTTP attribué » en PG-3.2B : le transport lui en attribue un ici.
+
+### `server.js`
+
+- **Démarrage ordonné.** `start()` enchaîne `db.init()` (SELECT 1) → `alerts.init()` (lecture seule des catalogues et de `alert_rules.id=1`) → `app.listen`. Un échec de readiness rejette la promesse renvoyée **avant** tout `app.listen` et avant toute programmation de timer. Le message fatal du lancement direct passe de « base SQLite » à « PostgreSQL ».
+- **Timer d'escalade async sans chevauchement.** `setInterval` conserve la cadence d'une seconde et `unref()`. Un garde `running`/`stopping` fait ignorer un tic tant que le cycle précédent n'est pas résolu ou qu'un arrêt est demandé ; l'erreur d'un cycle est tracée sans interrompre le timer. La promesse du cycle courant est retenue dans `inflight`.
+- **Arrêt gracieux minimal.** `start()` résout désormais `{ server, port, stop }`. `stop()` marque l'arrêt, annule le timer, attend le cycle d'escalade en cours, ferme l'écoute puis le pool via `db.close()`. Il est idempotent et ne rejette pas. Le lancement direct câble `SIGTERM`/`SIGINT` sur `stop()` puis `process.exit(0)`.
+- **Normalisation de fin de ligne.** `server.js` était en CRLF mixte au HEAD ; il est normalisé en LF, conformément aux fichiers déjà portés (`database.js`, `alert-core/*.js`, `db/*.js`) et pour garder `git diff --check` conforme. Les fichiers legacy non portés (`auth.js`, `routes.js`, `seed.js`, `sync.js`) restent inchangés.
+
+### Tests
+
+`tests/postgres-alert-core-http.test.js` démarre le vrai serveur Express sur une base PostgreSQL 16 jetable (migrations 001/002, comptes `admin`/`agent` avec empreintes bcrypt réelles) et exerce, via HTTP : authentification et visibilité par utilisateur, validation d'entrée, workflow critique avec acquittements concurrents sérialisés et audit immuable (rejet `Audit immuable` vérifié en base), rétention de la demande d'annulation, règles réservées au SOC avec politique figée à la création, lecture de notification cadrée et auditée une seule fois, escalade async rejouée sans doublon puis stoppée par l'acquittement, mapping d'erreurs (métier verbatim, 500/503 génériques sans fuite), 404 JSON limité à Alert Core, revalidation d'une session révoquée.
+
+`tests/postgres-alert-core-startup.test.js` couvre la readiness et l'arrêt : un schéma Alert Core absent, une ligne de configuration absente et une base injoignable sont refusés dans un processus enfant qui instrumente `app.listen` et `setInterval` — aucun des deux n'est appelé, et l'erreur porte le code attendu ; un démarrage sain écoute puis `stop()` ferme l'écoute et le pool, est idempotent.
+
+Résultats sur PostgreSQL **16.13** (Homebrew), authentification locale, base racine jetable `securisite_test` :
+
+| Suite | Résultat |
+| --- | --- |
+| PG-3.3A HTTP | 9/9 |
+| PG-3.3A démarrage/readiness | 4/4 |
+| PG-3.2B concurrence | 50/50 |
+| PG-3.2A service | 70/70 |
+| PG-3.1 repository | 61/61 |
+| PG-2.3 | 54/54 |
+| PG-2.2 | 35/35 |
+| PG-2.1 | 68/68 |
+| PG-1 | 47/47 |
+| `npm test` | 513 tests, 501 réussites, 12 échecs, aucun ignoré |
+
+Les 12 échecs globaux sont exactement ceux des lots précédents : les dix tests de `tests/alerts.test.js` (HTTP SQLite legacy), son hook de fermeture via `db.raw`, et `startup: failed migration prevents listen…` des migrations SQLite. Aucun nouvel emplacement ; aucun test antérieur modifié. `node --check` et `git diff --check` conformes sur les quatre fichiers. Cluster de test laissé tel quel (service Homebrew partagé) ; bases jetables supprimées. Aucun push.
+
+**L'application fonctionne désormais de bout en bout sur PostgreSQL pour Alert Core** : readiness au démarrage, handlers async, escalade périodique non chevauchante et arrêt propre. Les routes métier `incidents`/`pietons` de `backend/routes.js` restent à porter avant une mise en service complète.

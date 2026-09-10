@@ -46,38 +46,62 @@ app.use((err, req, res, next) => {
 });
 
 /**
- * Démarre le serveur. Retourne une promesse résolue avec { server, port }.
+ * Démarre le serveur. Retourne une promesse résolue avec { server, port, stop }.
+ * Ordre : readiness base → readiness schéma Alert Core → écoute HTTP → timer d'escalade.
+ * Un échec de readiness rejette sans jamais ouvrir l'écoute ni programmer le timer.
  * @param {{ port?: number|string, host?: string }} opts
  */
 function start(opts = {}) {
   const port = opts.port !== undefined ? opts.port : PORT;
   const host = opts.host; // undefined => toutes les interfaces
-  return db.init().then(() => { alerts.init(); return new Promise((resolve, reject) => {
-    const server = host
-      ? app.listen(port, host, done)
-      : app.listen(port, done);
-    server.on('error', reject);
-    function done() {
-      const actual = server.address().port;
-      console.log(`╔═══════════════════════════════════════════╗`);
-      console.log(`║  SécuriSite SOC                           ║`);
-      console.log(`║  http://localhost:${actual}                     ║`);
-      console.log(`║  Identifiants démo : admin / securisite  ║`);
-      console.log(`╚═══════════════════════════════════════════╝`);
-      const escalationTimer = setInterval(() => {
-        try { alerts.escalateDue(); } catch (e) { console.error('[ALERTS]', e); }
-      }, 1000);
-      escalationTimer.unref();
-      server.on('close', () => clearInterval(escalationTimer));
-      resolve({ server, port: actual });
-    }
-  }); });
+  return db.init()
+    .then(() => alerts.init())            // lecture seule : catalogues + configuration id=1
+    .then(() => new Promise((resolve, reject) => {
+      const server = host
+        ? app.listen(port, host, done)
+        : app.listen(port, done);
+      server.on('error', reject);
+      function done() {
+        const actual = server.address().port;
+        console.log(`╔═══════════════════════════════════════════╗`);
+        console.log(`║  SécuriSite SOC                           ║`);
+        console.log(`║  http://localhost:${actual}                     ║`);
+        console.log(`║  Identifiants démo : admin / securisite  ║`);
+        console.log(`╚═══════════════════════════════════════════╝`);
+        // Timer async sans chevauchement : un cycle en cours (ou un arrêt demandé)
+        // fait ignorer le tic suivant ; une erreur n'interrompt pas le timer.
+        let running = false, stopping = false, inflight = Promise.resolve();
+        const escalationTimer = setInterval(() => {
+          if (running || stopping) return;
+          running = true;
+          inflight = Promise.resolve()
+            .then(() => alerts.escalateDue())
+            .catch(e => console.error('[ALERTS] escalade', e && (e.code || e.name) || 'erreur'))
+            .finally(() => { running = false; });
+        }, 1000);
+        escalationTimer.unref();
+        server.on('close', () => clearInterval(escalationTimer));
+        // Arrêt gracieux minimal : plus de nouveau cycle, on laisse finir le cycle
+        // courant, on ferme l'écoute puis le pool. Idempotent.
+        let closing = null;
+        const stop = () => (closing ||= (stopping = true, clearInterval(escalationTimer), inflight
+          .catch(() => {})
+          .then(() => new Promise(closed => server.close(closed)))
+          .then(() => db.close())
+          .catch(() => {})));
+        resolve({ server, port: actual, stop });
+      }
+    }));
 }
 
 // Lancement direct en ligne de commande (node server.js)
 if (require.main === module) {
-  start().catch(err => {
-    console.error('[FATAL] Initialisation de la base SQLite impossible :', err.message);
+  start().then(({ stop }) => {
+    for (const signal of ['SIGTERM', 'SIGINT']) {
+      process.on(signal, () => { stop().finally(() => process.exit(0)); });
+    }
+  }).catch(err => {
+    console.error('[FATAL] Initialisation PostgreSQL impossible :', err.message);
     process.exit(1);
   });
 }
