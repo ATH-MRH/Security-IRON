@@ -119,7 +119,38 @@ migration a introduit une table, 3 (`db:roles`) sont rejouées avant le rollout.
 - **Schéma** : restauration depuis une sauvegarde (voir lot PG-27). Il n'existe pas
   de migration descendante automatique.
 
-## 7. Notes
+## 7. Import de données SQLite → PostgreSQL (`npm run db:import`)
+
+`backend/db/postgresql/import-sqlite.js` reprend une base SécuriSite SQLite
+historique dans une cible PostgreSQL **fraîche** (migrations 001/002, aucune
+donnée hormis le seed `alert_rules`).
+
+```
+node backend/db/postgresql/import-sqlite.js chemin/vers/securisite.db --dry-run   # validation + rapport
+node backend/db/postgresql/import-sqlite.js chemin/vers/securisite.db             # import réel
+```
+
+- **Source** ouverte en lecture seule, `PRAGMA quick_check` exigé.
+- **Validation bloquante** avant toute écriture : clé primaire nulle, doublon de
+  clé, entier hors `int4`, entier hors plage JS, chaîne non UTF-8, JSON invalide
+  dans `security_alerts.policy` / `alert_rules.config`. Une seule anomalie ⇒
+  import refusé, cible inchangée.
+- **Cible protégée** : base « …test… » acceptée ; toute autre base exige
+  `SECURISITE_IMPORT_CONFIRM=<nom exact>` (après validation humaine) ; une base
+  « prod/production » est toujours refusée. **Ne jamais importer dans une base
+  réelle sans point de contrôle humain.**
+- **Transaction unique** : colonnes communes source ∩ cible uniquement, ordre des
+  clés étrangères respecté (`parking_zones` avant `parking_places`,
+  `security_alerts` avant `alert_audit`/`alert_notifications`), `alert_rules`
+  remplace le seed.
+- **Séquences identity** (`users.id`, `alert_audit.id`, `alert_notifications.id`,
+  `alert_config_audit.id`) repositionnées sur `MAX(id)` via `setval`.
+- **Vérification post-commit** : comptes source/cible et ensembles de clés
+  primaires identiques par table.
+- **Réimport** : les journaux append-only ne pouvant pas être purgés, un nouvel
+  import se fait dans une base cible neuve (recréer + migrer).
+
+## 8. Notes
 
 - `backend/db/postgresql/migrate.js` (runner) et `migrate-cli.js` (CLI) sont
   distincts de `server.js` : l'application ne migre jamais.
