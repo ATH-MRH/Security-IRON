@@ -1,5 +1,6 @@
 const express = require('express');
 const service = require('./alert-core/service');
+const { sendError } = require('./http-errors');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
@@ -22,27 +23,12 @@ router.get('/:id', wrap(async (req, res) => res.json(await service.detail(req.pa
 router.post('/:id/actions', wrap(async (req, res) => res.json(await service.act(req.params.id, req.body, req.user))));
 router.use((req, res) => res.status(404).json({ error: 'Route Alert Core introuvable' }));
 
-// Mapping transport : les erreurs métier gardent leur statut et leur message ; les erreurs
-// techniques restent génériques et ne divulguent ni SQL, ni code pilote, ni pile.
-// TRANSIENT : conflit transitoire (interblocage, sérialisation, verrou indisponible,
-// expiration du verrou Alert Core) -> 503 rejouable. UNAVAILABLE : schéma/configuration
-// Alert Core indisponible -> 503 non rejouable immédiatement.
-const TRANSIENT = new Set(['40P01', '40001', '55P03', 'ALERT_LOCK_TIMEOUT']);
-const UNAVAILABLE = new Set(['ALERT_SCHEMA_UNAVAILABLE', 'ALERT_CONFIG_MISSING']);
+// Mapping transport unifié (backend/http-errors.js) : métier verbatim ; conflit
+// transitoire PostgreSQL ou expiration de verrou Alert Core -> 503 rejouable ;
+// schéma/config Alert Core indisponible -> 503 ; tout le reste -> 500 générique.
+// Terminal : ne rappelle jamais next(err), donc n'atteint pas le gestionnaire global.
 router.use((err, req, res, next) => { // signature à 4 arguments : gestionnaire d'erreurs Express
-  if (Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
-    return res.status(err.status).json({ error: err.message });
-  }
-  if (TRANSIENT.has(err && err.code)) {
-    console.error('[ALERTS] transitoire', err.code);
-    return res.status(503).json({ error: 'Opération temporairement indisponible' });
-  }
-  if (UNAVAILABLE.has(err && err.code)) {
-    console.error('[ALERTS] indisponible', err.code);
-    return res.status(503).json({ error: 'Centre d’alertes indisponible' });
-  }
-  console.error('[ALERTS] erreur technique', err && (err.code || err.name) || 'inconnue');
-  res.status(500).json({ error: 'Erreur serveur' });
+  sendError(res, err, 'ALERTS');
 });
 
 // Preserve the integration entry points used by server.js and backend/routes.js.

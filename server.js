@@ -18,13 +18,14 @@ if (fs.existsSync(envFile)) {
 
 const PORT = process.env.PORT || 3000;
 
-const db        = require('./backend/database');
-const readiness = require('./backend/db/postgresql/readiness');
-const auth      = require('./backend/auth');
-const routes    = require('./backend/routes');
-const sync      = require('./backend/sync');
-const camera    = require('./backend/camera');
-const alerts    = require('./backend/alerts');
+const db         = require('./backend/database');
+const readiness  = require('./backend/db/postgresql/readiness');
+const httpErrors = require('./backend/http-errors');
+const auth       = require('./backend/auth');
+const routes     = require('./backend/routes');
+const sync       = require('./backend/sync');
+const camera     = require('./backend/camera');
+const alerts     = require('./backend/alerts');
 
 // Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
 const SHUTDOWN_GRACE_MS = 10000;
@@ -44,9 +45,11 @@ app.get(/^(?!\/api).*$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 
-app.use((err, req, res, next) => {
-  console.error('[ERROR]', err);
-  res.status(err.status || 500).json({ error: err.message || 'Erreur serveur' });
+// Gestionnaire global : erreurs métier verbatim, transitoires PostgreSQL -> 503,
+// tout le reste -> 500 « Erreur serveur ». Aucun message brut, SQL, table,
+// contrainte, hôte ni identifiant n'est renvoyé ni journalisé (code seul).
+app.use((err, req, res, next) => { // signature à 4 arguments : gestionnaire d'erreurs Express
+  httpErrors.sendError(res, err, 'HTTP');
 });
 
 /**

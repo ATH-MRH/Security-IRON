@@ -284,14 +284,16 @@ router.get('/incidents', async (req, res, next) => {
 router.post('/incidents', async (req, res, next) => {
   try {
     const i = req.body;
-    // Référence historique dérivée d'un COUNT(*) hors transaction.
-    // RISQUE DE CONCURRENCE connu et NON corrigé dans ce lot : deux créations
-    // simultanées peuvent calculer le même compteur et violer incidents.ref UNIQUE
-    // (la seconde requête échoue alors en 500). Correctif = séquence dédiée, lot ultérieur.
-    const c = int((await db.get('SELECT COUNT(*) as c FROM incidents')).c);
     // Une seule transaction PostgreSQL : incident + alerte + audit + notifications
     // sont validés ou annulés ensemble.
     const row = await db.transaction(async client => {
+      // Référence historique dérivée d'un COUNT(*). Sérialisée par un verrou
+      // advisory transactionnel dédié (relâché au COMMIT) : deux créations
+      // simultanées ne peuvent plus calculer le même compteur ni violer
+      // incidents.ref UNIQUE. Le format « INC-<2026100+n> » est inchangé ;
+      // une référence explicite fournie par l'appelant court-circuite le compteur.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('securisite:incidents:ref')::bigint)");
+      const c = int((await client.get('SELECT COUNT(*) AS c FROM incidents')).c);
       const record = await client.query(
         `INSERT INTO incidents (id, ref, datetime, type, lieu, gravite, statut, agent, description, actions, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,

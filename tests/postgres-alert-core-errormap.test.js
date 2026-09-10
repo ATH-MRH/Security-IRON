@@ -51,11 +51,11 @@ test('ALERT_LOCK_TIMEOUT maps to the same 503 body as a deadlock', async () => {
 });
 
 for (const code of ['ALERT_SCHEMA_UNAVAILABLE', 'ALERT_CONFIG_MISSING']) {
-  test(`${code} maps to 503 "Centre d’alertes indisponible" without leaking its detail`, async () => {
+  test(`${code} maps to 503 "Service momentanément indisponible" without leaking its detail`, async () => {
     raise(Object.assign(new Error('Configuration Alert Core indisponible : règle id=1 absente'), { code }));
     const r = await get();
     assert.equal(r.status, 503);
-    assert.deepEqual(r.body, { error: 'Centre d’alertes indisponible' });
+    assert.deepEqual(r.body, { error: 'Service momentanément indisponible' });
     assert.doesNotMatch(JSON.stringify(r.body), /id=1|ALERT_|absente/);
   });
 }
