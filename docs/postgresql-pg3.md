@@ -137,3 +137,101 @@ Résultats PG-3.2A sur PostgreSQL **16.13**, authentification SCRAM, base racine
 Les 12 emplacements d'échec globaux sont identiques à PG-3.1 : dix tests de `tests/alerts.test.js`, son hook de fermeture, et `startup: failed migration prevents listen, escalation timer and user seeding` dans les tests SQLite. Le message du cas escalade devient `undefined !== 3`, les appelants HTTP/tests historiques n'attendant toujours pas le service. Les réponses 401, accès `.body.find` et fermeture `db.raw` restent des incompatibilités d'intégration. Aucun nouvel emplacement d'échec. Aucun test antérieur modifié.
 
 Les deux JS du lot passent `node --check` ; `git diff --check` est conforme. Les bases des fixtures ont été supprimées, puis le cluster local arrêté et ses données supprimées. Aucune utilisation de production, aucun commit ni push.
+
+## PG-3.2B — Sérialisation des décisions concurrentes
+
+Cette étape ajoute uniquement les protections de concurrence au repository et au service. Les contrats des étapes précédentes restent inchangés hors sérialisation des décisions. Les limites de concurrence décrites dans la section PG-3.2A correspondent à cette étape antérieure ; les protections ci-dessous s'appliquent désormais. Les routes, serveur, frontend, migrations, dépendances et PG-1 ne sont pas modifiés.
+
+### Primitives et transaction effective
+
+Quatre nouveaux exports exigent un client transactionnel explicite, sans fallback au pool :
+
+| Primitive | Acquisition / retour |
+| --- | --- |
+| `findAlertForUpdate(id, client)` | `SELECT * FROM public.security_alerts WHERE id=$1 FOR UPDATE` ; ligne ou null |
+| `findNotificationForUpdate(id, userId, client)` | id et utilisateur, `FOR UPDATE` ; ligne ou null |
+| `readConfigForUpdate(client)` | singleton id=1, `FOR UPDATE` ; TEXT ou erreur `ALERT_CONFIG_MISSING` |
+| `lockBadge(badge, client)` | advisory transaction lock ; résolution sans valeur |
+
+Les primitives ordinaires PG-3.1 restent inchangées. Le repository ne décide pas des transitions.
+
+Avant chaque acquisition, le support compare deux observations successives du PID et de `pg_current_xact_id()` sur l'exécuteur fourni. Elles doivent correspondre à la même transaction. Cela refuse un exécuteur en autocommit avant toute requête de verrouillage, sans modifier PG-1 ni se contenter de tester la forme d'un objet pool. Ce contrôle alloue un identifiant transactionnel PostgreSQL ; ces primitives sont destinées aux transactions d'écriture, pas aux transactions READ ONLY. Le client doit rester exclusivement utilisé par l'appelant et exposer `query/get/all`.
+
+L'isolation effective, lue via `current_setting('transaction_isolation')`, doit être exactement `read committed`. Sinon : `ALERT_ISOLATION_REQUIRED`, sans modification silencieuse de l'isolation. Client absent/incompatible ou observations transactionnelles différentes : `ALERT_TRANSACTION_REQUIRED`. Les protections PG-1 restent actives : pool interdit dans son callback, client inutilisable après expiration.
+
+### Attente bornée et erreurs techniques
+
+`SECURISITE_ALERT_LOCK_TIMEOUT_MS` : entier décimal de **1 à 60000 ms**, défaut **2000 ms**. Valeur invalide : `ALERT_LOCK_CONFIG_INVALID`, sans fallback silencieux.
+
+Avant l'acquisition, lecture de `pg_settings.lock_timeout` en millisecondes. Le timeout retenu est le minimum entre la configuration Alert Core et un timeout parent non nul. Application par `set_config('lock_timeout', valeur liée, true)`, locale à la transaction. Après succès, restauration de la valeur précédente. Sur erreur SQL, aucun nettoyage SQL dans la transaction avortée : le rollback transactionnel/savepoint du propriétaire rétablit le contexte.
+
+Seul SQLSTATE `55P03` provenant des instructions d'acquisition contrôlées est converti en erreur technique :
+
+- `code = ALERT_LOCK_TIMEOUT` ;
+- `message = Opération temporairement indisponible` ;
+- `cause` conserve l'erreur PostgreSQL ;
+- **aucun `status` HTTP attribué**.
+
+Les acquisitions n'utilisent pas NOWAIT. `statement_timeout` est distinct : s'il est plus court, il peut interrompre la commande avant le lock timeout ; son erreur n'est pas remappée en conflit métier. Le réglage PG-1 reste inchangé. Aucun retry automatique de deadlock (`40P01`), timeout, erreur réseau, commit incertain ou erreur métier.
+
+### Actions et escalades : même verrou décisionnel
+
+`act` utilise `findAlertForUpdate` avant visibilité, terminal, permission et transition. Toutes les décisions portent sur cette ligne, jamais sur une ancienne lecture. Mutation, audit, notifications, touch et relecture restent dans la transaction. Deux acquittements successivement sérialisés produisent une réussite puis `409 Transition interdite`, sans double audit ni notification.
+
+`escalateDue` conserve la lecture ordinaire des candidats. Dans chaque opération atomique, il recharge l'alerte par le même `findAlertForUpdate`, ignore proprement une absence, puis revérifie niveau >=3, acquittement NULL et statut NOTIFIEE. Politique, date et palier sont ceux de la ligne courante ; le paramètre `time` du passage reste inchangé. Aucun palier committé n'est répété. Les boucles demeurent séquentielles, sans UPDATE conditionnel supplémentaire.
+
+Sans parent : une transaction par candidat. Avec parent : préacquisition des lignes candidates dans l'ordre stable des IDs JavaScript, puis traitement dans l'ordre historique des candidats avec relecture verrouillée. Les préacquisitions appartiennent directement au parent : leur échec doit faire annuler le parent. RELEASE ne libère pas les verrous détenus par celui-ci. Un parent ne doit pas arriver avec un ordre de verrous antérieur incompatible.
+
+### Notifications et règles
+
+Lecture notification : verrou id/utilisateur avant le test historique `!read_at`, incluant la chaîne vide. Le premier lecteur met à jour et audite ; le second voit une date non vide et retourne `{ok:true}` sans nouvelle écriture. Aucune condition de concurrence ajoutée à l'UPDATE ordinaire.
+
+Modification des règles : validation d'entrée conservée, puis singleton verrouillé, JSON parsé et audit previous/current re-sérialisé avant UPDATE. Le timestamp reste pris avant la lecture de configuration, conformément à l'ordre précédent. Le second audit référence la configuration réellement remplacée. Les lectures `config()` et la création ordinaire ne prennent aucun nouveau verrou explicite sur les règles.
+
+### Badge : clé et frontière de décision
+
+La clé correspond à : SHA-256 de `UTF8("securisite:alert-core:badge:v1") + NUL + UTF8(badge exact)`, huit premiers octets interprétés en entier signé 64 bits big-endian, transmis comme **chaîne décimale** à `pg_advisory_xact_lock($1::bigint)`. Aucune conversion en Number, aucun trim, changement de casse ou normalisation Unicode. Le domaine fait partie de l'empreinte. Une collision cryptographique théorique ne ferait que sérialiser deux badges ; les prédicats métier continuent de distinguer leurs valeurs.
+
+Après les gardes historiques, `fromBadge` ouvre une transaction ou un savepoint sur le parent explicite. Il acquiert le verrou, puis lit la configuration, calcule une seule borne, compte les refus, cherche l'alerte récente et attend l'éventuel `create` sur ce même client. Aucune lecture décisionnelle n'a lieu avant l'acquisition. Seuils, fenêtre inclusive et absence de filtre site/statut restent inchangés. Aucun UNIQUE sur equipment.
+
+Le verrou transactionnel reste détenu après RELEASE jusqu'au COMMIT/ROLLBACK parent. Deux badges distincts peuvent avancer simultanément. Les horloges des producteurs doivent rester cohérentes puisque la borne historique est toujours calculée avec l'heure du processus Node.
+
+### Ordre global et responsabilité des parents composés
+
+Ordre : clés advisory badge triées numériquement comme int64 signé → singleton règles → notifications existantes triées par ID numérique → alertes existantes triées par ID. Pour une opération simple, ne prendre que son verrou nécessaire.
+
+Une composition doit préacquérir ses verrous dans cet ordre. En particulier, éviter alerte puis notification existante : l'audit de lecture référence l'alerte et peut prendre un verrou implicite via sa FK. La création de nouvelles notifications dans une action n'est pas le verrouillage d'une notification existante concurrente. Les préacquisitions ordonnées peuvent être réutilisées par les appels de service sur le même parent.
+
+Pas d'ordonnanceur global ni de détection de tous les ordres arbitraires d'un parent externe. Ne pas partager le client entre tâches parallèles ; ne pas lancer de savepoints frères en parallèle. Après échec d'une primitive utilisée directement, le parent doit annuler sa transaction ou son savepoint avant toute poursuite. Un test volontairement hors ordre démontre un deadlock réellement propagé, sans faux succès ni retry.
+
+### Incident, transport et limites
+
+`fromIncident` est inchangé depuis PG-3.2A : aucune déduplication nouvelle. Un rejeu producteur peut encore créer une autre alerte. Les verrous de B ne constituent pas une idempotence HTTP générale et ne couvrent pas des producteurs qui contournent le service.
+
+**Application complète toujours non fonctionnelle avant PG-3.3.** Restent : middleware/handlers async, mapping transport des erreurs techniques, attente d'init, timer async sans chevauchement local, transactions des routes incidents/piétons et tests HTTP. Aucun mapping 503 figé ici, aucun déploiement autorisé par ce lot.
+
+### Tests de concurrence
+
+`tests/postgres-alert-core-concurrency.test.js` applique 001/002 dans des bases PostgreSQL 16 jetables avec utilisateurs de fixture explicites. Deux connexions distinctes sont identifiées par PID ; `pg_blocking_pids` prouve l'attente réelle. Les barrières conservent le premier parent ouvert pendant l'observation. Workers escalation et badge : processus Node séparés, code transmis en mémoire, aucun fichier auxiliaire. Les tests vérifient états committés, nombres d'audits et notifications, rollback, timeout, isolation et clé stable interprocessus. Aucun mock ne remplace le mécanisme de verrouillage PostgreSQL.
+
+Résultats sur PostgreSQL **16.13**, authentification SCRAM, cluster local jetable :
+
+| Suite | Résultat |
+| --- | --- |
+| PG-3.2B concurrence | 50/50 |
+| PG-3.2A service | 70/70 |
+| PG-3.1 repository | 61/61 |
+| PG-2.3 | 54/54 |
+| PG-2.2 | 35/35 |
+| PG-2.1 | 68/68 |
+| PG-1 | 47/47 |
+| `npm test` | 500 tests, 488 réussites, 12 échecs, aucun ignoré |
+
+Comparaison automatique des noms d'échecs globaux avec PG-3.2A : mêmes dix tests HTTP Alert Core, même hook de fermeture historique et même test de démarrage SQLite ; aucun nouvel emplacement. Les tests antérieurs n'ont pas été modifiés. Syntaxe des trois JS du lot et contrôles de whitespace conformes. Cluster de test arrêté et données supprimées après exécution. Aucun commit ni push.
+
+
+### Parité historique des badges numériques
+
+Le nombre `123` et le texte `"123"` partagent la même représentation de verrou advisory. Seules les entrées de type `number` sont converties par `String(badge)` avant le hash ; les chaînes conservent leurs octets UTF-8. Cette représentation correspond à la comparaison PostgreSQL avec `pietons.badge TEXT` et à l’équipement `badge:123`. Aucun autre traitement du service ne change. `null` et `undefined` restent ignorés par `fromBadge`, comme au HEAD `5219313f91b68637021f4f1387e38a6d749e8234` ; un appel direct à `lockBadge` avec ces valeurs reste rejeté.
+
+Onze tests supplémentaires couvrent la comparaison TEXT, la déduplication, les identités de clés distinctes et la parité directe avec le service historique chargé en mémoire : trois refus TEXT, création avec le nombre `123`, rollback, puis même résultat fonctionnel avec le service corrigé. Les producteurs texte/texte, nombre/nombre et nombre/texte sont exécutés dans des processus distincts ; `pg_blocking_pids` confirme leur attente réelle, la clé est identique et une seule alerte est créée. Avant correction, les nouveaux tests reproduisent `ERR_INVALID_ARG_TYPE` dès le passage numérique.

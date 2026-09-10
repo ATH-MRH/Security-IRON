@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 const db = require('../database');
 
 function withCleanupError(primary, name, secondary) {
@@ -30,6 +30,64 @@ async function atomic(fn, transactionClient = null) {
     catch (error) { primary = withCleanupError(primary, 'releaseError', error); }
     throw primary;
   }
+}
+
+// Locking primitives require a live, explicit transaction. Two observations also
+// reject an autocommit executor, without changing PG-1 or trusting a pool-shaped object.
+async function concurrencyTransaction(client) {
+  if (!client || !['query','get','all'].every(method => typeof client[method] === 'function')) {
+    throw Object.assign(new Error('Client transactionnel Alert Core requis'), { code: 'ALERT_TRANSACTION_REQUIRED' });
+  }
+  const sql = "SELECT pg_current_xact_id()::text AS xid, pg_backend_pid() AS pid, current_setting('transaction_isolation') AS isolation";
+  const first = await client.get(sql);
+  const second = await client.get(sql);
+  if (!first || !second || first.xid !== second.xid || first.pid !== second.pid) {
+    throw Object.assign(new Error('Client transactionnel Alert Core requis'), { code: 'ALERT_TRANSACTION_REQUIRED' });
+  }
+  if (second.isolation !== 'read committed') {
+    throw Object.assign(new Error('Isolation READ COMMITTED requise pour Alert Core'), { code: 'ALERT_ISOLATION_REQUIRED' });
+  }
+}
+
+async function acquireLock(client, operation) {
+  const raw = process.env.SECURISITE_ALERT_LOCK_TIMEOUT_MS ?? '2000';
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) < 1 || Number(raw) > 60000) {
+    throw Object.assign(new Error('SECURISITE_ALERT_LOCK_TIMEOUT_MS invalide : entier de 1 à 60000 requis'), { code: 'ALERT_LOCK_CONFIG_INVALID' });
+  }
+  await concurrencyTransaction(client);
+  // pg_settings exposes lock_timeout in milliseconds, independent of SHOW units.
+  const previous = (await client.get("SELECT setting FROM pg_catalog.pg_settings WHERE name='lock_timeout'")).setting;
+  const timeout = Number(previous) > 0 ? Math.min(Number(previous), Number(raw)) : Number(raw);
+  const changed = timeout !== Number(previous);
+  if (changed) await client.query("SELECT set_config('lock_timeout',$1,true)", [String(timeout) + 'ms']);
+  let result;
+  try { result = await operation(); }
+  catch (cause) {
+    // Only acquisition statements below can reach this mapping; no NOWAIT SQL.
+    // Do not issue cleanup SQL in the failed transaction: atomic owns rollback.
+    if (cause.code === '55P03') throw Object.assign(new Error('Opération temporairement indisponible', { cause }), { code: 'ALERT_LOCK_TIMEOUT' });
+    throw cause;
+  }
+  if (changed) await client.query("SELECT set_config('lock_timeout',$1,true)", [previous + 'ms']);
+  return result;
+}
+
+async function findAlertForUpdate(id, client) {
+  return acquireLock(client, () => client.get('SELECT * FROM public.security_alerts WHERE id=$1 FOR UPDATE', [id]));
+}
+async function findNotificationForUpdate(id, userId, client) {
+  return acquireLock(client, () => client.get('SELECT * FROM public.alert_notifications WHERE id=$1 AND user_id=$2 FOR UPDATE', [id, userId]));
+}
+async function readConfigForUpdate(client) {
+  const row = await acquireLock(client, () => client.get('SELECT config FROM public.alert_rules WHERE id=1 FOR UPDATE'));
+  if (!row) throw Object.assign(new Error('Configuration Alert Core indisponible : règle id=1 absente'), { code: 'ALERT_CONFIG_MISSING' });
+  return row.config;
+}
+async function lockBadge(badge, client) {
+  const badgeText = typeof badge === 'number' ? String(badge) : badge;
+  const bytes = createHash('sha256').update('securisite:alert-core:badge:v1').update(Buffer.from([0])).update(badgeText, 'utf8').digest();
+  const key = bytes.readBigInt64BE(0).toString();
+  await acquireLock(client, () => client.query('SELECT pg_advisory_xact_lock($1::bigint)', [key]));
 }
 
 // Read-only readiness check. Deployment owns migrations and configuration seeding.
@@ -137,6 +195,7 @@ async function recentBadgeAlert(equipment, since, client = db) {
 }
 
 module.exports = {
+  findAlertForUpdate, findNotificationForUpdate, readConfigForUpdate, lockBadge,
   atomic, init, appendAudit, readConfig, notificationRecipients, prepareNotificationInsert,
   findAlert, insertAlert, pendingEscalations, updateEscalation, findUser, appendConfigAudit,
   updateConfig, configAudit, notifications, findNotification, markNotificationRead,

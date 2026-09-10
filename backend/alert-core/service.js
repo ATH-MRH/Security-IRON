@@ -36,7 +36,16 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
 }
 async function escalateDue(time = Date.now(), transactionClient = null) {
   const pending = await repository.pendingEscalations(transactionClient ?? db);
-  for (const a of pending) await atomic(async client => {
+  // Parent transactions retain every row lock after RELEASE. Acquire their full
+  // candidate set in stable order, then retain the historical processing order.
+  if (transactionClient) {
+    for (const id of [...new Set(pending.map(a => a.id))].sort()) {
+      await repository.findAlertForUpdate(id, transactionClient);
+    }
+  }
+  for (const candidate of pending) await atomic(async client => {
+    const a = await repository.findAlertForUpdate(candidate.id, client);
+    if (!a || a.level < 3 || a.acknowledged_at !== null || a.status !== 'NOTIFIEE') return;
     const policy = JSON.parse(a.policy);
     for (let i=a.escalation_step;i<policy.length;i++) {
       if (time - Date.parse(a.created_at) < policy[i]*1000) break;
@@ -50,13 +59,15 @@ async function updateRules(c, user, transactionClient = null) {
   if (!Array.isArray(c.escalation) || c.escalation.length!==3 || !c.escalation.every((v,i)=>Number.isInteger(v)&&v>0&&v<=86400&&(!i||v>c.escalation[i-1])) || typeof c.incidentCritical!=='boolean' || !Number.isInteger(c.badgeThreshold) || c.badgeThreshold<2 || c.badgeThreshold>100 || !Number.isInteger(c.badgeWindowSeconds) || c.badgeWindowSeconds<1 || c.badgeWindowSeconds>3600) fail('Règles invalides : trois délais croissants, seuil 2–100, fenêtre 1–3600 s');
   const clean = {escalation:c.escalation,incidentCritical:c.incidentCritical,badgeThreshold:c.badgeThreshold,badgeWindowSeconds:c.badgeWindowSeconds};
   await atomic(async client => {
-    await repository.appendConfigAudit(now(),user.username,JSON.stringify(await config(client)),JSON.stringify(clean),client);
+    const stamp = now();
+    const previous = JSON.parse(await repository.readConfigForUpdate(client));
+    await repository.appendConfigAudit(stamp,user.username,JSON.stringify(previous),JSON.stringify(clean),client);
     await repository.updateConfig(JSON.stringify(clean),client);
   }, transactionClient); return clean;
 }
 async function readNotification(id, user, transactionClient = null) {
   await atomic(async client=>{
-    const n = await repository.findNotification(id,user.id,client);
+    const n = await repository.findNotificationForUpdate(id,user.id,client);
     if (!n) fail('Notification introuvable',404);
     if (!n.read_at) { await repository.markNotificationRead(now(),n.id,client); await audit(n.alert_id,user.username,'LECTURE_NOTIFICATION','',client); }
   }, transactionClient); return {ok:true};
@@ -71,7 +82,9 @@ async function detail(id, user, client = db) {
 }
 async function act(id, input, user, transactionClient = null) {
   const result = await atomic(async client=>{
-    let a = await get(id,user,client); const action=input.action, comment=text(input.comment,4000);
+    const a = await repository.findAlertForUpdate(id,client);
+    if (!a || (user.role !== 'admin' && a.created_by !== user.id)) fail('Alerte introuvable',404);
+    const action=input.action, comment=text(input.comment,4000);
     if (terminal.includes(a.status)) fail('Cette alerte est clôturée',409);
     if (action==='COMMENTAIRE') {
       if (!comment) fail('Commentaire requis'); await audit(a.id,user.username,action,comment,client);
@@ -100,11 +113,13 @@ async function fromIncident(i,user,transactionClient = null) {
 }
 async function fromBadge(p,user,transactionClient = null) {
   if(p.resultat!=='refus'||!p.badge) return;
-  const client=transactionClient ?? db;
+  await atomic(async client => {
+  await repository.lockBadge(p.badge,client);
   const c=await config(client), since=new Date(Date.now()-c.badgeWindowSeconds*1000).toISOString();
   const count=await repository.badgeRefusalCount(p.badge,since,client);
   const equipment=`badge:${p.badge}`;
-  if(count>=c.badgeThreshold && !(await repository.recentBadgeAlert(equipment,since,client))) await create({site:p.point||'Accès non renseigné',type:'Badge refusé à répétition',level:3,equipment},user,'REGLE_BADGE',transactionClient);
+  if(count>=c.badgeThreshold && !(await repository.recentBadgeAlert(equipment,since,client))) await create({site:p.point||'Accès non renseigné',type:'Badge refusé à répétition',level:3,equipment},user,'REGLE_BADGE',client);
+  }, transactionClient);
 }
 
 module.exports = {
