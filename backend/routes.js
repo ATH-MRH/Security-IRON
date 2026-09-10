@@ -89,7 +89,7 @@ router.get('/admin/system', requireAdmin, async (req, res, next) => {
     for (const t of tables) {
       counts[t] = int((await db.get(`SELECT COUNT(*) as c FROM ${t}`)).c);
     }
-    res.json({ counts, db_url: 'sqlite-local', db_path: db.dbPath, server_time: now(), user: req.user });
+    res.json({ counts, database: 'PostgreSQL', server_time: now(), user: req.user });
   } catch (e) { next(e); }
 });
 
@@ -235,16 +235,18 @@ router.get('/pietons', async (req, res, next) => {
 
 router.post('/pietons', async (req, res, next) => {
   try {
-    const p   = req.body;
-    const row = db.transaction(() => {
-    const record = db.run(
-      `INSERT INTO pietons (id, datetime, nom, badge, type, point, sens, resultat, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [uid('PED'), p.datetime||now(), p.nom, p.badge, p.type, p.point, p.sens, p.resultat, p.notes||'', req.user?.username || null]
-    );
-    const result = record.rows[0];
-    alerts.fromBadge(result, req.user);
-    return result;
+    const p = req.body;
+    // Une seule transaction PostgreSQL : le passage et l'éventuelle alerte badge
+    // (verrou advisory conservé jusqu'au COMMIT parent) réussissent ou échouent ensemble.
+    const row = await db.transaction(async client => {
+      const record = await client.query(
+        `INSERT INTO pietons (id, datetime, nom, badge, type, point, sens, resultat, notes, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [uid('PED'), p.datetime || now(), p.nom, p.badge, p.type, p.point, p.sens, p.resultat, p.notes || '', req.user?.username || null]
+      );
+      const created = record.rows[0];
+      await alerts.fromBadge(created, req.user, client);
+      return created;
     });
     res.json(row);
   } catch (e) { next(e); }
@@ -281,18 +283,24 @@ router.get('/incidents', async (req, res, next) => {
 
 router.post('/incidents', async (req, res, next) => {
   try {
-    const i   = req.body;
-    const c   = int((await db.get('SELECT COUNT(*) as c FROM incidents')).c);
-    const row = db.transaction(() => {
-    const record = db.run(
-      `INSERT INTO incidents (id, ref, datetime, type, lieu, gravite, statut, agent, description, actions, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [uid('INC'), i.ref || 'INC-'+(2026100+c), i.datetime||now(), i.type,
-       i.lieu, i.gravite, i.statut||'ouvert', i.agent || req.user?.username || null, i.description||'', i.actions||'', req.user?.username || null]
-    );
-    const result = record.rows[0];
-    alerts.fromIncident(result, req.user);
-    return result;
+    const i = req.body;
+    // Référence historique dérivée d'un COUNT(*) hors transaction.
+    // RISQUE DE CONCURRENCE connu et NON corrigé dans ce lot : deux créations
+    // simultanées peuvent calculer le même compteur et violer incidents.ref UNIQUE
+    // (la seconde requête échoue alors en 500). Correctif = séquence dédiée, lot ultérieur.
+    const c = int((await db.get('SELECT COUNT(*) as c FROM incidents')).c);
+    // Une seule transaction PostgreSQL : incident + alerte + audit + notifications
+    // sont validés ou annulés ensemble.
+    const row = await db.transaction(async client => {
+      const record = await client.query(
+        `INSERT INTO incidents (id, ref, datetime, type, lieu, gravite, statut, agent, description, actions, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [uid('INC'), i.ref || 'INC-' + (2026100 + c), i.datetime || now(), i.type,
+         i.lieu, i.gravite, i.statut || 'ouvert', i.agent || req.user?.username || null, i.description || '', i.actions || '', req.user?.username || null]
+      );
+      const created = record.rows[0];
+      await alerts.fromIncident(created, req.user, client);
+      return created;
     });
     res.json(row);
   } catch (e) { next(e); }
@@ -505,10 +513,12 @@ router.get('/parametres', async (req, res, next) => {
 router.put('/parametres', requireAdmin, async (req, res, next) => {
   try {
     const entries = Object.entries(req.body || {});
-    db.transaction(() => {
+    // Toutes les mutations dans une seule transaction : pas d'écriture partielle,
+    // rollback complet si l'une d'elles échoue.
+    await db.transaction(async client => {
       for (const [k, v] of entries) {
-        db.run(
-          `INSERT INTO parametres (cle, valeur) VALUES ($1,$2) ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur`,
+        await client.query(
+          `INSERT INTO parametres (cle, valeur) VALUES ($1,$2) ON CONFLICT (cle) DO UPDATE SET valeur=excluded.valeur`,
           [k, String(v)]
         );
       }

@@ -316,13 +316,12 @@ test('backup: busy WAL checkpoint prevents migration', t => {
   db.exec("UPDATE parametres SET valeur='After'");
   try {assert.throws(()=>migrate(db),/Checkpoint WAL incomplet/);assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='schema_migrations'").get().n,0);}finally{reader.exec('ROLLBACK');reader.close();}
 });
-test('startup: failed migration prevents listen, escalation timer and user seeding', t => {
-  const {db,directory,file}=fixture(t,true);historical(db,true);
-  db.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TEXT NOT NULL,checksum TEXT); INSERT INTO schema_migrations VALUES(99,'unknown','old','bad');");
-  const script=`const assert=require('node:assert/strict');const {app,start}=require('./server');const db=require('./backend/database');let listens=0,timers=0;app.listen=()=>{listens++;throw new Error('must not listen');};global.setInterval=()=>{timers++;throw new Error('must not schedule');};start({host:'127.0.0.1',port:0}).then(()=>{process.exitCode=1;},error=>{assert.match(error.message,/Historique de migrations inconnu/);assert.equal(listens,0);assert.equal(timers,0);assert.equal(db.raw.prepare('SELECT count(*) AS n FROM users').get().n,0);db.raw.close();});`;
-  const result=spawnSync(process.execPath,['-e',script],{cwd:path.join(__dirname,'..'),env:{...process.env,SECURISITE_DATA_DIR:directory,SECURISITE_DB_PATH:file},encoding:'utf8'});
-  assert.equal(result.status,0,result.stderr);
-});
+// The former 'startup: failed migration prevents listen…' test booted the PostgreSQL
+// server against a SQLite migration state; server.js no longer uses the SQLite runner.
+// Its PostgreSQL equivalent (start() rejects before listen/timer on an invalid migration
+// history) lives in tests/postgres-alert-core-readiness.test.js and
+// tests/postgres-alert-core-startup.test.js. This file keeps the standalone SQLite runner
+// unit tests below, which still cover backend/db/migrate.js as historical reference.
 
 for (const [type,name] of [
   ['table','alert_notifications'],
