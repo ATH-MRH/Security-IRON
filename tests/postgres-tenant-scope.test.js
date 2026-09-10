@@ -158,7 +158,7 @@ test('readiness now requires tenants/sites/zones and passes on a 003-migrated da
   const pool = db.createDatabase({ NODE_ENV: 'test', DATABASE_URL: env.DATABASE_URL, PGSSL: 'disable' });
   try {
     assert.equal(await assertReady(pool, { directory: migrationsDir }), undefined);
-    await pool.query('DROP TABLE public.zones');
+    await pool.query('DROP TABLE public.zones CASCADE'); // 004 adds a memberships FK to zones
     await assert.rejects(assertReady(pool, { directory: migrationsDir }),
       e => e.code === 'READINESS_TABLE_MISSING' && /zones/.test(e.message));
   } finally { await pool.close(); }

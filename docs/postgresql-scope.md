@@ -72,9 +72,61 @@ UPDATE public.sites
 
 Aucune reprise automatique n'est faite en PG-6 (hors périmètre : schéma seul).
 
+## Appartenances (`memberships` / `membership_audit`) — lot PG-7
+
+Migration `004_memberships.sql`. Schéma + contraintes + backfill + provisioning ;
+**aucun contrôle d'accès applicatif branché, aucune RLS** (PG-8 / PG-9).
+
+### `memberships`
+`id UUID PK` · `user_id → users(id)` RESTRICT · `tenant_id → tenants(id)` RESTRICT ·
+`site_id` / `zone_id` (nullables) · `role ∈ {soc,client_manager,supervisor,site_manager,agent,client_viewer}` ·
+`alert_access ∈ {own,scope}` (défaut `own`) · `status ∈ {active,suspended,archived}` ·
+`scope` **`GENERATED ALWAYS STORED`** = `zone` / `site` / `tenant` selon les FK ·
+`created_at` / `updated_at TIMESTAMPTZ`.
+
+Cohérence **déclarative** (pas de trigger de cohérence, contrairement à A2) :
+
+- `CHECK (zone_id IS NULL OR site_id IS NOT NULL)` — une zone implique un site ;
+- `FOREIGN KEY (site_id, tenant_id) → sites (id, tenant_id)` — le site appartient au tenant ;
+- `FOREIGN KEY (zone_id, site_id, tenant_id) → zones (id, site_id, tenant_id)` —
+  la zone appartient au couple site/tenant (nécessite `zones UNIQUE (id, site_id, tenant_id)`, ajouté par 004).
+
+Unicité : une appartenance `(user, tenant, role)` au plus **par niveau** (index
+uniques partiels tenant / site / zone).
+
+### `membership_audit` (append-only)
+`id BIGINT identity` · `membership_id → memberships(id)` · `user_id` · `tenant_id` ·
+`actor_user_id` (nullable) · `action ∈ {CREATE,UPDATE}` · `created_at` · `detail JSONB`
+(`{origin, before, after}` — snapshots `to_jsonb`).
+
+### Immuabilité (triggers, `securisite_meta`)
+- `memberships` : suppression interdite (`memberships_no_delete`) ; `id` / `user_id`
+  / `tenant_id` / `created_at` non modifiables (`memberships_identity_lock`) ;
+  `updated_at` repositionné à chaque `UPDATE` (`memberships_touch_updated_at`).
+  → **archiver** (`status`) au lieu de supprimer ; créer une nouvelle appartenance
+  au lieu de réidentifier.
+- `membership_audit` : `UPDATE` / `DELETE` / `TRUNCATE` rejetés (23514).
+- Journalisation : `memberships_audit_insert` / `_update` écrivent une rangée
+  `membership_audit` ; l'acteur et l'origine viennent de
+  `current_setting('securisite.actor_user_id' / 'securisite.audit_origin', true)`
+  (posés par `SET LOCAL` dans la transaction appelante).
+
+### Backfill et provisioning
+- Backfill (migration) : une appartenance de niveau tenant par utilisateur
+  `admin` / `agent` sous `local` (`admin → soc` / accès `scope`, `agent → agent` /
+  accès `own`). `ON CONFLICT DO NOTHING` — jamais de réactivation ni
+  d'élargissement.
+- `backend/db/postgresql/provision-membership.js` — `provisionLocalMembership(exec,
+  userId, { actorUserId, origin })` : même logique, transactionnelle, idempotente.
+  **Non branché au runtime** (réservé PG-8).
+
 ## Readiness et droits
 
-`backend/db/postgresql/readiness.js` exige désormais `tenants`, `sites`, `zones`
-(un `DROP` d'une de ces tables fait échouer `start()` avant l'écoute). Le rôle
-applicatif reçoit **`SELECT` seul** sur ces trois tables via
-`provision-roles.js` — aucune écriture avant PG-8.
+`backend/db/postgresql/readiness.js` exige désormais `tenants`, `sites`, `zones`,
+`memberships`, `membership_audit`, la fonction de garde
+`securisite_meta.reject_membership_mutation` et les triggers append-only de
+`memberships` / `membership_audit` (un `DROP` ou un `DISABLE` fait échouer
+`start()` avant l'écoute). Le rôle applicatif reçoit **`SELECT` seul** sur
+`tenants`/`sites`/`zones`/`memberships` (et `INSERT` sur `membership_audit`,
+uniquement atteignable via le trigger `AFTER` — inerte tant que PG-8 n'a pas
+accordé l'écriture de `memberships`).

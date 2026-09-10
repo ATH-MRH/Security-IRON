@@ -13,13 +13,17 @@ const HISTORICAL = [
   'parking_zones', 'parking_places', 'parking_mouvements', 'main_courante', 'lapi_lectures', 'parametres',
 ];
 const ALERT_CORE = ['security_alerts', 'alert_audit', 'alert_notifications', 'alert_config_audit', 'alert_rules'];
-// Référentiel multitenant (migration 003) : présent, mais non activé côté runtime.
+// Référentiel multitenant (migrations 003 / 004) : présent, mais non activé côté runtime.
 const SCOPE = ['tenants', 'sites', 'zones'];
-const AUDIT_FUNCTION = 'securisite_meta.reject_alert_audit_mutation';
-const AUDIT_TRIGGERS = [
-  'alert_audit_no_mutation', 'alert_audit_no_truncate',
-  'alert_config_audit_no_mutation', 'alert_config_audit_no_truncate',
-];
+const MEMBERSHIP = ['memberships', 'membership_audit'];
+const AUDIT_FUNCTIONS = ['reject_alert_audit_mutation', 'reject_membership_mutation'];
+const AUDIT_FUNCTION = 'securisite_meta.' + AUDIT_FUNCTIONS[0]; // rétro-compat
+const AUDIT_TRIGGERS = {
+  alert_audit: ['alert_audit_no_mutation', 'alert_audit_no_truncate'],
+  alert_config_audit: ['alert_config_audit_no_mutation', 'alert_config_audit_no_truncate'],
+  membership_audit: ['membership_audit_no_mutation', 'membership_audit_no_truncate'],
+  memberships: ['memberships_no_delete', 'memberships_identity_lock'],
+};
 // Verbes réellement exécutés par le runtime (backend/routes.js, auth.js, sync.js, alert-core).
 // Les journaux append-only n'exigent qu'INSERT + SELECT : jamais UPDATE ni DELETE.
 const PRIVILEGES = {
@@ -34,7 +38,10 @@ const PRIVILEGES = {
   alert_notifications: 'SELECT,INSERT,UPDATE', alert_config_audit: 'SELECT,INSERT',
   alert_rules: 'SELECT,UPDATE',
   // Référentiel multitenant : lecture seule tant que l'activation (PG-8) n'a pas eu lieu.
+  // membership_audit reçoit INSERT (écrit par le trigger AFTER, jamais directement)
+  // en prévision des écritures de memberships du lot PG-8.
   tenants: 'SELECT', sites: 'SELECT', zones: 'SELECT',
+  memberships: 'SELECT', membership_audit: 'SELECT,INSERT',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -76,7 +83,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -92,20 +99,26 @@ async function assertReady(client, { directory } = {}) {
   }
 
   // 6. Fonction et déclencheurs d'immuabilité du journal, présents et actifs.
-  const guardFn = await client.get(`
-    SELECT 1 AS ok FROM pg_catalog.pg_proc p
+  const guardFns = await client.all(`
+    SELECT p.proname FROM pg_catalog.pg_proc p
     JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'securisite_meta' AND p.proname = 'reject_alert_audit_mutation'`);
-  if (!guardFn) throw fail('READINESS_AUDIT_GUARD_MISSING', 'Fonction ' + AUDIT_FUNCTION + ' absente');
+    WHERE n.nspname = 'securisite_meta' AND p.proname = ANY($1)`, [AUDIT_FUNCTIONS]);
+  const missingFns = AUDIT_FUNCTIONS.filter(name => !guardFns.some(r => r.proname === name));
+  if (missingFns.length) {
+    throw fail('READINESS_AUDIT_GUARD_MISSING', 'Fonction(s) de garde absente(s) : ' + missingFns.join(', '));
+  }
+  const relations = Object.keys(AUDIT_TRIGGERS);
   const triggers = await client.all(`
-    SELECT tg.tgname FROM pg_catalog.pg_trigger tg
+    SELECT c.relname, tg.tgname FROM pg_catalog.pg_trigger tg
+    JOIN pg_catalog.pg_class c ON c.oid = tg.tgrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
     WHERE NOT tg.tgisinternal AND tg.tgenabled <> 'D'
-      AND tg.tgrelid IN ('public.alert_audit'::regclass, 'public.alert_config_audit'::regclass)`);
-  const present = new Set(triggers.map(t => t.tgname));
-  const disabled = AUDIT_TRIGGERS.filter(name => !present.has(name));
+      AND n.nspname = 'public' AND c.relname = ANY($1)`, [relations]);
+  const present = new Set(triggers.map(t => t.relname + '.' + t.tgname));
+  const disabled = relations.flatMap(rel => AUDIT_TRIGGERS[rel].filter(name => !present.has(rel + '.' + name)));
   if (disabled.length) {
     throw fail('READINESS_AUDIT_GUARD_MISSING',
-      'Triggers audit append-only absents ou désactivés : ' + disabled.join(', '));
+      'Triggers append-only absents ou désactivés : ' + disabled.join(', '));
   }
 
   // 7. Privilèges runtime nécessaires du rôle courant, table par table et verbe par verbe.
@@ -121,4 +134,4 @@ async function assertReady(client, { directory } = {}) {
   }
 }
 
-module.exports = { assertReady, HISTORICAL, ALERT_CORE, SCOPE, AUDIT_FUNCTION, AUDIT_TRIGGERS, PRIVILEGES };
+module.exports = { assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS, PRIVILEGES };

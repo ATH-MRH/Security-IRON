@@ -51,7 +51,7 @@ test('assertReady resolves on a freshly migrated database and is read-only', asy
   const pool = db.createDatabase(env);
   try {
     const rows = await pool.all('SELECT version FROM securisite_meta.schema_migrations ORDER BY version');
-    assert.deepEqual(rows.map(r => r.version), [1, 2, 3]);
+    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4]);
   } finally { await pool.close(); }
 });
 
@@ -67,7 +67,7 @@ test('assertReady rejects when the registry table alone is dropped', async t => 
   await assert.rejects(ready(env), codeIs('READINESS_REGISTRY_MISSING'));
 });
 
-for (const version of [1, 2, 3]) {
+for (const version of [1, 2, 3, 4]) {
   test(`assertReady rejects when migration version ${version} is missing`, async t => {
     const { env } = await database(t);
     await run(env, `DELETE FROM securisite_meta.schema_migrations WHERE version=${version}`);

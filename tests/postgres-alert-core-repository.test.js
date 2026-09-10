@@ -445,8 +445,8 @@ test('PG31: reopen database/repository readiness neither migrates nor reseeds',a
   await f.db.close();const reopened=db.createDatabase(f.env);
   try{
     await repository.init(reopened);assert.equal(await repository.readConfig(reopened),'custom');
+    // repository.init ne migre pas : le registre des migrations est intact après réouverture.
     assert.deepEqual(await reopened.all('SELECT * FROM securisite_meta.schema_migrations ORDER BY version'),ledger);
-    assert.deepEqual(await reopened.all("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename IN ('memberships')"),[]);
   }finally{await reopened.close();}
   originalSQL.forEach((bytes,i)=>assert.deepEqual(fs.readFileSync(path.join(directory,['001_core_legacy.sql','002_alert_core.sql'][i])),bytes));
 });
