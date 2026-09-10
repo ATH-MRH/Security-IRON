@@ -11,10 +11,15 @@ const { testEnvironment } = require('./helpers/postgres-test-config');
 const { migrate } = require('../backend/db/postgresql/migrate');
 
 const env = testEnvironment();
-const directory = path.join(__dirname, '../backend/db/postgresql/migrations');
+const realDirectory = path.join(__dirname, '../backend/db/postgresql/migrations');
 const names = ['001_core_legacy.sql', '002_alert_core.sql'];
-const source = names.map(name => fs.readFileSync(path.join(directory, name)));
+const source = names.map(name => fs.readFileSync(path.join(realDirectory, name)));
 const hashes = source.map(bytes => createHash('sha256').update(bytes).digest('hex'));
+// This suite validates the PG-2.3 catalogue (001 -> 002) in isolation; later
+// migrations (003+) must not widen its scope, so it runs against a private
+// two-file directory rather than the live migrations folder.
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'securisite-pg23-catalogue-'));
+names.forEach((n, i) => fs.writeFileSync(path.join(directory, n), source[i]));
 const initialRule = { escalation: [30,60,120], incidentCritical: true, badgeThreshold: 3, badgeWindowSeconds: 120 };
 const expectedColumns = {
   security_alerts: 'id created_at updated_at site zone type level origin created_by username status owner acknowledged_at resolved_at comment latitude longitude equipment cancellation_requested escalation_step policy',
@@ -31,7 +36,7 @@ const integerColumns = new Set(['security_alerts.level','security_alerts.created
 const nullableColumns = new Set(['security_alerts.owner','security_alerts.acknowledged_at','security_alerts.resolved_at','security_alerts.latitude','security_alerts.longitude','alert_notifications.read_at']);
 let root;
 before(async () => { root = new Client(configuration(env)); await root.connect(); });
-after(async () => { if (root) await root.end(); });
+after(async () => { if (root) await root.end(); fs.rmSync(directory, { recursive: true, force: true }); });
 
 async function fixture(t, apply = true) {
   const database = 'securisite_test_pg23_' + randomBytes(6).toString('hex');

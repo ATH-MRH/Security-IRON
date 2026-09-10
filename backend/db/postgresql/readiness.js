@@ -13,6 +13,8 @@ const HISTORICAL = [
   'parking_zones', 'parking_places', 'parking_mouvements', 'main_courante', 'lapi_lectures', 'parametres',
 ];
 const ALERT_CORE = ['security_alerts', 'alert_audit', 'alert_notifications', 'alert_config_audit', 'alert_rules'];
+// Référentiel multitenant (migration 003) : présent, mais non activé côté runtime.
+const SCOPE = ['tenants', 'sites', 'zones'];
 const AUDIT_FUNCTION = 'securisite_meta.reject_alert_audit_mutation';
 const AUDIT_TRIGGERS = [
   'alert_audit_no_mutation', 'alert_audit_no_truncate',
@@ -31,6 +33,8 @@ const PRIVILEGES = {
   security_alerts: 'SELECT,INSERT,UPDATE', alert_audit: 'SELECT,INSERT',
   alert_notifications: 'SELECT,INSERT,UPDATE', alert_config_audit: 'SELECT,INSERT',
   alert_rules: 'SELECT,UPDATE',
+  // Référentiel multitenant : lecture seule tant que l'activation (PG-8) n'a pas eu lieu.
+  tenants: 'SELECT', sites: 'SELECT', zones: 'SELECT',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -72,7 +76,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -117,4 +121,4 @@ async function assertReady(client, { directory } = {}) {
   }
 }
 
-module.exports = { assertReady, HISTORICAL, ALERT_CORE, AUDIT_FUNCTION, AUDIT_TRIGGERS, PRIVILEGES };
+module.exports = { assertReady, HISTORICAL, ALERT_CORE, SCOPE, AUDIT_FUNCTION, AUDIT_TRIGGERS, PRIVILEGES };
