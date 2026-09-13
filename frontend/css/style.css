@@ -1225,3 +1225,44 @@ body.role-agent .admin-only{ display:none !important; }
   .admin-console-title{font-size:21px}
   .admin-search{width:100%;min-width:0}
 }
+
+/* PG-15 : bouton de détresse — appui maintenu, jamais un simple clic. */
+.sos-button{
+  position:fixed;
+  left:24px;
+  bottom:24px;
+  z-index:1900;
+  width:64px;
+  height:64px;
+  border-radius:50%;
+  border:2px solid var(--danger);
+  background:var(--surface);
+  color:var(--danger);
+  font-family:var(--font-mono);
+  font-weight:800;
+  font-size:13px;
+  letter-spacing:1px;
+  cursor:pointer;
+  overflow:hidden;
+  box-shadow:0 0 18px var(--danger-glow),0 8px 20px rgba(0,0,0,0.5);
+  transition:transform .15s;
+  -webkit-user-select:none;
+  user-select:none;
+  touch-action:none;
+}
+.sos-button:hover{transform:scale(1.05)}
+.sos-button.sos-holding{transform:scale(1.12)}
+.sos-button:disabled{opacity:.6;cursor:wait}
+.sos-fill{
+  position:absolute;
+  inset:0;
+  background:radial-gradient(circle,var(--danger) 0%,var(--danger) 60%,transparent 61%);
+  opacity:.35;
+  transform:scaleX(0);
+  transform-origin:left center;
+  pointer-events:none;
+}
+.sos-label{position:relative}
+@media(max-width:720px){
+  .sos-button{left:16px;bottom:16px;width:56px;height:56px;font-size:11px}
+}

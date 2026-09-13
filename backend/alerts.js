@@ -59,6 +59,10 @@ router.get('/notifications', wrap(async (req, res) => res.json(await service.not
 router.post('/notifications/:id/read', wrap(async (req, res) => res.json(await service.readNotification(req.params.id, req.user))));
 router.get('/', wrap(async (req, res) => res.json(await service.list(req.user))));
 router.post('/', wrap(async (req, res) => res.status(201).json(await service.create(req.body, req.user))));
+// PG-15 : bouton de détresse — aucun champ requis, niveau/type jamais au
+// choix de l'appelant (toujours 4/'SOS'). Avant la route /:id pour ne jamais
+// prêter à confusion, même si la méthode HTTP suffit déjà à les distinguer.
+router.post('/sos', wrap(async (req, res) => res.status(201).json(await service.sos(req.body, req.user))));
 router.get('/:id', wrap(async (req, res) => res.json(await service.detail(req.params.id, req.user))));
 router.post('/:id/actions', wrap(async (req, res) => res.json(await service.act(req.params.id, req.body, req.user))));
 router.use((req, res) => res.status(404).json({ error: 'Route Alert Core introuvable' }));

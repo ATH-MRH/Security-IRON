@@ -17,6 +17,9 @@ function auditContext(user) {
   };
 }
 const now = () => new Date().toISOString();
+// PG-15 : 'SOS' est, comme 'COMMAND', une action humaine directe déclenchée
+// depuis une requête HTTP en cours — jamais un déclenchement système différé.
+const HTTP_ORIGINS = new Set(['COMMAND', 'SOS']);
 const terminal = ['CLOTUREE', 'FAUSSE_ALERTE', 'ANNULEE'];
 const transitions = { NOTIFIEE: ['ACQUITTEE'], ACQUITTEE: ['EN_INTERVENTION'], EN_INTERVENTION: ['SOUS_CONTROLE'], SOUS_CONTROLE: ['RESOLUE'], RESOLUE: ['CLOTUREE'] };
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -51,12 +54,13 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
     await audit(id,user.username,'CREATION', `${type} — niveau ${input.level}`,client);
     const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client);
     // PG-10 : même transaction que la mutation (règle 13) — un échec d'audit
-    // annule aussi la création. origin='COMMAND' (action directe /alerts) est
-    // 'http' ; INCIDENT/REGLE_BADGE (déclenchement automatique par une règle
-    // métier) sont 'system', pas 'http', même si la requête HTTP d'origine
-    // (POST /incidents, /pietons) est elle-même auditée séparément par routes.js.
+    // annule aussi la création. origin='COMMAND'/'SOS' (action humaine directe)
+    // est 'http' ; INCIDENT/REGLE_BADGE (déclenchement automatique par une
+    // règle métier) sont 'system', pas 'http', même si la requête HTTP
+    // d'origine (POST /incidents, /pietons) est elle-même auditée séparément
+    // par routes.js.
     await securityAudit.record({
-      ...auditContext(user), origin: origin === 'COMMAND' ? 'http' : 'system',
+      ...auditContext(user), origin: HTTP_ORIGINS.has(origin) ? 'http' : 'system',
       eventType: 'alert.create', resourceType: 'alert', resourceId: id, action: 'create', outcome: 'success',
       detail: { alert_origin: origin, level: input.level },
     }, client);
@@ -69,6 +73,22 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   // inutile, jamais une fuite — aucun contenu n'est transmis, voir realtime.js).
   realtime.emit('alert:created', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by });
   return result;
+}
+// PG-15 : bouton de détresse. Zéro champ requis — sous contrainte réelle,
+// aucune friction — niveau et type ne sont JAMAIS au choix de l'appelant
+// (toujours 4 / 'SOS', jamais dégradés ni décidés par autre chose qu'un
+// humain qui déclenche). Réutilise create() telle quelle : même transaction,
+// même audit (règle 13), même émission temps réel/push (PG-12/13) — aucune
+// IA n'intervient nulle part dans ce chemin, et ne doit jamais y être insérée
+// (une future intégration IA, PG-19+, ne doit jamais devenir l'autorité
+// d'une transition SOS — voir docs/sos.md).
+async function sos(input, user, transactionClient = null) {
+  const site = text(input?.site) || ('Position non précisée — ' + user.username);
+  return create({
+    site, zone: text(input?.zone), type: 'SOS', level: 4,
+    comment: input?.comment, equipment: input?.equipment,
+    latitude: input?.latitude ?? null, longitude: input?.longitude ?? null,
+  }, user, 'SOS', transactionClient);
 }
 async function escalateDue(time = Date.now(), transactionClient = null) {
   const pending = await repository.pendingEscalations(transactionClient ?? db);
@@ -170,7 +190,7 @@ async function fromBadge(p,user,transactionClient = null) {
 }
 
 module.exports = {
-  init: repository.init, create, escalateDue, fromIncident, fromBadge,
+  init: repository.init, create, sos, escalateDue, fromIncident, fromBadge,
   currentUser: repository.findUser, config, updateRules,
   configAudit: repository.configAudit, notifications: repository.notifications,
   readNotification, list, detail, act

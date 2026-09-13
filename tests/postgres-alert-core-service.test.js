@@ -268,7 +268,7 @@ test('PG32A all explicit-client public operations and aliases resolve without ne
 test('PG32A service adds no SQL, parallel savepoints or concurrency primitives',()=>{
  const source=fs.readFileSync(path.resolve(__dirname,'../backend/alert-core/service.js'),'utf8');
  assert.doesNotMatch(source,/FOR UPDATE|pg_advisory|Promise\.all|forEach\s*\(|\.query\s*\(|\.run\s*\(|db\.raw/);
- assert.deepEqual(Object.keys(service).sort(),['init','create','escalateDue','fromIncident','fromBadge','currentUser','config','updateRules','configAudit','notifications','readNotification','list','detail','act'].sort());
+ assert.deepEqual(Object.keys(service).sort(),['init','create','sos','escalateDue','fromIncident','fromBadge','currentUser','config','updateRules','configAudit','notifications','readNotification','list','detail','act'].sort());
 });
 test('PG32A producers without parent await their own complete creation',async()=>{
  assert.equal(await service.fromIncident({gravite:'majeur',ref:'STANDALONE'},agent),undefined);
