@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt  = require('bcryptjs');
 const db      = require('./database');
 const alerts  = require('./alerts');
+const scope   = require('./scope');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -11,6 +12,17 @@ const requireAdmin = (req, res, next) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Accès administrateur requis' });
   next();
 };
+
+// PG-8 : toute donnée métier (tout sauf /admin/*, qui reste une capacité de
+// compte/système gérée par le rôle JWT, pas par le périmètre memberships)
+// exige un périmètre actif. Aucun filtrage de ligne n'est ajouté ici : les
+// tables historiques n'ont ni tenant_id ni site_id (PG-6/PG-7 n'ont ajouté
+// que le référentiel tenants/sites/zones, pas de colonne sur incidents,
+// pietons, etc.) et il n'existe aujourd'hui qu'un tenant/site ; la porte
+// « au moins une appartenance active » est donc la seule protection
+// significative possible à ce stade — voir docs/postgresql-scope.md.
+const withScope = scope.requireScope();
+router.use((req, res, next) => (req.path.startsWith('/admin') ? next() : withScope(req, res, next)));
 
 /* ============================================================ */
 /*  ADMINISTRATION SYSTÈME                                      */
@@ -61,7 +73,16 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res, next) => {
     const target = await db.get('SELECT role FROM users WHERE id=$1', [id]);
     if (!target) return res.status(404).json({ error: 'Utilisateur introuvable' });
     if (target.role === 'admin' && admins <= 1) return res.status(400).json({ error: 'Au moins un administrateur doit rester' });
-    await db.query('DELETE FROM users WHERE id=$1', [id]);
+    try {
+      await db.query('DELETE FROM users WHERE id=$1', [id]);
+    } catch (e) {
+      // PG-7/PG-8 : memberships référence users en RESTRICT et memberships est
+      // append-only (aucune suppression possible). Un compte ayant eu une
+      // appartenance ne peut donc plus jamais être supprimé — archiver son
+      // statut est le chemin prévu. Message métier clair plutôt qu'un 500.
+      if (e && e.code === '23503') return res.status(409).json({ error: 'Compte non supprimable : appartenances actives — archivez-les plutôt' });
+      throw e;
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

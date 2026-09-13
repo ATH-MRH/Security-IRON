@@ -12,7 +12,16 @@ const s=require('../backend/alert-core/service');
 const {migrate}=require('../backend/db/postgresql/migrate');
 const {testEnvironment}=require('./helpers/postgres-test-config');
 const base=testEnvironment(),directory=path.resolve(__dirname,'../backend/db/postgresql/migrations');
-const admin={id:1,username:'admin-test',role:'admin'},agent={id:2,username:'agent-test',role:'agent'};
+// PG-8: service.js reads user.alertAccess/isSoc, resolved server-side from
+// memberships by the router — hand-set here 1:1 with the PG-7 backfill shape,
+// non-enumerably so any incidental deepEqual against the plain DB row shape
+// ({id,username,role}) elsewhere in this file is unaffected.
+function withAccess(user,alertAccess,isSoc){
+ Object.defineProperty(user,'alertAccess',{value:alertAccess,enumerable:false});
+ Object.defineProperty(user,'isSoc',{value:isSoc,enumerable:false});
+ return user;
+}
+const admin=withAccess({id:1,username:'admin-test',role:'admin'},'scope',true),agent=withAccess({id:2,username:'agent-test',role:'agent'},'own',false);
 const config={escalation:[30,60,120],incidentCritical:true,badgeThreshold:3,badgeWindowSeconds:120};
 const input={site:'S',type:'T',level:3};
 let root;

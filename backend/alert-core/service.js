@@ -17,9 +17,13 @@ async function notify(alert, message, client = db) {
   for (const user of recipients) await insert(alert.id, user.id, now(), message);
   await audit(alert.id, 'system', 'NOTIFICATION_INTERNE', `${recipients.length} destinataire(s) : ${message}`, client);
 }
+// PG-8 : own/scope (résolu par backend/scope.js et posé sur `user` par le
+// routeur, jamais recalculé ici) remplace le rôle brut. `user.alertAccess`
+// doit valoir 'own' ou 'scope' ; toute autre valeur (absente, périmètre non
+// résolu) referme l'accès au lieu de l'ouvrir.
 async function get(id, user, client = db) {
   const a = await repository.findAlert(id, client);
-  if (!a || (user.role !== 'admin' && a.created_by !== user.id)) fail('Alerte introuvable', 404);
+  if (!a || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable', 404);
   return a;
 }
 async function create(input, user, origin = 'COMMAND', transactionClient = null) {
@@ -73,7 +77,7 @@ async function readNotification(id, user, transactionClient = null) {
   }, transactionClient); return {ok:true};
 }
 async function list(user, client = db) {
-  const rows = user.role==='admin' ? await repository.allAlerts(client) : await repository.alertsByCreator(user.id,client);
+  const rows = user.alertAccess==='scope' ? await repository.allAlerts(client) : await repository.alertsByCreator(user.id,client);
   return rows;
 }
 async function detail(id, user, client = db) {
@@ -83,7 +87,7 @@ async function detail(id, user, client = db) {
 async function act(id, input, user, transactionClient = null) {
   const result = await atomic(async client=>{
     const a = await repository.findAlertForUpdate(id,client);
-    if (!a || (user.role !== 'admin' && a.created_by !== user.id)) fail('Alerte introuvable',404);
+    if (!a || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable',404);
     const action=input.action, comment=text(input.comment,4000);
     if (terminal.includes(a.status)) fail('Cette alerte est clôturée',409);
     if (action==='COMMENTAIRE') {
@@ -94,7 +98,7 @@ async function act(id, input, user, transactionClient = null) {
       await repository.requestCancellation(a.id,client);
       await audit(a.id,user.username,action,comment,client); await notify(a,'Demande d’annulation reçue',client);
     } else {
-      if(user.role!=='admin') fail('Action réservée au SOC',403);
+      if(!user.isSoc) fail('Action réservée au SOC',403);
       if(action==='ESCALADE') { await audit(a.id,user.username,action,comment,client); await notify(a,'Escalade manuelle au SOC',client); }
       else {
         if(action==='FAUSSE_ALERTE' || action==='ANNULEE') { if(!comment) fail('Motif obligatoire'); }

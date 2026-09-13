@@ -15,4 +15,19 @@ function testEnvironment(env = process.env) {
     ...(env.SECURISITE_TEST_PGSSLROOTCERT ? { PGSSLROOTCERT:env.SECURISITE_TEST_PGSSLROOTCERT } : {}),
     PGPOOL_MAX:'2', PGCONNECT_TIMEOUT_MS:'3000', PGSTATEMENT_TIMEOUT_MS:'5000' };
 }
-module.exports = { testEnvironment };
+// PG-8 activates scope enforcement: any account exercising business or Alert
+// Core routes needs an active membership, exactly as migration 004's backfill
+// would have provisioned it (mirrored here, not re-implemented differently,
+// since these test users are inserted after the migration already ran).
+// `client` needs only `.query()` — a raw `pg.Client` or a db-module client both work.
+async function seedMembership(client, userId, role) {
+  const membershipRole = role === 'admin' ? 'soc' : 'agent';
+  const alertAccess = role === 'admin' ? 'scope' : 'own';
+  await client.query(`
+    INSERT INTO public.memberships (user_id, tenant_id, role, alert_access)
+    SELECT $1, t.id, $2, $3 FROM public.tenants t WHERE t.code = 'local'
+    ON CONFLICT (user_id, tenant_id, role) WHERE site_id IS NULL AND zone_id IS NULL DO NOTHING`,
+    [userId, membershipRole, alertAccess]);
+}
+
+module.exports = { testEnvironment, seedMembership };

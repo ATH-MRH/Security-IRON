@@ -1,5 +1,6 @@
 const express = require('express');
 const service = require('./alert-core/service');
+const scope = require('./scope');
 const { sendError } = require('./http-errors');
 const router = express.Router();
 
@@ -11,7 +12,20 @@ router.use(wrap(async (req, res, next) => {
   if (!user) return res.status(401).json({ error: 'Session révoquée' });
   req.user = user; next();
 }));
-const admin = (req, res, next) => req.user.role === 'admin' ? next() : res.status(403).json({ error: 'Action réservée au SOC (administrateur)' });
+// PG-8 : le périmètre (memberships actifs PG-7) remplace le rôle brut comme
+// autorité. own/scope pilote la visibilité (service.js) ; le rôle memberships
+// « soc » pilote les actions réservées — jamais une exception username/role JWT.
+// security_alerts ne porte aucune colonne site/zone : l'accès est résolu au
+// niveau du tenant dans son ensemble (voir backend/scope.js#tenantAccess).
+router.use(wrap(async (req, res, next) => {
+  const s = await scope.resolveScope(req.user.id);
+  const tenantId = s.resolveTenant();
+  if (!s.hasAccess || tenantId == null) return res.status(403).json({ error: 'Accès au périmètre refusé' });
+  req.user.alertAccess = s.tenantAccess(tenantId);
+  req.user.isSoc = s.hasRole(tenantId, 'soc');
+  next();
+}));
+const admin = (req, res, next) => req.user.isSoc ? next() : res.status(403).json({ error: 'Action réservée au SOC (administrateur)' });
 router.get('/rules', admin, wrap(async (req, res) => res.json(await service.config())));
 router.put('/rules', admin, wrap(async (req, res) => res.json(await service.updateRules(req.body, req.user))));
 router.get('/rules/audit', admin, wrap(async (req, res) => res.json(await service.configAudit())));

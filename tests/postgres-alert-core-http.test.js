@@ -10,7 +10,7 @@ const { Client } = require('pg');
 const db = require('../backend/database');
 const alerts = require('../backend/alerts');
 const { migrate } = require('../backend/db/postgresql/migrate');
-const { testEnvironment } = require('./helpers/postgres-test-config');
+const { testEnvironment, seedMembership } = require('./helpers/postgres-test-config');
 
 const base = testEnvironment();
 const directory = path.resolve(__dirname, '../backend/db/postgresql/migrations');
@@ -50,6 +50,8 @@ before(async () => {
     for (const account of accounts) {
       await seed.query('INSERT INTO public.users(id,username,password_hash,nom_complet,role) VALUES($1,$2,$3,$4,$5)',
         [account.id, account.username, await bcrypt.hash(account.password, 10), account.username, account.role]);
+      // PG-8 : les routes Alert Core exigent désormais un périmètre memberships actif.
+      await seedMembership(seed, account.id, account.role);
     }
   } finally { await seed.close(); }
   Object.assign(process.env, env);
@@ -181,12 +183,17 @@ test('the JSON 404 stays scoped to Alert Core while other paths keep the framewo
 });
 
 test('the user revalidation middleware awaits the store and rejects a revoked session', async () => {
-  await db.query('DELETE FROM public.users WHERE id=$1', [2]);
-  try {
-    assert.equal((await request('GET', '/alerts', undefined, token.agent)).status, 401);
-  } finally {
-    await db.query('INSERT INTO public.users(id,username,password_hash,nom_complet,role) VALUES($1,$2,$3,$4,$5)',
-      [2, 'agent', await bcrypt.hash('agent', 10), 'agent', 'agent']);
-  }
+  // PG-8: memberships references users in RESTRICT and is itself append-only,
+  // so the seeded (membership-bearing) accounts can no longer be deleted to
+  // simulate revocation. A dedicated, deliberately membership-less account
+  // isolates the property under test (currentUser lookup) from scope (403) —
+  // and doubles as proof the two failure modes stay distinct.
+  const ghostId = 999;
+  await db.query('INSERT INTO public.users(id,username,password_hash,nom_complet,role) VALUES($1,$2,$3,$4,$5)',
+    [ghostId, 'ghost-alert', await bcrypt.hash('x', 10), 'ghost', 'agent']);
+  const ghostToken = (await request('POST', '/auth/login', { username: 'ghost-alert', password: 'x' }, null)).body.token;
+  assert.equal((await request('GET', '/alerts', undefined, ghostToken)).status, 403); // valid session, no membership
+  await db.query('DELETE FROM public.users WHERE id=$1', [ghostId]);
+  assert.equal((await request('GET', '/alerts', undefined, ghostToken)).status, 401); // session now revoked
   assert.equal((await request('GET', '/alerts', undefined, token.agent)).status, 200);
 });

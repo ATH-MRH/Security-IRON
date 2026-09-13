@@ -5,14 +5,25 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const service = require('../backend/alert-core/service');
+const scope = require('../backend/scope');
 const alerts = require('../backend/alerts');
 
 let server, origin;
 const realCurrentUser = service.currentUser;
 const realConfig = service.config;
+const realResolveScope = scope.resolveScope;
 
 before(async () => {
   service.currentUser = async () => ({ id: 1, username: 'admin', role: 'admin' });
+  // PG-8: alerts.js now also resolves a periметre via backend/scope.js
+  // (memberships), a real DB call this deliberately DB-less fixture cannot
+  // make. Stub it the same way service.currentUser/service.config are
+  // stubbed: full SOC scope, matching this test's pre-PG-8 role:'admin'.
+  scope.resolveScope = async () => ({
+    hasAccess: true, tenantIds: ['fixture-tenant'],
+    resolveTenant: () => 'fixture-tenant', tenantAccess: () => 'scope',
+    hasRole: () => true, allows: () => true, coverage: () => 'scope',
+  });
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => { req.user = { id: 1 }; next(); });
@@ -25,6 +36,7 @@ before(async () => {
 after(async () => {
   service.currentUser = realCurrentUser;
   service.config = realConfig;
+  scope.resolveScope = realResolveScope;
   if (server) await new Promise(r => server.close(r));
 });
 

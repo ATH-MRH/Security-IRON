@@ -12,7 +12,7 @@ const bcrypt = require('bcryptjs');
 const { Client } = require('pg');
 const db = require('../backend/database');
 const { migrate } = require('../backend/db/postgresql/migrate');
-const { testEnvironment } = require('./helpers/postgres-test-config');
+const { testEnvironment, seedMembership } = require('./helpers/postgres-test-config');
 
 const baseEnv = testEnvironment();
 const directory = path.resolve(__dirname, '../backend/db/postgresql/migrations');
@@ -40,8 +40,9 @@ before(async () => {
   const pool = db.createDatabase(env);
   try {
     for (const [u, p, r] of [['admin', 'securisite', 'admin'], ['agent', 'agent', 'agent']]) {
-      await pool.query('INSERT INTO public.users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4)',
+      const row = await pool.get('INSERT INTO public.users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4) RETURNING id',
         [u, await bcrypt.hash(p, 10), u, r]);
+      await seedMembership(pool, row.id, r); // PG-8: business/alert routes require an active membership.
     }
   } finally { await pool.close(); }
   Object.assign(process.env, env);

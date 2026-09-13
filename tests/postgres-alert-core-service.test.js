@@ -12,9 +12,19 @@ const {migrate}=require('../backend/db/postgresql/migrate');
 const {testEnvironment}=require('./helpers/postgres-test-config');
 const base=testEnvironment();
 const directory=path.resolve(__dirname,'../backend/db/postgresql/migrations');
-const admin={id:1,username:'admin-fixture',role:'admin'};
-const agent={id:2,username:'agent-fixture',role:'agent'};
-const other={id:3,username:'other-fixture',role:'agent'};
+// PG-8: service.js reads user.alertAccess/isSoc (resolved server-side from
+// memberships by the router / backend/scope.js), never user.role directly.
+// Attached non-enumerably: readable by service.js like any property, but
+// invisible to this file's `assert.deepEqual(currentUser(...), admin)`
+// checks, which must keep matching the plain {id,username,role} DB row.
+function withAccess(user,alertAccess,isSoc){
+ Object.defineProperty(user,'alertAccess',{value:alertAccess,enumerable:false});
+ Object.defineProperty(user,'isSoc',{value:isSoc,enumerable:false});
+ return user;
+}
+const admin=withAccess({id:1,username:'admin-fixture',role:'admin'},'scope',true);
+const agent=withAccess({id:2,username:'agent-fixture',role:'agent'},'own',false);
+const other=withAccess({id:3,username:'other-fixture',role:'agent'},'own',false);
 const rules={escalation:[30,60,120],incidentCritical:true,badgeThreshold:3,badgeWindowSeconds:120};
 const input={site:'Oran',zone:'Quai B',type:'SOS',level:4,comment:'initial'};
 const name=()=> 'securisite_test_pg32a_'+randomBytes(6).toString('hex');

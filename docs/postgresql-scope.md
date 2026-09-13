@@ -120,6 +120,95 @@ uniques partiels tenant / site / zone).
   userId, { actorUserId, origin })` : même logique, transactionnelle, idempotente.
   **Non branché au runtime** (réservé PG-8).
 
+## Activation applicative — lot PG-8
+
+Décision humaine figée avant implémentation (voir historique de conversation) :
+bascule sans mode legacy parallèle, admin historique = `soc`/`scope` **sans**
+accès implicite à un futur tenant, 403 stable (jamais une liste vide) sans
+périmètre actif, enforcement applicatif d'abord — **aucune RLS** (PG-9,
+deuxième défense indépendante, non touchée ici).
+
+### Service central — `backend/scope.js`
+
+Point d'autorité unique, réutilisé par `backend/routes.js` (données
+historiques) et `backend/alerts.js` (Alert Core) : « ne disperse pas des
+conditions tenant dans toutes les routes ». `resolveScope(userId, client)`
+charge les memberships **actifs** de l'utilisateur dont le tenant (et, le cas
+échéant, le site/la zone) est lui-même actif — suspendu/archivé à n'importe
+quel niveau retire tout accès, y compris pour un ancien SOC. Expose :
+
+- `allows(tenantId, siteId?, zoneId?)` / `coverage(...)` — couverture
+  hiérarchique tenant > site > zone (un membership de niveau tenant couvre
+  tous ses sites et zones ; site couvre ses zones ; zone ne couvre qu'elle-même).
+- `tenantAccess(tenantId)` — meilleur `alert_access` (`own`/`scope`) toutes
+  appartenances confondues sous ce tenant (Alert Core ne porte aucune colonne
+  site/zone propre : la résolution y reste au niveau du tenant entier).
+- `hasRole(tenantId, role)` — utilisé pour la capacité SOC (`role='soc'`),
+  indépendante de `alert_access` : `own`/`scope` pilote la **visibilité**,
+  `role='soc'` pilote les **actions** réservées. Aucune des deux ne se déduit
+  jamais de `username`/`id`/du rôle JWT historique.
+- `resolveTenant(tenantId?)` — sans argument, résout l'unique tenant couvert
+  (réalité mono-tenant actuelle) ; avec argument, ne renvoie ce tenant que
+  s'il est réellement couvert par un membership actif — jamais autrement.
+
+`requireScope()` (middleware Express) : 403 `{"error":"Accès au périmètre
+refusé"}` sans accès ; `?tenant_id=`/`?site_id=`/`?zone_id=` ne sont lus que
+comme des **filtres demandés**, intersectés avec le périmètre réellement
+couvert — jamais une autorisation en soi. Limite connue documentée dans
+`scope.js` : la cohérence d'un triplet `(tenantId, siteId, zoneId)` fourni par
+l'appelant n'est pas revérifiée contre `sites`/`zones` — sans conséquence
+aujourd'hui puisqu'aucune table historique ne porte de colonne tenant/site/
+zone à filtrer (voir plus bas), à durcir avant qu'un endpoint ne s'appuie sur
+ces identifiants pour filtrer des lignes.
+
+### Portée réelle sur les routes historiques
+
+`backend/routes.js` applique `requireScope()` à tout sauf `/admin/*` : la
+gestion de comptes reste une capacité **système** gérée par le rôle JWT
+(`role==='admin'`), pas par le périmètre memberships — « un véritable
+administrateur global devra être représenté explicitement par une politique
+dédiée ultérieure », pas par cette porte. Aucune ligne n'est filtrée par
+tenant/site/zone : les tables historiques (`incidents`, `pietons`, `visiteurs`,
+`vehicules`, `main_courante`, …) ne portent toujours **aucune** colonne
+tenant/site/zone (PG-6/PG-7 n'ont ajouté que le référentiel, pas ces colonnes)
+et il n'existe qu'un tenant/site aujourd'hui : la seule protection
+significative possible est donc la porte « au moins un membership actif » —
+403 sinon, jamais une liste vide. Une suppression de compte via
+`DELETE /admin/users/:id` renvoie désormais 409 (au lieu d'un 500 technique)
+si des memberships y font référence : `memberships` est en RESTRICT et
+append-only (PG-7), un compte ayant eu une appartenance ne peut plus être
+supprimé — l'archiver est le chemin prévu.
+
+Aucun provisioning automatique de membership n'a été ajouté à
+`POST`/`PUT /admin/users` : `provision-membership.js` (PG-7) reste un outil
+explicite, distinct de la création de compte — élargir silencieusement les
+droits à chaque création de compte contredirait « ne jamais élargir
+silencieusement les droits ». Un compte nouvellement créé reste donc hors
+périmètre (403 sur les routes métier) jusqu'à provisioning explicite.
+
+### Alert Core
+
+`backend/alerts.js` résout le périmètre une fois par requête (après la
+revalidation de session existante), pose `req.user.alertAccess`
+(`tenantAccess`) et `req.user.isSoc` (`hasRole(tenantId,'soc')`), puis
+`backend/alert-core/service.js` les consomme à la place de l'ancien
+`user.role==='admin'` :
+
+- `get`/`act` (visibilité) : `alertAccess==='scope'` **ou** alerte propre
+  (`created_by===user.id`) — sinon 404 (comportement inchangé : ne jamais
+  distinguer « inexistant » de « non autorisé »).
+- `list` : `scope` ⇒ toutes les alertes du tenant ; `own` ⇒ les siennes.
+- Actions réservées (transitions, escalade manuelle, `/rules`) :
+  `isSoc` — indépendant d'`alertAccess`, donc un membership `role='agent'`
+  avec `alert_access='scope'` voit tout mais ne peut rien clôturer, et un
+  `role='soc'` avec `alert_access='own'` peut agir sur ses propres alertes
+  sans voir celles des autres.
+
+`service.js` ne fait toujours aucun appel SQL ni requête de périmètre
+lui-même (contrat déjà testé : `PG32A service adds no SQL...`) — `alertAccess`/
+`isSoc` sont résolus une fois, côté routeur, jamais recalculés en base par le
+service métier.
+
 ## Readiness et droits
 
 `backend/db/postgresql/readiness.js` exige désormais `tenants`, `sites`, `zones`,
