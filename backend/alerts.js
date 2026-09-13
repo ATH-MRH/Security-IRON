@@ -5,6 +5,7 @@ const securityAudit = require('./security-audit');
 const { sendError } = require('./http-errors');
 const aiSummaries = require('./ai/summaries');
 const aiAssistant = require('./ai/assistant');
+const aiCorrelation = require('./ai/correlation');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
@@ -72,6 +73,14 @@ router.post('/sos', wrap(async (req, res) => res.status(201).json(await service.
 router.get('/shift-summary', wrap(async (req, res) => {
   const hours = req.query.since_hours ? Number(req.query.since_hours) : undefined;
   res.json(await aiSummaries.summarizeShift(req.user, undefined, hours === undefined ? {} : { sinceHours: hours }));
+}));
+// PG-22 : corrélation explicable — avant /:id (même raison que
+// /shift-summary), réservée au SOC (backend/ai/correlation.js le
+// vérifie déjà). Chaque signal porte sa propre preuve (evidence) —
+// jamais une conclusion sans les alertes exactes qui la justifient.
+router.get('/correlations', wrap(async (req, res) => {
+  const minutes = req.query.window_minutes ? Number(req.query.window_minutes) : undefined;
+  res.json(await aiCorrelation.correlate(req.user, undefined, minutes === undefined ? {} : { windowMinutes: minutes }));
 }));
 // PG-21 : assistant SOC contextualisé — lecture seule (service.list(),
 // own/scope déjà appliqués). Les suggestions renvoyées ne sont jamais

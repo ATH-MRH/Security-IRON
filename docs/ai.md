@@ -1,4 +1,4 @@
-# SécuriSite — IA : architecture, résumés, assistant (PG-19, PG-20, PG-21)
+# SécuriSite — IA : architecture, résumés, assistant, corrélation (PG-19 à PG-22)
 
 ## Portée
 
@@ -13,8 +13,14 @@ d'entrée minimal dans le Centre d'alertes.
 
 PG-21 (§25) ajoute l'assistant SOC contextualisé (question en langage
 naturel + suggestions d'actions jamais exécutées automatiquement) —
-`backend/ai/assistant.js`. PG-22+ (détection/corrélation, RAG, audit IA)
-restent des lots distincts, non entrepris ici.
+`backend/ai/assistant.js`.
+
+PG-22 (§26) ajoute la détection/corrélation explicable —
+`backend/ai/correlation.js`, `GET /api/alerts/correlations` (SOC
+uniquement). API seule pour ce lot, pas de point d'entrée frontend dédié
+(même scope resserré que PG-19) : la priorité de ce lot était la justesse
+et l'explicabilité des signaux, pas l'UI — laissée à une passe ultérieure.
+PG-23+ (RAG, audit IA) restent des lots distincts, non entrepris ici.
 
 ## Aucun fournisseur réel
 
@@ -217,3 +223,51 @@ confirmée passe réellement par `POST /alerts/:id/actions`.
 réponse + suggestions rendues et labellisées, échec affiché, confirmation
 d'une suggestion appelant la vraie route d'action, échec de confirmation
 réactivant le bouton avec le message d'erreur.
+
+## PG-22 — corrélation explicable : la preuve avant le texte
+
+`backend/ai/correlation.js` calcule des **signaux** de corrélation
+strictement à partir des alertes déjà lues et déjà autorisées
+(`service.list()`, own/scope + tenant, PG-8/PG-16) — jamais une lecture
+directe d'`incidents`/`pietons`/`badges` (qui ne portent toujours aucune
+colonne tenant/site/zone, PG-8/PG-16 inchangé). Les alertes
+`origin='INCIDENT'`/`origin='REGLE_BADGE'` sont déjà la trace, correctement
+scopée par tenant, de ces mêmes événements — corréler sur les alertes
+couvre donc « refus badges répétés » et « incidents proches » sans jamais
+rouvrir la question du périmètre sur une table qui n'a pas de tenant_id.
+
+**« Toute corrélation doit exposer les éléments ayant conduit à la
+suggestion »** (§26) : chaque signal porte une `evidence` — les alertes
+exactes (id, site, zone, type, niveau, statut, horodatage) — calculée par
+du code métier déterministe (`computeSignals()`, pure, testée
+indépendamment de toute base). `ai.complete()` (PG-19) n'intervient
+qu'ensuite, pour produire un paragraphe de synthèse en langage naturel à
+partir des signaux déjà calculés — jamais l'inverse : les signaux ne sont
+jamais devinés depuis du texte généré, seulement résumés par lui.
+
+Cinq types de signaux, tous bornés à `windowMinutes` (60 par défaut) :
+`repeated_alerts_same_site_type`, `multi_site_pattern` (même type, sites
+différents, fenêtre resserrée à 15 min), `escalation_cluster`,
+`repeated_badge_refusals`, `nearby_incidents`.
+
+**« Ne jamais qualifier automatiquement une personne de menace »** :
+aucun signal ne porte `created_by`/`username` — uniquement site, zone,
+type, équipement (un badge, jamais son détenteur nommé). Prouvé par test,
+backend et HTTP : la sérialisation complète des signaux ne contient jamais
+ces champs, même quand les alertes sources les portent.
+
+Réservé au SOC (`user.isSoc`, 403 sinon) — une analyse de motifs
+cross-alertes est un usage SOC, même principe que `shift-summary` (PG-20).
+`GET /api/alerts/correlations?window_minutes=` monté **avant**
+`GET /api/alerts/:id`, même raison que `/shift-summary`.
+
+## Tests (PG-22)
+
+`tests/ai-correlation.test.js` (pur, sans base) : chaque type de signal
+déclenché/non déclenché selon la fenêtre temporelle, score borné [0,1],
+`evidence` non vide et exacte, aucune référence à une personne, volume
+raisonnable (500 lignes) sans lenteur pathologique.
+`tests/postgres-ai-correlation.test.js` (HTTP, PostgreSQL réel) : garde
+SOC, routage avant `/:id`, isolation tenant de l'évidence ET du contexte
+envoyé au provider, motif réellement détecté avec preuve exacte,
+`window_minutes` invalide refusé (400, jamais silencieusement borné).
