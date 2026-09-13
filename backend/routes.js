@@ -4,6 +4,7 @@ const db      = require('./database');
 const alerts  = require('./alerts');
 const scope   = require('./scope');
 const securityAudit = require('./security-audit');
+const push    = require('./push');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -650,6 +651,23 @@ router.get('/stats/dashboard', async (req, res, next) => {
       incidents_ouverts:  int(incOuverts.c),
       incidents_critiques:int(incCritiques.c),
     });
+  } catch (e) { next(e); }
+});
+
+/* ============================================================ */
+/*  PUSH (PG-13)                                                */
+/* ============================================================ */
+// Requiert un périmètre actif (withScope, en tête de fichier) : sans
+// membership, aucun événement ne serait jamais poussé de toute façon.
+router.post('/push/subscribe', async (req, res, next) => {
+  try {
+    res.json(await push.subscribe(req.user.id, req.body));
+  } catch (e) { next(e); }
+});
+
+router.delete('/push/subscribe', async (req, res, next) => {
+  try {
+    res.json(await push.unsubscribe(req.user.id, req.body?.endpoint));
   } catch (e) { next(e); }
 });
 

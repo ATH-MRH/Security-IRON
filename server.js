@@ -27,6 +27,7 @@ const sync       = require('./backend/sync');
 const camera     = require('./backend/camera');
 const alerts     = require('./backend/alerts');
 const realtimeRoutes = require('./backend/realtime-routes');
+const push       = require('./backend/push');
 const { requestContext } = require('./backend/request-context');
 
 // Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
@@ -72,6 +73,7 @@ function start(opts = {}) {
   return db.init()
     .then(() => readiness.assertReady(db)) // registre, versions 001/002, 18 tables, config,
                                            // fonction/triggers append-only, privilèges runtime
+    .then(() => push.init()) // PG-13 : abonne le fournisseur push (fake par défaut) au bus temps réel (PG-12)
     .then(() => new Promise((resolve, reject) => {
       const server = host
         ? app.listen(port, host, done)
@@ -100,6 +102,7 @@ function start(opts = {}) {
         const stop = () => (closing ||= (async () => {
           stopping = true;
           clearInterval(escalationTimer);
+          push.stop();
           let fired;
           const deadline = new Promise(res => { fired = setTimeout(res, graceMs); fired.unref(); });
           await Promise.race([inflight.catch(() => {}), deadline]);   // laisse finir le cycle courant

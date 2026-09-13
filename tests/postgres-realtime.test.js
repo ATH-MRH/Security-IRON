@@ -231,9 +231,15 @@ test('disconnecting a stream detaches its subscription: listenerCount returns to
   // moment for the server's own `req.close` to fire — TCP teardown isn't
   // instantaneous. Wait for the count to actually settle before capturing a
   // baseline, or a still-closing earlier connection can transiently inflate
-  // it and mask this test's own attach/detach transitions.
-  assert.ok(await waitFor(() => realtime.listenerCount() === 0), 'earlier connections settle to zero before this test starts');
-  const baseline = 0;
+  // it and mask this test's own attach/detach transitions. The settled floor
+  // is not necessarily 0: backend/push.js (PG-13) holds one permanent
+  // subscription of its own for the life of the server.
+  let baseline;
+  assert.ok(await waitFor(() => {
+    const n = realtime.listenerCount();
+    if (n === baseline) return true;
+    baseline = n; return false;
+  }, 3000), 'earlier connections settle to a stable count before this test starts');
   for (let i = 0; i < 5; i++) {
     const { res, destroy } = await rawStream(socToken);
     assert.equal(res.statusCode, 200);

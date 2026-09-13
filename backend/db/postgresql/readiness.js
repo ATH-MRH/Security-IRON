@@ -19,6 +19,10 @@ const MEMBERSHIP = ['memberships', 'membership_audit'];
 // PG-10 : journal de sécurité global transversal — distinct des journaux
 // spécialisés ci-dessus, qui restent l'autorité de leur domaine.
 const SECURITY_AUDIT = ['security_audit'];
+// PG-13 : état de périphérique (abonnement Web Push), pas un journal —
+// aucun trigger append-only, aucune RLS (isolation par user_id en requête,
+// même modèle que alert_notifications).
+const PUSH = ['push_subscriptions'];
 const AUDIT_FUNCTIONS = ['reject_alert_audit_mutation', 'reject_membership_mutation'];
 const AUDIT_FUNCTION = 'securisite_meta.' + AUDIT_FUNCTIONS[0]; // rétro-compat
 const AUDIT_TRIGGERS = {
@@ -66,6 +70,9 @@ const PRIVILEGES = {
   // GET /api/admin/security-audit — RLS (migration 006) restreint la lecture
   // effective aux memberships actifs de rôle 'soc' sous leur propre tenant.
   security_audit: 'SELECT,INSERT',
+  // PG-13 : ON CONFLICT DO UPDATE (subscribe) exige à la fois INSERT et
+  // UPDATE ; DELETE pour unsubscribe ; SELECT pour deliverFor().
+  push_subscriptions: 'SELECT,INSERT,UPDATE,DELETE',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -107,7 +114,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT, ...PUSH];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -186,6 +193,6 @@ async function assertReady(client, { directory } = {}) {
 }
 
 module.exports = {
-  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, SECURITY_AUDIT, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
+  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, SECURITY_AUDIT, PUSH, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
   RLS_FUNCTION, RLS_FUNCTIONS, RLS_POLICIES, PRIVILEGES,
 };
