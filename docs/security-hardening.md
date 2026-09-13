@@ -143,6 +143,57 @@ mot de passe aléatoire jamais égal à l'ancien littéral, connexion réelle
 avec le mot de passe renvoyé, non-révélation au second appel, 403 pour un
 non-admin.
 
+### 9. SSRF non authentifiée — proxy caméras (`GET /api/camera/proxy`, `/stream`)
+
+Trouvé lors de la revue adversariale finale RC (PG-30) — `backend/camera.js`
+n'avait jusque-là été examiné (`docs/release-candidate.md`) que sous
+l'angle injection de commande (`spawn` en forme tableau, sans `shell:true`
+— jugé sûr, et toujours vrai), jamais sous celui de
+l'authentification/l'autorisation/la destination réseau.
+
+`GET /api/camera/proxy?src=<url>` était monté **avant** le middleware JWT
+(une balise `<img>` ne peut pas envoyer d'en-tête `Authorization`) et
+acceptait une URL **arbitraire** fournie par le client, sans aucune
+authentification ni vérification de périmètre, transmettait des
+identifiants Basic fournis par le client, et désactivait la vérification
+TLS (`rejectUnauthorized:false`) — une SSRF non authentifiée exploitable
+pour atteindre n'importe quelle adresse réseau joignable par le serveur
+(réseau interne, métadonnées cloud `169.254.169.254`, etc.), avec la
+réponse distante reflétée au client. `GET /api/camera/stream` (RTSP via
+ffmpeg) partageait le même défaut. Côté produit, la fonctionnalité
+« Ajouter une caméra IP » (`frontend/js/app.js`) laissait n'importe quel
+utilisateur authentifié saisir cette URL/ces identifiants — la cause racine
+n'était pas seulement un défaut d'implémentation du proxy, mais une
+fonctionnalité en libre-service structurellement incompatible avec une
+destination réseau sûre.
+
+Corrigé (réécriture complète, voir `docs/camera-proxy.md` pour le détail) :
+le client ne transmet plus jamais qu'un `camera_id` opaque, jamais une URL
+ni des identifiants. Authentification par ticket à usage unique lié à une
+caméra précise (`POST /api/camera/ticket`, même mécanisme que
+`backend/realtime.js` PG-12) ou Bearer direct. Autorisation par périmètre
+réel (`backend/scope.js`, comme toute autre ressource). Destination réseau
+exclusivement issue d'une configuration SERVEUR
+(`backend/camera-registry.js`, fail-closed si absente) — jamais le client.
+Défense réseau en profondeur (`backend/ssrf-guard.js`) : loopback/
+link-local (métadonnées cloud incluses)/multicast/broadcast toujours
+refusés même pour une destination déjà allowlistée (anti-reliaison DNS,
+résolution pinnée via l'option `lookup` de `http.request`), RFC1918
+toujours autorisé (une caméra vit légitimement sur un LAN privé). TLS
+vérifié par défaut, taille de réponse plafonnée, Content-Type limité à
+image/vidéo/MJPEG, aucun en-tête distant relayé au-delà de Content-Type,
+limite de débit, erreurs génériques sans fuite. La fonctionnalité
+« Ajouter une caméra IP » (localStorage, URL arbitraire) est **supprimée**,
+pas seulement masquée.
+
+Testé par `tests/ssrf-guard.test.js` (matrice de blocage), `tests/camera-registry.test.js`
+(validation stricte, fail-closed), `tests/postgres-camera-ssrf.test.js`
+(25 tests, serveur + base réels : les 20 scénarios SSRF requis par la revue
+RC + liaison ticket↔caméra + usage unique + Bearer direct + `/list` sans
+fuite + limite de débit), `tests/frontend-camera-ssrf-hardening.test.js`
+(garde de régression : la fonctionnalité supprimée ne doit jamais
+réapparaître).
+
 ## Vérifié, jugé déjà correct (aucun changement)
 
 - **Injection SQL** : toutes les requêtes de ce code base utilisent des

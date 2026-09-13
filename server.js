@@ -69,7 +69,7 @@ app.use(observability());  // PG-18 : une ligne de log JSON structurée par requ
 app.use('/api', health);   // PG-18 : /api/health (liveness), /api/ready (readiness) — non authentifiées.
 app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement
-app.use('/api/camera', camera);                   // proxy caméras IP (avant JWT : les <img> n'envoient pas de token)
+app.use('/api/camera', camera);                   // PG-30 : s'authentifie lui-même (ticket ou Bearer — <img>/<video> n'envoient pas de token, même mécanisme que /api/realtime ci-dessous). Plus jamais d'URL/identifiant client (docs/camera-proxy.md).
 app.use('/api/alerts', auth.authMiddleware, alerts.router);
 app.use('/api/map', auth.authMiddleware, map);           // PG-17 : lecture sites/zones géolocalisés (own/scope, RLS)
 // PG-12 : /stream s'authentifie lui-même (Bearer ou ticket — EventSource ne

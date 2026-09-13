@@ -12,7 +12,7 @@ dans cette session — pas d'affirmation sans preuve.
 | `npm test` = 0 échec, 0 skip | 926/926 tests verts, `skipped:0`, exécuté à répétition (dernière exécution : voir ci-dessous), aucun `.only`/`.skip`/`.todo` dans `tests/*.js` |
 | Suites PostgreSQL vertes | Toutes incluses dans `tests/*.test.js` (glob `npm test`) — RLS réelle exercée par `tests/postgres-rls.test.js`, `tests/postgres-scope-rls.test.js` (PG-28), `tests/postgres-acceptance.test.js` (PG-29) |
 | e2e vert | `tests/postgres-e2e.test.js` inclus et vert |
-| Sécurité : aucun blocage critique connu | `docs/security-hardening.md` (8 correctifs, dont la porte dérobée `system_admin` trouvée en PG-28/adressée en hardening) + revue adversariale finale PG-30 (voir plus bas) |
+| Sécurité : aucun blocage critique connu | `docs/security-hardening.md` (9 correctifs, dont la porte dérobée `system_admin` trouvée en PG-28/adressée en hardening, et la SSRF caméra trouvée en revue RC humaine indépendante) + revue adversariale finale PG-30 (voir plus bas) |
 | Readiness verte | `backend/db/postgresql/readiness.js#assertReady` testé dans `tests/postgres-*-readiness.test.js` et `tests/postgres-alert-core-readiness.test.js`, tous verts |
 | Backup/restore vert | `tests/postgres-backup-restore.test.js` : 2/2, cycle complet sauvegarde → destruction → restauration → vérification |
 | `git diff --check` propre | `git diff --check origin/feature/securisite-postgresql...HEAD` → exit 0 |
@@ -42,10 +42,10 @@ En plus des revues déjà documentées lot par lot (`docs/security-hardening.md`
 `docs/postgresql-deployment.md`) :
 
 - **Injection de commande** (`child_process.spawn`, `backend/camera.js`,
-  proxy caméra IP — hors périmètre de la migration PostgreSQL, non touché
-  par ce roadmap) : `spawn(binaire, args[])` sans `shell: true`, protocole
-  RTSP/HTTP(S) explicitement filtré via `new URL()` — aucune injection de
-  shell possible par construction. Vérifié, pas modifié.
+  proxy caméra IP) : `spawn(binaire, args[])` sans `shell: true` — aucune
+  injection de shell possible par construction. Ce constat reste vrai, mais
+  était **incomplet** : voir le correctif SSRF ci-dessous, trouvé par une
+  revue humaine indépendante après ce premier passage.
 - **SQL dynamique** (`backend/db/postgresql/import-sqlite.js`) : les seuls
   identifiants interpolés dans un template SQL (`spec.name`, noms de
   colonnes) proviennent d'une liste fixe interne au module, jamais d'une
@@ -56,7 +56,32 @@ En plus des revues déjà documentées lot par lot (`docs/security-hardening.md`
   applicative) : ~700 rôles orphelins accumulés pendant la session,
   cause identifiée et corrigée (PG-29, voir `docs/acceptance.md`), nettoyés.
 
-Aucune nouvelle vulnérabilité critique trouvée lors de cette passe finale.
+### Correctif post-revue : SSRF non authentifiée (`backend/camera.js`)
+
+Une revue RC humaine indépendante a trouvé ce que le passage automatisé
+ci-dessus n'avait pas cherché : `GET /api/camera/proxy` était monté
+**avant** le middleware JWT, acceptait une URL arbitraire fournie par le
+client (`?src=`), sans authentification ni périmètre, transmettait des
+identifiants client à la cible, et désactivait la vérification TLS — une
+SSRF non authentifiée exploitable pour atteindre n'importe quelle adresse
+réseau joignable par le serveur. `GET /api/camera/stream` (RTSP)
+partageait le même défaut. Gravité **MAJEURE**, seul motif du premier
+verdict RC KO.
+
+Corrigé par une réécriture complète : le client ne transmet plus jamais
+qu'un `camera_id` opaque, jamais une URL/des identifiants. Voir
+`docs/camera-proxy.md` pour le modèle complet (ticket à usage unique lié à
+une caméra précise, configuration serveur exclusive via
+`backend/camera-registry.js`, défense réseau en profondeur via
+`backend/ssrf-guard.js` — loopback/link-local/métadonnées cloud/multicast
+toujours refusés, RFC1918 toujours autorisé, résolution DNS pinnée) et
+`docs/security-hardening.md` §9. La fonctionnalité client « Ajouter une
+caméra IP » (racine du problème au niveau produit) est supprimée, pas
+seulement masquée. 45 tests dédiés (`tests/ssrf-guard.test.js`,
+`tests/camera-registry.test.js`, `tests/postgres-camera-ssrf.test.js` —
+les 20 scénarios SSRF requis par la revue —, `tests/frontend-camera-ssrf-hardening.test.js`).
+
+Aucune autre vulnérabilité critique ou majeure trouvée lors de cette passe.
 
 ## Ce qui N'EST PAS couvert ici — limites connues, pas des trous silencieux
 

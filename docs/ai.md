@@ -205,6 +205,16 @@ d'état exigent déjà `user.isSoc` côté `service.act()`, 403 sinon) : un
 agent "own" reçoit une réponse mais `suggestions: []`, jamais une
 suggestion qu'il ne pourrait de toute façon pas confirmer.
 
+**Point explicite (revue RC, PG-30)** : `ACQUITTEE` figure dans
+`ALLOWED_SUGGESTIONS` — l'IA peut donc *suggérer* un acquittement. Elle ne
+peut en revanche jamais l'**exécuter** : aucune ligne de ce module n'appelle
+`service.act()` ni n'importe quel autre chemin de mutation ; seule une
+confirmation humaine, via le bouton dédié du frontend, déclenche la même
+route déterministe qu'une action manuelle. « L'IA n'est jamais l'autorité »
+se lit donc comme « l'IA ne déclenche jamais elle-même une transition »,
+pas comme « le mot ne doit jamais apparaître dans une suggestion » — lecture
+délibérée, comportement inchangé par cette clarification.
+
 Contexte transmis au provider : mêmes agrégats que le résumé de shift
 (actives/critiques/SOS/escalades/par site), plus un sous-ensemble resserré
 par mot-clé simple sur la question (« critique »/« escalad »/« incident »)

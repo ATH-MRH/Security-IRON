@@ -609,19 +609,38 @@ function dessinerFluxTransforme(srcEl, canvas){
   ctx.restore();
 }
 
-/* ---- Caméras IP réseau (sur site) : stockées localement ---- */
-function getIpCams(){ try{ return JSON.parse(localStorage.getItem('securisite_ipcams')||'[]'); }catch{ return []; } }
-function setIpCams(a){ localStorage.setItem('securisite_ipcams', JSON.stringify(a)); }
-function ipSourceUrl(cam, bust){
-  const p = new URLSearchParams({ src: cam.url });
-  if(cam.user) p.set('user', cam.user);
-  if(cam.pass) p.set('pass', cam.pass);
-  const endpoint = cam.type === 'rtsp' ? '/api/camera/stream' : '/api/camera/proxy';
-  if(bust && cam.type !== 'rtsp') p.set('_ts', Date.now());
+/* ---- Caméras IP réseau (sur site) ----
+ * PG-30 (correctif de sécurité) : jusqu'ici, chaque caméra (adresse,
+ * identifiants) était enregistrée en clair dans le localStorage du
+ * navigateur et transmise telle quelle au proxy serveur (?src=<url
+ * arbitraire>) — le serveur allait alors chercher N'IMPORTE QUELLE adresse
+ * réseau fournie par le client, sans authentification (une SSRF non
+ * authentifiée, voir docs/camera-proxy.md et docs/security-hardening.md).
+ * La liste des caméras est désormais une configuration SERVEUR
+ * (backend/camera-registry.js, gérée par un opérateur, jamais par une
+ * saisie utilisateur) : le navigateur ne connaît plus jamais d'URL ni
+ * d'identifiant de caméra, seulement un camera_id opaque et son nom.
+ */
+let ipCamsCache = []; // [{id, name, type}] — jamais url/user/pass, voir plus haut
+async function loadIpCams(){
+  try { ipCamsCache = await API.get('/camera/list'); }
+  catch { ipCamsCache = []; }
+  return ipCamsCache;
+}
+// Ticket à usage unique (PG-12/PG-30) : une <img>/<video> ne peut pas
+// envoyer d'en-tête Authorization, d'où ce jeton de courte durée de vie,
+// obtenu via un appel authentifié normal et consommé une seule fois par
+// le proxy — jamais réutilisable, jamais valable pour une autre caméra.
+async function ipSourceUrl(camId, bust){
+  const { ticket } = await API.post('/camera/ticket', { camera_id: camId });
+  const cam = ipCamsCache.find(c => c.id === camId);
+  const p = new URLSearchParams({ camera_id: camId, ticket });
+  const endpoint = cam?.type === 'rtsp' ? '/api/camera/stream' : '/api/camera/proxy';
+  if(bust && cam?.type !== 'rtsp') p.set('_ts', Date.now());
   return endpoint + '?' + p.toString();
 }
 
-/* Liste les caméras : webcams/USB (auto) + caméras IP enregistrées + « ajouter ». */
+/* Liste les caméras : webcams/USB (auto) + caméras IP configurées côté serveur. */
 async function remplirListeCameras(){
   const sel = document.getElementById('lapiCameraSelect');
   if(!sel) return;
@@ -632,9 +651,9 @@ async function remplirListeCameras(){
     usb = devs.filter(x=>x.kind==='videoinput');
   }catch{}
   const usbOpts = usb.map((c,i)=>`<option value="${c.deviceId}">${c.label||'Caméra '+(i+1)}</option>`).join('');
-  const ipOpts  = getIpCams().map((c,i)=>`<option value="ip:${i}">📡 ${c.name||c.url} (IP)</option>`).join('');
-  sel.innerHTML = (usb.length===0 && !ipOpts ? '<option value="">Aucune caméra</option>' : usbOpts + ipOpts)
-                + (isAdmin() ? '<option value="__addip__">➕ Ajouter une caméra IP…</option>' : '');
+  await loadIpCams();
+  const ipOpts = ipCamsCache.map(c=>`<option value="ip:${escapeHtml(c.id)}">📡 ${escapeHtml(c.name)}</option>`).join('');
+  sel.innerHTML = (usb.length===0 && !ipOpts ? '<option value="">Aucune caméra</option>' : usbOpts + ipOpts);
   if(current && [...sel.options].some(o=>o.value===current)) sel.value = current;
 }
 
@@ -704,72 +723,29 @@ function arreterCamera(){
 /* Bouton « Activer » / changement dans la liste : aiguille vers webcam ou IP */
 function activerCameraSelection(){
   const v = document.getElementById('lapiCameraSelect')?.value || '';
-  if(v === '__addip__') return ajouterCameraIp();
-  if(v.startsWith('ip:')) return activerCameraIp(parseInt(v.slice(3),10));
+  if(v.startsWith('ip:')) return activerCameraIp(v.slice(3));
   return activerCamera();
 }
 function changerCamera(){
-  const v = document.getElementById('lapiCameraSelect')?.value || '';
-  if(v === '__addip__') return ajouterCameraIp();
   arreterCamera();
   setTimeout(activerCameraSelection, 150);
 }
 
-/* Enregistre une nouvelle caméra IP puis la connecte */
-function ajouterCameraIp(){
-  const sel = document.getElementById('lapiCameraSelect');
-  if(sel) sel.selectedIndex = 0;   // ne pas rester bloqué sur « Ajouter… »
-  showModal('➕ Ajouter une caméra IP', `
-    <div class="form-row full"><div class="form-group"><label>Nom de la caméra</label>
-      <input type="text" id="ipName" placeholder="Ex : Entrée principale"></div></div>
-    <div class="form-row full"><div class="form-group"><label>Adresse réseau (URL)</label>
-      <input type="text" id="ipUrl" placeholder="rtsp://192.168.1.50:554/...  ou  http://192.168.1.50/snapshot.jpg"></div></div>
-    <div class="form-row">
-      <div class="form-group"><label>Identifiant (optionnel)</label><input type="text" id="ipUser" placeholder="admin"></div>
-      <div class="form-group"><label>Mot de passe (optionnel)</label><input type="password" id="ipPass"></div>
-    </div>
-    <div class="form-row full"><div class="form-group"><label>Type de flux</label>
-      <select id="ipType">
-        <option value="auto">Automatique (détecté selon l'adresse)</option>
-        <option value="rtsp">RTSP (Hikvision, Dahua, caméras pro…)</option>
-        <option value="mjpeg">MJPEG (vidéo HTTP continue)</option>
-        <option value="snapshot">Snapshot (image HTTP rafraîchie)</option>
-      </select></div></div>
-    <p style="font-size:11px;color:var(--text-muted);margin-top:4px">💡 Pour une caméra de surveillance, colle l'adresse RTSP fournie par le fabricant/NVR.</p>
-  `, ()=>{
-    const url = (document.getElementById('ipUrl').value||'').trim();
-    if(!url){ notify('Adresse (URL) requise','warning'); return; }
-    const name = (document.getElementById('ipName').value||'').trim() || url;
-    const user = (document.getElementById('ipUser').value||'').trim();
-    const pass = document.getElementById('ipPass').value||'';
-    let type = document.getElementById('ipType').value;
-    if(type==='auto') type = /^rtsp:\/\//i.test(url) ? 'rtsp' : 'snapshot';
-    const cams = getIpCams(); cams.push({ name, url, user, pass, type }); setIpCams(cams);
-    closeModal();
-    remplirListeCameras();
-    if(sel) sel.value = 'ip:' + (cams.length - 1);
-    activerCameraIp(cams.length - 1);
-  }, 'Ajouter & connecter');
-}
-
-/* Supprime une caméra IP enregistrée (via la liste : sélectionner puis appeler) */
-function supprimerCameraIp(i){
-  const cams = getIpCams();
-  if(i<0 || i>=cams.length) return;
-  cams.splice(i,1); setIpCams(cams);
-  arreterCamera(); remplirListeCameras();
-  notify('Caméra IP supprimée');
-}
-
-/* Connecte une caméra IP via le proxy serveur */
-function activerCameraIp(i){
-  const cam = getIpCams()[i];
+/* Connecte une caméra IP via le proxy serveur (PG-30 : camera_id + ticket
+ * obtenus du serveur — plus jamais d'URL/identifiant côté client, voir
+ * ipSourceUrl ci-dessus et docs/camera-proxy.md). L'ajout/suppression de
+ * caméras IP n'est plus une action utilisateur : la liste vient
+ * exclusivement de la configuration serveur (backend/camera-registry.js),
+ * gérée par un opérateur — cette fonctionnalité en libre-service était la
+ * cause racine de la faille SSRF corrigée en PG-30. */
+async function activerCameraIp(camId){
+  const cam = ipCamsCache.find(c => c.id === camId);
   if(!cam) return;
   arreterCamera();
   const img = document.getElementById('lapiIpImg');
   lapiIpMode = true; lapiActiveEl = img;
   document.getElementById('lapiVideo').style.display='none';
-  img.onerror = () => setLapiBanner("❌ Caméra IP injoignable. Vérifiez l'adresse, les identifiants et le réseau.",'danger');
+  img.onerror = () => setLapiBanner("❌ Caméra IP injoignable. Vérifiez le réseau ou contactez l'administrateur.",'danger');
   const afficher = () => {
     img.style.display='block';
     document.getElementById('lapiPlaceholder').style.display='none';
@@ -781,19 +757,23 @@ function activerCameraIp(i){
     document.getElementById('btnCapture').disabled=false;
   };
   appliquerTransformVideo();
-  if(cam.type === 'rtsp'){
-    img.src = ipSourceUrl(cam, false);   // MJPEG converti par ffmpeg
-    afficher();
-    setLapiBanner(`✅ Caméra IP « ${cam.name} » (RTSP) — conversion en cours…`,'success');
-  } else if(cam.type === 'mjpeg'){
-    img.src = ipSourceUrl(cam, false);   // flux MJPEG continu
-    afficher();
-    setLapiBanner(`✅ Caméra IP « ${cam.name} » (MJPEG) connectée.`,'success');
-  } else {
-    const tick = () => { img.src = ipSourceUrl(cam, true); };
-    tick(); afficher();
-    lapiIpTimer = setInterval(tick, 900);   // rafraîchit le snapshot ~1s
-    setLapiBanner(`✅ Caméra IP « ${cam.name} » (snapshot) connectée.`,'success');
+  try {
+    if(cam.type === 'rtsp'){
+      img.src = await ipSourceUrl(camId, false);   // MJPEG converti par ffmpeg
+      afficher();
+      setLapiBanner(`✅ Caméra IP « ${cam.name} » (RTSP) — conversion en cours…`,'success');
+    } else if(cam.streamMode === 'mjpeg'){
+      img.src = await ipSourceUrl(camId, false);   // flux MJPEG continu
+      afficher();
+      setLapiBanner(`✅ Caméra IP « ${cam.name} » (MJPEG) connectée.`,'success');
+    } else {
+      const tick = async () => { img.src = await ipSourceUrl(camId, true); };
+      await tick(); afficher();
+      lapiIpTimer = setInterval(tick, 900);   // rafraîchit le snapshot ~1s (nouveau ticket à chaque fois : usage unique)
+      setLapiBanner(`✅ Caméra IP « ${cam.name} » (snapshot) connectée.`,'success');
+    }
+  } catch(e) {
+    setLapiBanner('❌ '+(e.message||"Caméra injoignable"),'danger');
   }
 }
 
