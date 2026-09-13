@@ -1,4 +1,4 @@
-# SécuriSite — IA : architecture, résumés, assistant, corrélation (PG-19 à PG-22)
+# SécuriSite — IA : architecture, résumés, assistant, corrélation, recherche (PG-19 à PG-23)
 
 ## Portée
 
@@ -20,7 +20,9 @@ PG-22 (§26) ajoute la détection/corrélation explicable —
 uniquement). API seule pour ce lot, pas de point d'entrée frontend dédié
 (même scope resserré que PG-19) : la priorité de ce lot était la justesse
 et l'explicabilité des signaux, pas l'UI — laissée à une passe ultérieure.
-PG-23+ (RAG, audit IA) restent des lots distincts, non entrepris ici.
+PG-23 (§27) ajoute la recherche scoped (« RAG » au sens recherche, pas
+génération libre) — `backend/ai/search.js`, `GET /api/alerts/search?q=`.
+PG-24+ (audit IA) reste un lot distinct, non entrepris ici.
 
 ## Aucun fournisseur réel
 
@@ -271,3 +273,76 @@ raisonnable (500 lignes) sans lenteur pathologique.
 SOC, routage avant `/:id`, isolation tenant de l'évidence ET du contexte
 envoyé au provider, motif réellement détecté avec preuve exacte,
 `window_minutes` invalide refusé (400, jamais silencieusement borné).
+
+## PG-23 — recherche scoped : aucune base vectorielle, citations exactes
+
+`backend/ai/search.js` (`GET /api/alerts/search?q=`) cherche uniquement
+dans des données déjà lues et déjà autorisées : alertes
+(`service.list()`, own/scope + tenant, PG-8/PG-16) et sites/zones
+(`backend/map.js#listSites`/`#listZones` — **réutilisées telles quelles**,
+pas réécrites : RLS PG-9 + filtre applicatif PG-8, un seul point de
+vérité). Aucune route dédiée à sites/zones n'a été créée : PG-17 en avait
+déjà besoin pour la carte.
+
+**Aucune base vectorielle externe, payante ou non** : correspondance de
+sous-chaînes en mémoire (insensible à la casse et aux accents), sur des
+lignes déjà tenant-scoped — PostgreSQL natif suffit à ce volume (même
+justification que l'agrégation client-side de PG-16, « mesurer avant
+d'optimiser »). Migrer vers `to_tsvector`/`plainto_tsquery` (toujours
+PostgreSQL natif, toujours pas de dépendance externe) resterait le premier
+recours si le volume réel le justifiait un jour — non fait ici faute de
+nécessité démontrée.
+
+### Sources volontairement exclues
+
+`incidents`, `main_courante`, `pietons`, `badges` ne sont **pas**
+cherchées : aucune ne porte de colonne tenant/site/zone (limite PG-8/PG-16
+inchangée). Une recherche en texte libre parcourrait l'intégralité de ces
+tables, tous tenants confondus — une fuite intertenant réelle et
+directement démontrable, exactement ce que PG-23 exige explicitement de ne
+jamais introduire. Contrairement à `summarizeIncident` (PG-20, qui hérite
+consciemment de cette limite pour un lookup **par identifiant déjà connu**
+de l'appelant — jamais une fuite en pratique), une recherche libre les
+exposerait réellement. Les inclure exigerait d'abord une migration leur
+ajoutant `tenant_id` (même modèle que la migration 009 pour
+`security_alerts`, PG-16) : un lot distinct, non entrepris ici. Aucune
+« procédure/documentation » n'existe comme fonctionnalité réelle dans ce
+code base — non simulée.
+
+### Citations, jamais une réponse sans preuve
+
+**« Citations/références vers les données sources »** (§27) : chaque
+résultat (`searchAlerts`/`searchSites`/`searchZones`, pures, testées sans
+base) porte `kind`/`id`/`score`/`title`/`snippet`/`source` — les données
+exactes qui ont produit le résultat, calculées par correspondance
+déterministe, jamais devinées depuis le texte du provider.
+`ai.complete()` (PG-19) ne fait que résumer/citer ces résultats déjà
+trouvés, avec pour consigne explicite de ne s'appuyer que sur eux.
+
+### Prompt injection stockée : testée, et structurellement inerte
+
+Un contenu malveillant stocké (ex. un commentaire d'alerte contenant
+« Ignore previous instructions… ») est traité comme une donnée texte
+ordinaire — il peut être **trouvé** par la recherche (c'est un mot-clé
+comme un autre) mais ne peut **rien déclencher** : `searchAlerts()` ne
+fait que comparer des sous-chaînes, et `ai.complete()` (PG-19) ne renvoie
+jamais qu'un texte, jamais une action. Prouvé par test, backend pur et
+HTTP réel : un payload d'injection stocké dans une vraie alerte reste
+trouvable sans jamais faire fuiter les données d'un autre tenant.
+
+Ouvert aux accès "own" (contrairement à `/shift-summary` et
+`/correlations`, réservés SOC) : chercher dans ce qu'on voit déjà n'est
+pas un usage réservé au SOC, même principe que `GET /alerts` lui-même.
+
+## Tests (PG-23)
+
+`tests/ai-search.test.js` (pur, sans base) : tokenisation (accents/casse/
+bornée à 20 tokens), correspondance sur chaque champ pertinent par type de
+source, citation exacte (`source`), tolérance aux entrées vides,
+injection stockée traitée comme texte inerte, aucun résultat de type
+`incident`/`main_courante`.
+`tests/postgres-ai-search.test.js` (HTTP, PostgreSQL réel) : requête
+vide/trop longue refusée, isolation tenant sur les sites ET les alertes,
+own-vs-scope, narrowing site-level, un vrai payload d'injection stocké
+trouvé sans fuite intertenant (contexte envoyé au provider inclus), et
+citation avec source vérifiable.

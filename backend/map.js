@@ -39,36 +39,46 @@ const router = express.Router();
 
 const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
-router.use(scope.requireScope());
-
-router.get('/sites', wrap(async (req, res) => {
-  const { sites, zones } = await scope.withActorContext(req.user.id, async client => ({
+// PG-23 : extraites en fonctions réutilisables (au lieu de rester inline
+// dans les handlers Express) pour que backend/ai/search.js (recherche
+// scoped) s'appuie sur EXACTEMENT cette même logique déjà testée, plutôt
+// que de réécrire une deuxième requête tenant/site/zone indépendante qui
+// pourrait diverger. Un seul point de vérité pour "quels sites/zones cet
+// utilisateur voit".
+async function listSites(userId, tenantId, userScope, client0) {
+  const { sites, zones } = await scope.withActorContext(userId, async client => ({
     sites: await client.all(
       `SELECT id, code, name, address, latitude, longitude FROM public.sites
-       WHERE tenant_id = $1 AND status = 'active' ORDER BY name`, [req.tenantId]),
+       WHERE tenant_id = $1 AND status = 'active' ORDER BY name`, [tenantId]),
     // Seulement pour dériver quels sites une appartenance de niveau ZONE
     // couvre indirectement (voir commentaire ci-dessous) — jamais renvoyé tel quel.
     zones: await client.all(
-      `SELECT id, site_id FROM public.zones WHERE tenant_id = $1 AND status = 'active'`, [req.tenantId]),
-  }));
-  // req.scope.allows(tenantId, siteId, null) ne couvre que les appartenances
+      `SELECT id, site_id FROM public.zones WHERE tenant_id = $1 AND status = 'active'`, [tenantId]),
+  }), client0);
+  // userScope.allows(tenantId, siteId, null) ne couvre que les appartenances
   // 'tenant' ou 'site' (voir backend/scope.js#coverageOf) : une appartenance
   // 'zone' ne le satisfait jamais (elle exige un zoneId précis). Sans ce
   // second filtre, un utilisateur limité à une seule zone ne verrait AUCUN
-  // site sur la carte — pas même le site qui contient sa propre zone. Une
-  // zone impliquant toujours un site (CHECK memberships_zone_needs_site_chk,
-  // migration 004), le site parent d'une zone couverte est nécessairement
-  // visible aussi.
+  // site — pas même le site qui contient sa propre zone. Une zone impliquant
+  // toujours un site (CHECK memberships_zone_needs_site_chk, migration 004),
+  // le site parent d'une zone couverte est nécessairement visible aussi.
   const sitesCoveredViaZone = new Set(
-    zones.filter(z => req.scope.allows(req.tenantId, z.site_id, z.id)).map(z => z.site_id));
-  res.json(sites.filter(s => req.scope.allows(req.tenantId, s.id, null) || sitesCoveredViaZone.has(s.id)));
-}));
+    zones.filter(z => userScope.allows(tenantId, z.site_id, z.id)).map(z => z.site_id));
+  return sites.filter(s => userScope.allows(tenantId, s.id, null) || sitesCoveredViaZone.has(s.id));
+}
 
-router.get('/zones', wrap(async (req, res) => {
-  const rows = await scope.withActorContext(req.user.id, client => client.all(
+async function listZones(userId, tenantId, userScope, client0) {
+  const rows = await scope.withActorContext(userId, client => client.all(
     `SELECT id, site_id, code, name, kind FROM public.zones
-     WHERE tenant_id = $1 AND status = 'active' ORDER BY name`, [req.tenantId]));
-  res.json(rows.filter(z => req.scope.allows(req.tenantId, z.site_id, z.id)));
-}));
+     WHERE tenant_id = $1 AND status = 'active' ORDER BY name`, [tenantId]), client0);
+  return rows.filter(z => userScope.allows(tenantId, z.site_id, z.id));
+}
+
+router.use(scope.requireScope());
+
+router.get('/sites', wrap(async (req, res) => res.json(await listSites(req.user.id, req.tenantId, req.scope))));
+router.get('/zones', wrap(async (req, res) => res.json(await listZones(req.user.id, req.tenantId, req.scope))));
 
 module.exports = router;
+module.exports.listSites = listSites;
+module.exports.listZones = listZones;

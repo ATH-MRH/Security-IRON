@@ -6,6 +6,7 @@ const { sendError } = require('./http-errors');
 const aiSummaries = require('./ai/summaries');
 const aiAssistant = require('./ai/assistant');
 const aiCorrelation = require('./ai/correlation');
+const aiSearch = require('./ai/search');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
@@ -82,6 +83,11 @@ router.get('/correlations', wrap(async (req, res) => {
   const minutes = req.query.window_minutes ? Number(req.query.window_minutes) : undefined;
   res.json(await aiCorrelation.correlate(req.user, undefined, minutes === undefined ? {} : { windowMinutes: minutes }));
 }));
+// PG-23 : recherche scoped — avant /:id (même raison). Ouverte aux accès
+// "own" (contrairement à /shift-summary et /correlations, réservés SOC) :
+// chercher dans ce qu'on voit déjà n'est pas un usage réservé au SOC, même
+// principe que GET /alerts lui-même.
+router.get('/search', wrap(async (req, res) => res.json(await aiSearch.search(req.query.q, req.user))));
 // PG-21 : assistant SOC contextualisé — lecture seule (service.list(),
 // own/scope déjà appliqués). Les suggestions renvoyées ne sont jamais
 // exécutées ici : voir backend/ai/assistant.js pour la double garantie
