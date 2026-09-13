@@ -4,6 +4,7 @@ const scope = require('./scope');
 const securityAudit = require('./security-audit');
 const { sendError } = require('./http-errors');
 const aiSummaries = require('./ai/summaries');
+const aiAssistant = require('./ai/assistant');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
@@ -72,6 +73,12 @@ router.get('/shift-summary', wrap(async (req, res) => {
   const hours = req.query.since_hours ? Number(req.query.since_hours) : undefined;
   res.json(await aiSummaries.summarizeShift(req.user, undefined, hours === undefined ? {} : { sinceHours: hours }));
 }));
+// PG-21 : assistant SOC contextualisé — lecture seule (service.list(),
+// own/scope déjà appliqués). Les suggestions renvoyées ne sont jamais
+// exécutées ici : voir backend/ai/assistant.js pour la double garantie
+// (structurelle + liste blanche) que l'IA ne peut ni clôturer, ni annuler,
+// ni toucher aux permissions/audit.
+router.post('/assistant', wrap(async (req, res) => res.json(await aiAssistant.ask(req.body?.question, req.user))));
 router.get('/:id', wrap(async (req, res) => res.json(await service.detail(req.params.id, req.user))));
 router.post('/:id/actions', wrap(async (req, res) => res.json(await service.act(req.params.id, req.body, req.user))));
 // PG-20 : résumés IA — lisent via service.detail() (own/scope déjà

@@ -210,5 +210,44 @@ const AlertCenter = (() => {
     Realtime.connect();
     updateLiveBadge();
   }
-  return {load,renderList,createForm,rules,notifications:NotificationBell.open,openAlert,captureSelection,start};
+  // PG-21 : assistant SOC contextualisé. Jamais de question envoyée
+  // automatiquement (coût d'appel, comme le résumé IA) ; les suggestions
+  // renvoyées ne sont jamais exécutées ici — un clic explicite les
+  // confirme via POST /alerts/:id/actions, la MÊME route qu'une action
+  // humaine directe (jamais un court-circuit, voir backend/ai/assistant.js).
+  async function assistantAsk() {
+    const input = document.getElementById('ac-assistant-question');
+    const question = input.value.trim();
+    const panel = document.getElementById('ac-assistant-answer');
+    if (!question || !panel) return false;
+    panel.hidden = false;
+    panel.innerHTML = '<p role="status">Réflexion…</p>';
+    try {
+      const r = await API.post('/alerts/assistant', { question });
+      const suggestions = (r.suggestions||[]).map(s =>
+        `<li>${e(s.label)} (${e(s.alert_id)}) <button class="btn btn-sm btn-outline" data-suggest-alert="${e(s.alert_id)}" data-suggest-action="${e(s.action)}">Confirmer</button></li>`).join('');
+      panel.innerHTML = `<div class="ac-ai-badge">✨ Généré par IA — à vérifier, jamais une décision automatique</div><p>${e(r.text)}</p>`
+        + (suggestions ? `<ul class="ac-assistant-suggestions">${suggestions}</ul>` : '');
+      panel.querySelectorAll('[data-suggest-alert]').forEach(b => b.onclick = () => confirmSuggestion(b.dataset.suggestAlert, b.dataset.suggestAction, b));
+    } catch(err) {
+      panel.innerHTML = `<p role="alert">Assistant indisponible : ${e(err.message)}</p>`;
+    }
+    return false; // never a real form submission (no page reload)
+  }
+  // Une suggestion n'est jamais qu'une donnée jusqu'à cette confirmation
+  // explicite : ce bouton appelle exactement la route qu'un clic manuel sur
+  // une action d'alerte appellerait, jamais un raccourci IA.
+  async function confirmSuggestion(alertId, action, button) {
+    button.disabled = true;
+    try {
+      await API.post('/alerts/'+alertId+'/actions', {action});
+      button.textContent = 'Confirmée ✓';
+      if (selected === alertId) await detail(alertId, false);
+      load();
+    } catch(err) {
+      button.disabled = false;
+      button.textContent = 'Échec : '+err.message;
+    }
+  }
+  return {load,renderList,createForm,rules,notifications:NotificationBell.open,openAlert,captureSelection,start,assistantAsk};
 })();

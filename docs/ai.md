@@ -1,4 +1,4 @@
-# SécuriSite — IA : architecture et résumés (PG-19, PG-20)
+# SécuriSite — IA : architecture, résumés, assistant (PG-19, PG-20, PG-21)
 
 ## Portée
 
@@ -9,8 +9,12 @@ l'interface `AIProvider`, sans brancher aucun fournisseur externe —
 PG-20 (§24) construit les premières fonctions concrètes dessus : résumé
 d'alerte, résumé de timeline, rapport de clôture, résumé d'incident, résumé
 de shift SOC — `backend/ai/summaries.js`, exposées via HTTP et un point
-d'entrée minimal dans le Centre d'alertes. PG-21 (assistant SOC
-conversationnel) reste un lot distinct, non entrepris ici.
+d'entrée minimal dans le Centre d'alertes.
+
+PG-21 (§25) ajoute l'assistant SOC contextualisé (question en langage
+naturel + suggestions d'actions jamais exécutées automatiquement) —
+`backend/ai/assistant.js`. PG-22+ (détection/corrélation, RAG, audit IA)
+restent des lots distincts, non entrepris ici.
 
 ## Aucun fournisseur réel
 
@@ -150,3 +154,66 @@ contenant un jeton est retiré avant d'atteindre le provider).
 `tests/notifications.test.js` (frontend, vm) : panneau jamais chargé
 automatiquement, rendu labellisé après clic, échec affiché explicitement,
 réponse tardive ignorée après changement de sélection.
+
+## PG-21 — assistant SOC : « L'IA ne peut pas » est une double garantie
+
+`backend/ai/assistant.js` répond à une question en langage naturel
+(`POST /api/alerts/assistant`, `{question}`) à partir des mêmes alertes déjà
+lues et déjà autorisées que `service.list()` (own/scope, PG-8/PG-16) — même
+principe que les résumés PG-20, aucun accès parallèle à la base.
+
+MASTER ROADMAP §25 : *« L'IA ne peut pas : close / cancel / change
+permissions / delete / modify audit. Toute action proposée nécessite
+confirmation utilisateur et exécution API déterministe. »* Tenu par deux
+garanties indépendantes, pas une seule :
+
+1. **Structurelle (héritée de PG-19)** : le contrat `AIProvider` ne renvoie
+   que du texte — `ask()` ne peut appeler aucune méthode d'écriture, quel
+   que soit ce qu'un futur provider réel répondrait dans son texte.
+2. **Liste blanche explicite ici** : les suggestions ne sont **jamais**
+   composées à partir du texte généré par le provider — elles sont
+   calculées par du code métier déterministe (`suggestFor()`), à partir de
+   `ALLOWED_SUGGESTIONS = {ACQUITTEE, EN_INTERVENTION, SOUS_CONTROLE,
+   RESOLUE, ESCALADE}`. `CLOTUREE`, `ANNULEE`, `FAUSSE_ALERTE` en sont
+   absents à dessein : aucune suggestion ne peut jamais proposer de
+   clôturer, annuler ou invalider une alerte. Permissions/suppression/
+   modification d'audit n'existent même pas comme « action » d'alerte dans
+   ce code base — rien à exclure de plus.
+   Prouvé par test : une alerte poussée à travers tout son cycle de vie
+   (`ACQUITTEE` → `EN_INTERVENTION` → `SOUS_CONTROLE` → `RESOLUE`) n'émet
+   jamais, à aucune étape, une suggestion interdite.
+
+**Une suggestion n'est qu'une donnée** (`{alert_id, action, label}`),
+jamais un appel : la confirmer déclenche exactement
+`POST /api/alerts/:id/actions`, la **même** route et les **mêmes**
+vérifications (`service.act()`, own/scope, `isSoc`, machine à états) qu'un
+clic manuel sur un bouton d'action — jamais un raccourci. Une suggestion
+n'apparaît d'ailleurs que pour un utilisateur `isSoc` (les transitions
+d'état exigent déjà `user.isSoc` côté `service.act()`, 403 sinon) : un
+agent "own" reçoit une réponse mais `suggestions: []`, jamais une
+suggestion qu'il ne pourrait de toute façon pas confirmer.
+
+Contexte transmis au provider : mêmes agrégats que le résumé de shift
+(actives/critiques/SOS/escalades/par site), plus un sous-ensemble resserré
+par mot-clé simple sur la question (« critique »/« escalad »/« incident »)
+— pas un vrai NLP (`LocalAIProvider` reste déterministe, PG-19), une
+sélection de contexte pragmatique. Sans mot-clé reconnu, le contexte entier
+est transmis plutôt que rien.
+
+Isolation tenant : héritée de `service.list()`, prouvée à nouveau ici (le
+site d'une alerte d'un autre tenant n'apparaît jamais dans le contexte
+envoyé au provider).
+
+## Tests (PG-21)
+
+`tests/postgres-ai-assistant.test.js` (HTTP, PostgreSQL réel) : réponse
+étiquetée `generated_by_ai`, question vide/trop longue refusée (400),
+isolation tenant du contexte envoyé, resserrement par mot-clé prouvé,
+suggestions vides pour un agent "own", **suggestions jamais interdites sur
+tout le cycle de vie d'une alerte**, une alerte critique fraîche suggère
+bien acquittement + escalade (jamais une clôture), et une suggestion
+confirmée passe réellement par `POST /alerts/:id/actions`.
+`tests/notifications.test.js` (frontend, vm) : question vide sans appel,
+réponse + suggestions rendues et labellisées, échec affiché, confirmation
+d'une suggestion appelant la vraie route d'action, échec de confirmation
+réactivant le bouton avec le message d'erreur.

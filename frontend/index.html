@@ -106,6 +106,16 @@
       <div class="card"><div class="card-header"><div class="card-title">🚨 Incidents récents</div><button class="btn btn-sm btn-outline" onclick="navTo('incidents')">Tout voir</button></div><div class="card-body" id="ac-recent-incidents"></div></div>
       <div class="card"><div class="card-header"><div class="card-title">🕒 Timeline opérationnelle</div></div><div class="card-body" id="ac-op-timeline"></div></div>
     </div>
+    <div class="card ac-assistant-card">
+      <div class="card-header"><div class="card-title">🤖 Assistant SOC</div></div>
+      <div class="card-body">
+        <form class="ac-assistant-form" onsubmit="return AlertCenter.assistantAsk()">
+          <input id="ac-assistant-question" aria-label="Question à l’assistant SOC" placeholder="Que s’est-il passé ? Quelles alertes critiques ? Quelles escalades ?" maxlength="1000">
+          <button class="btn btn-outline" type="submit">Demander</button>
+        </form>
+        <div id="ac-assistant-answer" hidden></div>
+      </div>
+    </div>
     <div class="ac-toolbar"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher un site, un agent, un événement…" oninput="AlertCenter.renderList()"><select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderList()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select><select id="ac-status" aria-label="État" onchange="AlertCenter.renderList()"><option value="open">En cours</option><option value="all">Tous les états</option></select><button class="btn btn-outline" onclick="AlertCenter.load()">Actualiser</button></div>
     <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
     <div class="ac-layout"><div id="ac-list"></div><section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section></div>

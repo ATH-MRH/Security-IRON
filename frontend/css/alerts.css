@@ -50,3 +50,13 @@
 .ac-ai-summary{margin-top:14px;padding:14px;background:var(--bg-2);border:1px dashed var(--border);border-radius:8px}
 .ac-ai-badge{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px}
 .ac-ai-summary p{margin:0;white-space:pre-wrap}
+
+/* PG-21 : assistant SOC — voir docs/ai.md. Une suggestion n'est qu'une
+   donnée jusqu'à confirmation explicite (bouton "Confirmer"). */
+.ac-assistant-card{margin:18px 0}
+.ac-assistant-form{display:flex;gap:10px}
+.ac-assistant-form input{flex:1;padding:12px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:6px}
+#ac-assistant-answer{margin-top:14px;padding:14px;background:var(--bg-2);border:1px dashed var(--border);border-radius:8px}
+#ac-assistant-answer p{margin:0 0 10px;white-space:pre-wrap}
+.ac-assistant-suggestions{list-style:none;margin:0;padding:0}
+.ac-assistant-suggestions li{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}

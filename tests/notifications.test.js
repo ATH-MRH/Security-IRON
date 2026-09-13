@@ -22,7 +22,7 @@ function fixture(data = {}) {
   function element(id) {
     if(id==='ac-comment')return element('ac-detail').querySelector('#ac-comment');
     if (!elements.has(id)) {
-      let html = '', actions = [], comment = null, aiBtn = null;
+      let html = '', actions = [], comment = null, aiBtn = null, suggestButtons = [];
       // document.querySelectorAll('.page') isn't mocked (only the specific
       // selectors AlertCenter/NotificationBell actually query), so navTo()'s
       // own class toggling never reaches these elements — page-alertes
@@ -46,9 +46,13 @@ function fixture(data = {}) {
           // object per innerHTML set, so a stale onclick from a previous
           // render is never mistaken for the current one.
           aiBtn=value.includes('id="ac-ai-summary-btn"')?{onclick:null}:null;
+          // PG-21: AlertCenter#assistantAsk() wires each suggestion's
+          // "Confirmer" button via panel.querySelectorAll('[data-suggest-alert]').
+          suggestButtons=[...value.matchAll(/<button[^>]*data-suggest-alert="([^"]*)"[^>]*data-suggest-action="([^"]*)"[^>]*>/g)]
+            .map(m=>({dataset:{suggestAlert:m[1],suggestAction:m[2]},disabled:false,textContent:''}));
         },
         querySelector:selector=>selector==='#ac-comment'?comment:selector==='#ac-ai-summary-btn'?aiBtn:null,
-        querySelectorAll:selector=>selector==='[data-action]'?actions:[]
+        querySelectorAll:selector=>selector==='[data-action]'?actions:selector==='[data-suggest-alert]'?suggestButtons:[]
       });
     }
     return elements.get(id);
@@ -71,7 +75,13 @@ function fixture(data = {}) {
     escapeHtml, fmtDateTime: s => String(s || ''),
     API: {get:async p=>{state.requests.push(p);if(routes[p] instanceof Error)throw routes[p];if(typeof routes[p]==='function')return routes[p]();
       if(p.startsWith('/alerts/')&&p!=='/alerts/notifications'&&!Object.hasOwn(routes,p))return {...routes['/alerts'].find(a=>a.id===p.slice(8)),timeline:[]};
-      return structuredClone(routes[p]);},post:async(p,b)=>{state.posts.push({p,b});if(typeof routes[p]==='function')return routes[p]();},getUser:()=>({id:1})},
+      return structuredClone(routes[p]);},
+    // PG-21: extended to mirror get() (Error-throwing, static-object
+    // return) — every prior POST usage in this file only ever registered a
+    // function-based route (never a plain object/Error), so this is purely
+    // additive for AlertCenter#assistantAsk()/confirmSuggestion().
+    post:async(p,b)=>{state.posts.push({p,b});if(routes[p] instanceof Error)throw routes[p];if(typeof routes[p]==='function')return routes[p]();return structuredClone(routes[p]);},
+    getUser:()=>({id:1})},
     document: {activeElement:null,getElementById:element,querySelector:()=>dot,querySelectorAll:selector=>selector==='[data-action]'?element('ac-detail').querySelectorAll(selector):selector==='[data-bell-alert]'||selector==='[data-bell-notification]'?buttons.filter(b=>Object.hasOwn(b.dataset,selector==='[data-bell-alert]'?'bellAlert':'bellNotification')):[]},
     showModal:(title,html)=>{state.html=html;buttons=[...html.matchAll(/<button[^>]*data-bell-(alert|notification)="([^"]+)"([^>]*)>/g)].map(m=>({dataset:{[m[1]==='alert'?'bellAlert':'bellNotification']:m[2],target:m[3].match(/data-target="([^"]+)"/)?.[1]}}));},
     closeModal:()=>{state.closed=true;},isAdmin:()=>true,lapiStream:null,notify:m=>state.errors.push(m),
@@ -333,11 +343,15 @@ for(const fails of [false,true])test('post-action refresh '+(fails?'error':'resp
 /*  réel côté client, absence de régression de contrat.          */
 /* ============================================================ */
 
-test('PG-16: AlertCenter keeps its exact original public contract, plus nothing removed', () => {
+test('PG-16/PG-21: AlertCenter keeps its exact original public contract, plus only the deliberate PG-21 addition', () => {
   const f = fixture();
   assert.deepEqual(
     Object.keys(f.center).sort(),
-    ['load','renderList','createForm','rules','notifications','openAlert','captureSelection','start'].sort(),
+    // PG-21: assistantAsk() must be public — wired from an inline
+    // onsubmit="AlertCenter.assistantAsk()" in frontend/index.html, unlike
+    // aiSummary()/confirmSuggestion() which stay internal (wired
+    // programmatically via .onclick, never referenced from markup).
+    ['load','renderList','createForm','rules','notifications','openAlert','captureSelection','start','assistantAsk'].sort(),
   );
 });
 
@@ -480,4 +494,62 @@ test('PG-20: switching to another alert before the summary resolves discards the
   summary.resolve({ text: 'Résumé de old', generated_by_ai: true });
   await pending; await settle();
   assert.doesNotMatch(f.element('ac-ai-summary').innerHTML, /Résumé de old/);
+});
+
+test('PG-21: an empty assistant question never calls the API', async () => {
+  const f = fixture();
+  f.element('ac-assistant-question').value = '   ';
+  await f.center.assistantAsk();
+  assert.equal(f.state.requests.includes('/alerts/assistant'), false);
+  assert.ok(!f.state.posts.some(p => p.p === '/alerts/assistant'));
+});
+
+test('PG-21: a real question posts to /alerts/assistant and renders the labelled answer plus suggestions', async () => {
+  const f = fixture({'/alerts/assistant': {
+    text: 'Deux alertes critiques sur Site A.', generated_by_ai: true, question: 'Quelles alertes critiques ?',
+    suggestions: [{ alert_id: 'a1', action: 'ACQUITTEE', label: 'Prendre en charge' }],
+  }});
+  f.element('ac-assistant-question').value = 'Quelles alertes critiques ?';
+  await f.center.assistantAsk();
+  assert.equal(f.state.posts.at(-1).p, '/alerts/assistant');
+  assert.equal(f.state.posts.at(-1).b.question, 'Quelles alertes critiques ?');
+  const panel = f.element('ac-assistant-answer');
+  assert.equal(panel.hidden, false);
+  assert.match(panel.innerHTML, /Généré par IA/);
+  assert.match(panel.innerHTML, /Deux alertes critiques/);
+  assert.match(panel.innerHTML, /Prendre en charge/);
+});
+
+test('PG-21: an assistant failure is shown as an alert, never a silent panel', async () => {
+  const f = fixture({'/alerts/assistant': Object.assign(new Error('Assistant indisponible'), {})});
+  f.element('ac-assistant-question').value = 'Que se passe-t-il ?';
+  await f.center.assistantAsk();
+  assert.match(f.element('ac-assistant-answer').innerHTML, /Assistant indisponible/);
+});
+
+test('PG-21: confirming a suggestion calls the real, existing action route — never a shortcut', async () => {
+  const f = fixture({'/alerts/assistant': {
+    text: 'x', generated_by_ai: true, suggestions: [{ alert_id: 'a1', action: 'ACQUITTEE', label: 'Prendre en charge' }],
+  }, '/alerts': [record('a1')]});
+  f.element('ac-assistant-question').value = 'Que faire ?';
+  await f.center.assistantAsk();
+  const button = f.element('ac-assistant-answer').querySelectorAll('[data-suggest-alert]')[0];
+  assert.ok(button);
+  await button.onclick();
+  const post = f.state.posts.find(p => p.p === '/alerts/a1/actions');
+  assert.ok(post, 'the suggestion is confirmed through the same POST /alerts/:id/actions route as a manual click');
+  assert.equal(post.b.action, 'ACQUITTEE');
+  assert.match(button.textContent, /Confirmée/);
+});
+
+test('PG-21: a failed confirmation re-enables the button and reports the failure, never a silent no-op', async () => {
+  const f = fixture({'/alerts/assistant': {
+    text: 'x', generated_by_ai: true, suggestions: [{ alert_id: 'a1', action: 'ACQUITTEE', label: 'Prendre en charge' }],
+  }, '/alerts/a1/actions': Object.assign(new Error('Action refusée'), {})});
+  f.element('ac-assistant-question').value = 'Que faire ?';
+  await f.center.assistantAsk();
+  const button = f.element('ac-assistant-answer').querySelectorAll('[data-suggest-alert]')[0];
+  await button.onclick();
+  assert.equal(button.disabled, false);
+  assert.match(button.textContent, /Action refusée/);
 });
