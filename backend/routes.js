@@ -1,3 +1,4 @@
+const crypto  = require('node:crypto');
 const express = require('express');
 const bcrypt  = require('bcryptjs');
 const db      = require('./database');
@@ -208,19 +209,33 @@ router.get('/admin/security-audit', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// PG-28 (revue adversariale, correctif de sécurité) : cette route créait
+// jusqu'ici un compte 'system_admin' avec un mot de passe CODÉ EN DUR
+// ('securisite2026'), visible dans le code source et renvoyé en clair à
+// chaque appel — une porte dérobée d'administrateur exploitable par
+// quiconque lit le dépôt ou observe une réponse HTTP. `frontend/js/app.js
+// #ensureSystemAdmin()` l'appelle réellement (page Utilisateurs). Corrigé :
+// mot de passe aléatoire (crypto.randomBytes, jamais devinable), généré et
+// affiché UNE SEULE FOIS à la création ; un appel ultérieur sur un compte
+// déjà existant ne révèle ni ne réinitialise jamais le mot de passe
+// (password: null) — cohérent avec backend/db/postgresql/create-admin.js,
+// qui n'affiche/n'enregistre jamais non plus de mot de passe en clair.
 router.post('/admin/system-admin', requireAdmin, async (req, res, next) => {
   try {
     const username = 'system_admin';
-    const password = 'securisite2026';
-    const existing = await db.get('SELECT id FROM users WHERE username=$1', [username]);
-    if (!existing) {
-      await db.query(
-        `INSERT INTO users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4)`,
-        [username, await bcrypt.hash(password, 10), 'Administrateur système', 'admin']
-      );
+    const existing = await db.get(
+      'SELECT id, username, nom_complet, role, created_at FROM users WHERE username=$1', [username]);
+    if (existing) {
+      res.json({ username, password: null, user: existing, created: false });
+      return;
     }
+    const password = crypto.randomBytes(18).toString('base64url');
+    await db.query(
+      `INSERT INTO users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4)`,
+      [username, await bcrypt.hash(password, 10), 'Administrateur système', 'admin']
+    );
     const user = await db.get('SELECT id, username, nom_complet, role, created_at FROM users WHERE username=$1', [username]);
-    res.json({ username, password, user });
+    res.json({ username, password, user, created: true });
   } catch (e) { next(e); }
 });
 

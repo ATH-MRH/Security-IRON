@@ -119,6 +119,30 @@ sans harnais de sandbox existant (contrairement à `alerts.js`) ; un test
 comportemental complet serait disproportionné pour trois occurrences déjà
 identifiées avec précision.
 
+### 8. Porte dérobée admin — mot de passe codé en dur (`POST /admin/system-admin`)
+
+Trouvé lors d'une revue adversariale ultérieure (PG-28, en recherchant
+d'autres accès directs aux tables protégées par RLS). `backend/routes.js`
+créait un compte `system_admin` (`role:'admin'`) avec un mot de passe
+**codé en dur en clair** (`'securisite2026'`), visible dans le dépôt Git et
+renvoyé en clair par l'API à **chaque** appel — une vraie porte dérobée,
+réellement câblée depuis `frontend/js/app.js#ensureSystemAdmin()` (page
+Utilisateurs), pas du code mort. N'importe qui lisant le dépôt (ou ayant
+observé une seule réponse HTTP) pouvait se connecter en admin sur tout
+déploiement n'ayant jamais changé ce mot de passe.
+
+Corrigé : mot de passe aléatoire (`crypto.randomBytes(18)`), généré et
+renvoyé **une seule fois**, à la création du compte (`created:true`). Un
+appel ultérieur sur un compte déjà existant ne révèle ni ne réinitialise
+jamais le mot de passe (`password:null`, `created:false`) — même
+philosophie que `backend/db/postgresql/create-admin.js`, qui n'affiche ni
+n'enregistre non plus de mot de passe en clair. Le frontend affiche un
+message dédié quand `password` est `null` plutôt que la chaîne littérale
+« null ». Testé par `tests/postgres-system-admin.test.js` : création avec
+mot de passe aléatoire jamais égal à l'ancien littéral, connexion réelle
+avec le mot de passe renvoyé, non-révélation au second appel, 403 pour un
+non-admin.
+
 ## Vérifié, jugé déjà correct (aucun changement)
 
 - **Injection SQL** : toutes les requêtes de ce code base utilisent des

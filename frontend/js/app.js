@@ -267,8 +267,15 @@ async function ensureSystemAdmin(){
   const result = await API.post('/admin/system-admin',{});
   if(document.getElementById('page-utilisateurs')?.classList.contains('active')) await loadUsersModule();
   else await loadAdminDashboard();
+  // PG-28 (correctif de sécurité) : le mot de passe n'est plus jamais
+  // codé en dur côté serveur — il n'est renvoyé qu'à la création du compte
+  // (result.created === true). Un appel ultérieur sur un compte déjà
+  // existant renvoie password: null : on ne l'affiche ni ne le devine jamais.
+  const passwordLine = result.password
+    ? `<div class="alert-meta">Mot de passe initial : <strong>${escapeHtml(result.password)}</strong> (à noter maintenant, non ré-affiché ensuite)</div>`
+    : `<div class="alert-meta">Compte déjà existant — mot de passe non ré-affiché.</div>`;
   showModal('Administrateur système',`
-    <div class="alert-item success"><div class="alert-content"><div class="alert-title">Compte système prêt</div><div class="alert-meta">Identifiant : <strong>${result.username}</strong></div><div class="alert-meta">Mot de passe initial : <strong>${result.password}</strong></div></div></div>
+    <div class="alert-item success"><div class="alert-content"><div class="alert-title">Compte système prêt</div><div class="alert-meta">Identifiant : <strong>${escapeHtml(result.username)}</strong></div>${passwordLine}</div></div>
   `, closeModal, 'Fermer');
 }
 
