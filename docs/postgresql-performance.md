@@ -1,5 +1,8 @@
 # SécuriSite — index de performance PostgreSQL (PG-11)
 
+> Benchmark de bout en bout (HTTP, pas seulement SQL), reproductible via
+> `node scripts/benchmark.js` : voir `docs/performance-benchmark.md` (PG-26).
+
 Migration `007_performance_indexes.sql`. Règle du lot : **mesurer avant de
 modifier, `EXPLAIN ANALYZE` à l'appui, aucun index sans preuve**. Aucune
 requête n'a été réécrite ; seuls des index ont été ajoutés, tous justifiés
