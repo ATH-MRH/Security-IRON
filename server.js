@@ -26,6 +26,7 @@ const routes     = require('./backend/routes');
 const sync       = require('./backend/sync');
 const camera     = require('./backend/camera');
 const alerts     = require('./backend/alerts');
+const realtimeRoutes = require('./backend/realtime-routes');
 const { requestContext } = require('./backend/request-context');
 
 // Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
@@ -40,6 +41,10 @@ app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement
 app.use('/api/camera', camera);                   // proxy caméras IP (avant JWT : les <img> n'envoient pas de token)
 app.use('/api/alerts', auth.authMiddleware, alerts.router);
+// PG-12 : /stream s'authentifie lui-même (Bearer ou ticket — EventSource ne
+// peut pas envoyer d'en-tête) ; pas de auth.authMiddleware ici, il gérerait
+// mal l'absence de Bearer sur une connexion EventSource légitime.
+app.use('/api/realtime', realtimeRoutes);
 app.use('/api', auth.authMiddleware, routes);
 
 app.use(express.static(path.join(__dirname, 'frontend')));

@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 const repository = require('./repository');
 const db = require('../database');
 const securityAudit = require('../security-audit');
+const realtime = require('../realtime');
 const { atomic } = repository;
 // PG-10 : le contexte d'audit (tenant/request/IP/UA) est posé sur `user` par
 // le routeur (backend/alerts.js), jamais recalculé ici — mêmes conventions
@@ -45,7 +46,7 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   let lat = input.latitude ?? null, lng = input.longitude ?? null;
   if ((lat !== null || lng !== null) && (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180)) fail('Coordonnées GPS invalides');
   const id = 'ALT-' + randomUUID(), stamp = now();
-  return atomic(async client => {
+  const result = await atomic(async client => {
     await repository.insertAlert(id,stamp,stamp,site,zone,type,input.level,origin,user.id,user.username,'NOTIFIEE',text(input.comment,4000),lat,lng,text(input.equipment),JSON.stringify((await config(client)).escalation),client);
     await audit(id,user.username,'CREATION', `${type} — niveau ${input.level}`,client);
     const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client);
@@ -61,6 +62,13 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
     }, client);
     return a;
   }, transactionClient);
+  // PG-12 : émis une fois atomic() résolu (savepoint relâché / transaction
+  // validée), jamais avant — au prix d'un risque résiduel faible et assumé
+  // (une transaction PARENTE peut encore annuler après coup un appel
+  // fromIncident/fromBadge imbriqué : au pire un rafraîchissement client
+  // inutile, jamais une fuite — aucun contenu n'est transmis, voir realtime.js).
+  realtime.emit('alert:created', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by });
+  return result;
 }
 async function escalateDue(time = Date.now(), transactionClient = null) {
   const pending = await repository.pendingEscalations(transactionClient ?? db);
@@ -142,7 +150,10 @@ async function act(id, input, user, transactionClient = null) {
       eventType: 'alert.action', resourceType: 'alert', resourceId: id, action, outcome: 'success',
     }, client);
     return get(a.id,user,client);
-  }, transactionClient); return result;
+  }, transactionClient);
+  // PG-12 : même principe que create() — voir son commentaire ci-dessus.
+  realtime.emit('alert:updated', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by });
+  return result;
 }
 async function fromIncident(i,user,transactionClient = null) {
   if((await config(transactionClient ?? db)).incidentCritical && ['critique','majeur'].includes(i.gravite)) await create({site:i.lieu||'Site non renseigné',zone:i.lieu,type:i.type||'Incident grave',level:3,comment:`Incident ${i.ref} : ${i.description||''}`},user,'INCIDENT',transactionClient);

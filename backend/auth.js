@@ -53,15 +53,22 @@ router.get('/me', authMiddleware, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// PG-12 : extrait pour être réutilisé par backend/realtime.js, qui accepte
+// aussi ce même Bearer token (un client capable d'en envoyer un le fait ;
+// EventSource ne le peut pas, d'où le ticket à usage unique en repli).
+function verifyToken(token) {
+  return jwt.verify(token, JWT_SECRET);
+}
+
 function authMiddleware(req, res, next) {
   const h = req.headers.authorization;
   if (!h || !h.startsWith('Bearer ')) return res.status(401).json({ error: 'Token manquant' });
   try {
-    req.user = jwt.verify(h.slice(7), JWT_SECRET);
+    req.user = verifyToken(h.slice(7));
     next();
   } catch {
     res.status(401).json({ error: 'Token invalide ou expiré' });
   }
 }
 
-module.exports = { router, authMiddleware };
+module.exports = { router, authMiddleware, verifyToken };
