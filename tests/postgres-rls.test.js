@@ -28,6 +28,20 @@ const rejects = (p, code) => assert.rejects(p, e => { assert.equal(e.code, code,
 
 let root, pool;
 const ids = {};
+// PG-29 (revue adversariale, hygiène des tests) : chaque rôle restreint créé
+// ci-dessous obtient ses GRANT DANS la base jetable (`pool`, connecté à
+// `dbName`) — mais `root` (utilisé par les DROP OWNED/DROP ROLE de t.after,
+// plus bas) reste connecté à la base de BASE (securisite_test), jamais à
+// `dbName`. DROP OWNED BY ne porte que sur la base courante de la connexion :
+// exécuté depuis `root`, il ne trouve donc rien de la base jetable, et le
+// DROP ROLE qui suit échoue silencieusement (rôle encore titulaire de GRANT
+// dans `dbName`, avalé par .catch). Le rôle survit alors indéfiniment,
+// orphelin, une fois `dbName` détruit par le after() global — constaté
+// empiriquement : des centaines de rôles `sec_test_rls_*` accumulés au fil
+// des exécutions répétées de la suite. Corrigé : chaque rôle créé est
+// consigné ici, et le after() global les DROP ROLE APRÈS avoir détruit
+// `dbName` (la base disparue, le rôle ne porte plus aucun GRANT nulle part).
+const createdRoles = [];
 
 async function createUser(role = 'agent') {
   const username = 'rls_' + tag();
@@ -42,6 +56,7 @@ async function grant(userId, tenantId, role = 'agent', alertAccess = 'own', stat
 // A low-privilege role — never the test superuser, which bypasses RLS entirely.
 async function restrictedRole() {
   const role = 'sec_test_rls_' + tag();
+  createdRoles.push(role);
   await pool.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'x'`);
   await pool.query(`GRANT CONNECT ON DATABASE "${dbName}" TO "${role}"`);
   await pool.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
@@ -79,7 +94,17 @@ before(async () => {
 });
 after(async () => {
   try { await pool.close(); }
-  finally { if (root) { await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)'); await root.end(); } }
+  finally {
+    if (root) {
+      await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)');
+      // PG-29 : les DROP ROLE tentés plus haut (t.after, pendant que dbName
+      // existait encore) ont échoué silencieusement — voir le commentaire sur
+      // createdRoles. Maintenant que dbName est détruite, le rôle n'a plus
+      // aucun GRANT nulle part : DROP ROLE réussit réellement.
+      for (const role of createdRoles) await root.query(`DROP ROLE IF EXISTS "${role}"`).catch(() => {});
+      await root.end();
+    }
+  }
 });
 
 /* ============================================================ */

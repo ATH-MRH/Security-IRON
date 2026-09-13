@@ -34,6 +34,16 @@ const LOCAL_TENANT = '507486ba-d55e-5142-9ac2-196da97866df';
 let root, pool, stop, base;
 let admin, agent; // JWT tokens
 let adminId, agentId, localTenantId;
+// PG-29 (revue adversariale, hygiène des tests) : les rôles restreints créés
+// plus bas reçoivent leurs GRANT dans la base jetable (`pool`, `dbName`), mais
+// `root` reste connecté à la base de BASE — DROP OWNED BY (t.after) n'y voit
+// rien, et le DROP ROLE qui suit échoue silencieusement (rôle encore
+// titulaire de GRANT dans `dbName`), laissant un rôle orphelin une fois
+// `dbName` détruite. Constaté empiriquement : des rôles `sec_test_secaudit_*`
+// accumulés au fil des exécutions répétées. Corrigé : chaque rôle créé est
+// consigné ici, et le after() global les DROP ROLE APRÈS avoir détruit
+// `dbName` (voir tests/postgres-rls.test.js, même correctif).
+const createdRoles = [];
 
 async function request(method, url, body, token = admin) {
   const r = await fetch(base + '/api' + url, {
@@ -73,7 +83,16 @@ before(async () => {
 });
 after(async () => {
   try { if (stop) await stop(); }
-  finally { if (root) { await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)'); await root.end(); } }
+  finally {
+    if (root) {
+      await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)');
+      // PG-29 : voir le commentaire sur createdRoles — les DROP ROLE tentés
+      // pendant les tests (t.after) échouent silencieusement tant que dbName
+      // existe ; une fois détruite, le rôle ne porte plus aucun GRANT.
+      for (const role of createdRoles) await root.query(`DROP ROLE IF EXISTS "${role}"`).catch(() => {});
+      await root.end();
+    }
+  }
 });
 
 /* ============================================================ */
@@ -112,6 +131,7 @@ test('PRIVILEGES: APP gets SELECT,INSERT only — never UPDATE/DELETE', () => {
 test('RLS: a plain agent membership gets no rows from security_audit, even under its own tenant', async t => {
   await pool.query("INSERT INTO public.security_audit(event_type,resource_type,action,outcome,origin,tenant_id) VALUES('t.e','r','a','success','http',$1)", [localTenantId]);
   const role = 'sec_test_secaudit_agent_' + tag();
+  createdRoles.push(role);
   await pool.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'x'`);
   await pool.query(`GRANT CONNECT ON DATABASE "${dbName}" TO "${role}"`);
   await pool.query(`GRANT USAGE ON SCHEMA public, securisite_meta TO "${role}"`);
@@ -133,6 +153,7 @@ test('RLS: a soc membership reads only its own tenant, cross-tenant explicitly r
   const socUser = (await pool.get("INSERT INTO public.users(username,password_hash,role) VALUES($1,'x','agent') RETURNING id", ['soc_' + tag()])).id;
   await pool.query("INSERT INTO public.memberships(user_id,tenant_id,role,alert_access) VALUES($1,$2,'soc','scope')", [socUser, localTenantId]);
   const role = 'sec_test_secaudit_soc_' + tag();
+  createdRoles.push(role);
   await pool.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'x'`);
   await pool.query(`GRANT CONNECT ON DATABASE "${dbName}" TO "${role}"`);
   await pool.query(`GRANT USAGE ON SCHEMA public, securisite_meta TO "${role}"`);

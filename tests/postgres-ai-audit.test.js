@@ -25,6 +25,16 @@ const tag = () => randomBytes(5).toString('hex');
 
 let root, pool, stop, base;
 const ids = {};
+// PG-29 (revue adversariale, hygiène des tests) : le rôle restreint créé plus
+// bas reçoit ses GRANT dans la base jetable (`pool`, `dbName`), mais `root`
+// reste connecté à la base de BASE — DROP OWNED BY n'y voit rien, et le DROP
+// ROLE qui suit échoue silencieusement (rôle encore titulaire de GRANT dans
+// `dbName`), laissant un rôle orphelin une fois `dbName` détruite. Constaté
+// empiriquement : des rôles `sec_test_aiaudit_soc_*` accumulés au fil des
+// exécutions répétées. Corrigé : le rôle créé est consigné ici, et le
+// after() global le DROP ROLE APRÈS avoir détruit `dbName` (voir
+// tests/postgres-rls.test.js, même correctif).
+const createdRoles = [];
 
 async function request(method, url, body, token) {
   const r = await fetch(base + '/api' + url, {
@@ -69,7 +79,14 @@ before(async () => {
 });
 after(async () => {
   try { if (stop) await stop(); }
-  finally { if (root) { await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)'); await root.end(); } }
+  finally {
+    if (root) {
+      await root.query('DROP DATABASE IF EXISTS "' + dbName + '" WITH (FORCE)');
+      // PG-29 : voir le commentaire sur createdRoles.
+      for (const role of createdRoles) await root.query(`DROP ROLE IF EXISTS "${role}"`).catch(() => {});
+      await root.end();
+    }
+  }
 });
 afterEach(() => ai.resetProvider());
 
@@ -162,6 +179,7 @@ test('RLS: a SOC of tenant A can read its own ai-origin audit rows but never ten
   await request('GET', '/alerts/' + createdB.id + '/summary', undefined, tokenB);
 
   const role = 'sec_test_aiaudit_soc_' + tag();
+  createdRoles.push(role);
   await pool.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'x'`);
   await pool.query(`GRANT CONNECT ON DATABASE "${dbName}" TO "${role}"`);
   await pool.query(`GRANT USAGE ON SCHEMA public, securisite_meta TO "${role}"`);
