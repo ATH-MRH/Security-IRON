@@ -1,15 +1,26 @@
 const express = require('express');
 const service = require('./alert-core/service');
 const scope = require('./scope');
+const securityAudit = require('./security-audit');
 const { sendError } = require('./http-errors');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
 const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+// PG-10 : dénis explicites audités en best-effort (jamais de blocage
+// supplémentaire si le journal est momentanément indisponible).
+const auditDenied = (req, resourceType, actorUserId, detail) => securityAudit.recordBestEffort({
+  requestId: req.requestId || null, origin: 'http',
+  actorUserId: actorUserId ?? null,
+  eventType: resourceType === 'session' ? 'auth.session.revoked' : 'auth.access.denied',
+  resourceType, action: 'access', outcome: 'denied',
+  ipAddress: req.ip || null, userAgent: req.headers['user-agent'] || null, detail,
+});
 
 router.use(wrap(async (req, res, next) => {
-  const user = await service.currentUser(req.user.id);
-  if (!user) return res.status(401).json({ error: 'Session révoquée' });
+  const claimedId = req.user.id;
+  const user = await service.currentUser(claimedId);
+  if (!user) { await auditDenied(req, 'session', claimedId); return res.status(401).json({ error: 'Session révoquée' }); }
   req.user = user; next();
 }));
 // PG-8 : le périmètre (memberships actifs PG-7) remplace le rôle brut comme
@@ -20,12 +31,27 @@ router.use(wrap(async (req, res, next) => {
 router.use(wrap(async (req, res, next) => {
   const s = await scope.resolveScope(req.user.id);
   const tenantId = s.resolveTenant();
-  if (!s.hasAccess || tenantId == null) return res.status(403).json({ error: 'Accès au périmètre refusé' });
+  if (!s.hasAccess || tenantId == null) {
+    await auditDenied(req, 'scope', req.user.id);
+    return res.status(403).json({ error: 'Accès au périmètre refusé' });
+  }
   req.user.alertAccess = s.tenantAccess(tenantId);
   req.user.isSoc = s.hasRole(tenantId, 'soc');
+  // PG-10 : contexte pour les audits success posés par alert-core/service.js,
+  // dans la même transaction que la mutation qu'ils décrivent (règle 13).
+  req.user.tenantId = tenantId;
+  req.user.requestId = req.requestId || null;
+  req.user.ipAddress = req.ip || null;
+  req.user.userAgentHeader = req.headers['user-agent'] || null;
   next();
 }));
-const admin = (req, res, next) => req.user.isSoc ? next() : res.status(403).json({ error: 'Action réservée au SOC (administrateur)' });
+const admin = (req, res, next) => {
+  if (req.user.isSoc) return next();
+  // recordBestEffort n'échoue jamais (avale sa propre erreur) : .then() suffit,
+  // pas besoin d'un handler async ici (cf. requireAdmin dans backend/routes.js).
+  auditDenied(req, 'alert_rules', req.user.id)
+    .then(() => res.status(403).json({ error: 'Action réservée au SOC (administrateur)' }));
+};
 router.get('/rules', admin, wrap(async (req, res) => res.json(await service.config())));
 router.put('/rules', admin, wrap(async (req, res) => res.json(await service.updateRules(req.body, req.user))));
 router.get('/rules/audit', admin, wrap(async (req, res) => res.json(await service.configAudit())));

@@ -17,6 +17,7 @@
  * chaque décision passe par une ligne memberships réelle.
  */
 const db = require('./database');
+const securityAudit = require('./security-audit');
 
 const WIDER = { own: 0, scope: 1 };
 const wider = (a, b) => (a == null ? b : (WIDER[b] > WIDER[a] ? b : a));
@@ -101,15 +102,32 @@ async function resolveScope(userId, client = db) {
 // ?tenant_id=/?site_id=/?zone_id= are read only to NARROW the request — never
 // to grant anything beyond what memberships already cover; a forged or
 // uncovered value is refused, not silently ignored or widened.
+// PG-10 : un refus de périmètre est un événement de sécurité explicite et
+// borné (n'arrive jamais sur une requête normalement autorisée) — audité en
+// best-effort, jamais un blocage supplémentaire si le journal est indisponible.
+function auditDenied(req, resourceType, detail) {
+  return securityAudit.recordBestEffort({
+    requestId: req.requestId || null, origin: 'http',
+    actorUserId: req.user && req.user.id || null,
+    eventType: 'auth.access.denied', resourceType, action: 'access', outcome: 'denied',
+    ipAddress: req.ip || null, userAgent: req.headers['user-agent'] || null,
+    detail,
+  });
+}
+
 function requireScope() {
   return async (req, res, next) => {
     try {
       const scope = await resolveScope(req.user.id);
       const param = key => (typeof req.query[key] === 'string' && req.query[key] ? req.query[key] : null);
       const tenantId = scope.resolveTenant(param('tenant_id'));
-      if (!scope.hasAccess || tenantId == null) return res.status(403).json({ error: 'Accès au périmètre refusé' });
+      if (!scope.hasAccess || tenantId == null) {
+        await auditDenied(req, 'scope', { reason_code: scope.hasAccess ? 'tenant_unresolved' : 'no_membership' });
+        return res.status(403).json({ error: 'Accès au périmètre refusé' });
+      }
       const siteId = param('site_id'), zoneId = param('zone_id');
       if ((siteId != null || zoneId != null) && !scope.allows(tenantId, siteId, zoneId)) {
+        await auditDenied(req, 'scope', { reason_code: 'site_or_zone_not_covered' });
         return res.status(403).json({ error: 'Accès au périmètre refusé' });
       }
       req.scope = scope;

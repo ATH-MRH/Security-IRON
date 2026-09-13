@@ -1,7 +1,20 @@
 const { randomUUID } = require('crypto');
 const repository = require('./repository');
 const db = require('../database');
+const securityAudit = require('../security-audit');
 const { atomic } = repository;
+// PG-10 : le contexte d'audit (tenant/request/IP/UA) est posé sur `user` par
+// le routeur (backend/alerts.js), jamais recalculé ici — mêmes conventions
+// que user.alertAccess/isSoc (PG-8). Absent (appels directs de service.js
+// dans les tests, ou déclencheurs internes fromIncident/fromBadge) : null,
+// jamais une erreur — security_audit accepte un périmètre non résolu.
+function auditContext(user) {
+  return {
+    requestId: user.requestId ?? null, actorUserId: user.id, actorUsername: user.username,
+    actorRole: user.role ?? null, tenantId: user.tenantId ?? null,
+    ipAddress: user.ipAddress ?? null, userAgent: user.userAgentHeader ?? null,
+  };
+}
 const now = () => new Date().toISOString();
 const terminal = ['CLOTUREE', 'FAUSSE_ALERTE', 'ANNULEE'];
 const transitions = { NOTIFIEE: ['ACQUITTEE'], ACQUITTEE: ['EN_INTERVENTION'], EN_INTERVENTION: ['SOUS_CONTROLE'], SOUS_CONTROLE: ['RESOLUE'], RESOLUE: ['CLOTUREE'] };
@@ -35,7 +48,18 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   return atomic(async client => {
     await repository.insertAlert(id,stamp,stamp,site,zone,type,input.level,origin,user.id,user.username,'NOTIFIEE',text(input.comment,4000),lat,lng,text(input.equipment),JSON.stringify((await config(client)).escalation),client);
     await audit(id,user.username,'CREATION', `${type} — niveau ${input.level}`,client);
-    const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client); return a;
+    const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client);
+    // PG-10 : même transaction que la mutation (règle 13) — un échec d'audit
+    // annule aussi la création. origin='COMMAND' (action directe /alerts) est
+    // 'http' ; INCIDENT/REGLE_BADGE (déclenchement automatique par une règle
+    // métier) sont 'system', pas 'http', même si la requête HTTP d'origine
+    // (POST /incidents, /pietons) est elle-même auditée séparément par routes.js.
+    await securityAudit.record({
+      ...auditContext(user), origin: origin === 'COMMAND' ? 'http' : 'system',
+      eventType: 'alert.create', resourceType: 'alert', resourceId: id, action: 'create', outcome: 'success',
+      detail: { alert_origin: origin, level: input.level },
+    }, client);
+    return a;
   }, transactionClient);
 }
 async function escalateDue(time = Date.now(), transactionClient = null) {
@@ -67,6 +91,10 @@ async function updateRules(c, user, transactionClient = null) {
     const previous = JSON.parse(await repository.readConfigForUpdate(client));
     await repository.appendConfigAudit(stamp,user.username,JSON.stringify(previous),JSON.stringify(clean),client);
     await repository.updateConfig(JSON.stringify(clean),client);
+    await securityAudit.record({
+      ...auditContext(user), origin: 'http',
+      eventType: 'alert.rules.update', resourceType: 'alert_rules', resourceId: '1', action: 'update', outcome: 'success',
+    }, client);
   }, transactionClient); return clean;
 }
 async function readNotification(id, user, transactionClient = null) {
@@ -109,6 +137,10 @@ async function act(id, input, user, transactionClient = null) {
       }
     }
     await repository.touchAlert(now(),a.id,client);
+    await securityAudit.record({
+      ...auditContext(user), origin: 'http',
+      eventType: 'alert.action', resourceType: 'alert', resourceId: id, action, outcome: 'success',
+    }, client);
     return get(a.id,user,client);
   }, transactionClient); return result;
 }

@@ -10,10 +10,15 @@
  * / securisite.audit_origin) est posé via SET LOCAL, lu par le trigger
  * membership_audit_write. NON branché au runtime — réservé aux lots PG-8+.
  *
+ * PG-10 : un provisioning réel écrit aussi une ligne security_audit
+ * ('membership.create', origin='automation' — cet outil n'est pas un
+ * handler HTTP) dans la MÊME transaction que l'INSERT memberships.
+ *
  * @param exec   client de transaction PG-1 (query/get/all) ou le module database
  * @param userId identifiant users.id
  */
 const database = require('../../database');
+const securityAudit = require('../../security-audit');
 
 async function provisionLocalMembership(exec, userId, { actorUserId = null, origin = 'provisioning' } = {}) {
   const client = exec && typeof exec.query === 'function' ? exec : database;
@@ -32,8 +37,18 @@ async function provisionLocalMembership(exec, userId, { actorUserId = null, orig
     SELECT $1, t.id, $2, $3 FROM public.tenants t WHERE t.code = 'local'
     ON CONFLICT (user_id, tenant_id, role) WHERE site_id IS NULL AND zone_id IS NULL
     DO NOTHING
-    RETURNING id`, [userId, role, alertAccess]);
-  return { provisioned: res.rowCount === 1, role, alert_access: alertAccess };
+    RETURNING id, tenant_id`, [userId, role, alertAccess]);
+  const provisioned = res.rowCount === 1;
+  if (provisioned) {
+    await securityAudit.record({
+      origin: 'automation', actorUserId,
+      tenantId: res.rows[0].tenant_id,
+      eventType: 'membership.create', resourceType: 'membership', resourceId: String(res.rows[0].id),
+      action: 'create', outcome: 'success',
+      detail: { user_id: userId, role, alert_access: alertAccess },
+    }, client);
+  }
+  return { provisioned, role, alert_access: alertAccess };
 }
 
 module.exports = { provisionLocalMembership };

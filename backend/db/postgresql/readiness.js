@@ -16,6 +16,9 @@ const ALERT_CORE = ['security_alerts', 'alert_audit', 'alert_notifications', 'al
 // Référentiel multitenant (migrations 003 / 004) : présent, mais non activé côté runtime.
 const SCOPE = ['tenants', 'sites', 'zones'];
 const MEMBERSHIP = ['memberships', 'membership_audit'];
+// PG-10 : journal de sécurité global transversal — distinct des journaux
+// spécialisés ci-dessus, qui restent l'autorité de leur domaine.
+const SECURITY_AUDIT = ['security_audit'];
 const AUDIT_FUNCTIONS = ['reject_alert_audit_mutation', 'reject_membership_mutation'];
 const AUDIT_FUNCTION = 'securisite_meta.' + AUDIT_FUNCTIONS[0]; // rétro-compat
 const AUDIT_TRIGGERS = {
@@ -23,18 +26,23 @@ const AUDIT_TRIGGERS = {
   alert_config_audit: ['alert_config_audit_no_mutation', 'alert_config_audit_no_truncate'],
   membership_audit: ['membership_audit_no_mutation', 'membership_audit_no_truncate'],
   memberships: ['memberships_no_delete', 'memberships_identity_lock'],
+  security_audit: ['security_audit_no_mutation', 'security_audit_no_truncate'],
 };
 // PG-9 : deuxième défense indépendante de backend/scope.js — granularité
 // tenant uniquement (voir migration 005). N'existe que sur les tables qui
 // portent réellement un tenant_id ; les tables historiques restent hors
 // périmètre RLS tant qu'elles n'ont pas cette colonne (voir docs/postgresql-scope.md).
-const RLS_FUNCTION = 'current_actor_tenant_ids';
+// PG-10 ajoute une deuxième fonction RLS, plus stricte (rôle 'soc' requis) :
+// security_audit n'est lisible par aucun membership 'agent' ordinaire.
+const RLS_FUNCTIONS = ['current_actor_tenant_ids', 'current_actor_soc_tenant_ids'];
+const RLS_FUNCTION = RLS_FUNCTIONS[0]; // rétro-compat
 const RLS_POLICIES = {
   tenants: ['tenants_actor_tenant'],
   sites: ['sites_actor_tenant'],
   zones: ['zones_actor_tenant'],
   memberships: ['memberships_actor_tenant'],
   membership_audit: ['membership_audit_actor_tenant'],
+  security_audit: ['security_audit_soc_read', 'security_audit_app_insert'],
 };
 // Verbes réellement exécutés par le runtime (backend/routes.js, auth.js, sync.js, alert-core).
 // Les journaux append-only n'exigent qu'INSERT + SELECT : jamais UPDATE ni DELETE.
@@ -54,6 +62,10 @@ const PRIVILEGES = {
   // en prévision des écritures de memberships du lot PG-8.
   tenants: 'SELECT', sites: 'SELECT', zones: 'SELECT',
   memberships: 'SELECT', membership_audit: 'SELECT,INSERT',
+  // PG-10 : INSERT pour record() (backend/security-audit.js) ; SELECT pour
+  // GET /api/admin/security-audit — RLS (migration 006) restreint la lecture
+  // effective aux memberships actifs de rôle 'soc' sous leur propre tenant.
+  security_audit: 'SELECT,INSERT',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -95,7 +107,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -135,11 +147,12 @@ async function assertReady(client, { directory } = {}) {
 
   // 7. RLS (PG-9) : activé sur chaque table concernée, politique attendue
   //    présente, fonction de résolution d'acteur elle-même présente.
-  const rlsFn = await client.get(`
-    SELECT 1 AS ok FROM pg_catalog.pg_proc p
+  const rlsFns = await client.all(`
+    SELECT p.proname FROM pg_catalog.pg_proc p
     JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'securisite_meta' AND p.proname = $1`, [RLS_FUNCTION]);
-  if (!rlsFn) throw fail('READINESS_RLS_MISSING', 'Fonction RLS absente : ' + RLS_FUNCTION);
+    WHERE n.nspname = 'securisite_meta' AND p.proname = ANY($1)`, [RLS_FUNCTIONS]);
+  const missingRlsFns = RLS_FUNCTIONS.filter(name => !rlsFns.some(r => r.proname === name));
+  if (missingRlsFns.length) throw fail('READINESS_RLS_MISSING', 'Fonction(s) RLS absente(s) : ' + missingRlsFns.join(', '));
   const rlsTables = Object.keys(RLS_POLICIES);
   const rlsState = await client.all(`
     SELECT c.relname AS name, c.relrowsecurity AS enabled
@@ -173,6 +186,6 @@ async function assertReady(client, { directory } = {}) {
 }
 
 module.exports = {
-  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
-  RLS_FUNCTION, RLS_POLICIES, PRIVILEGES,
+  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, SECURITY_AUDIT, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
+  RLS_FUNCTION, RLS_FUNCTIONS, RLS_POLICIES, PRIVILEGES,
 };

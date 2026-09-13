@@ -26,6 +26,7 @@ const routes     = require('./backend/routes');
 const sync       = require('./backend/sync');
 const camera     = require('./backend/camera');
 const alerts     = require('./backend/alerts');
+const { requestContext } = require('./backend/request-context');
 
 // Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
 const SHUTDOWN_GRACE_MS = 10000;
@@ -33,6 +34,7 @@ const SHUTDOWN_GRACE_MS = 10000;
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use(requestContext()); // PG-10 : req.requestId, en-tête X-Request-Id — avant toute route.
 
 app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement

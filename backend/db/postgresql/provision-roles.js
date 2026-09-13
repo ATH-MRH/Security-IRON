@@ -29,7 +29,7 @@
  */
 const { Client } = require('pg');
 const { configuration } = require('../../database');
-const { PRIVILEGES } = require('./readiness');
+const { PRIVILEGES, RLS_FUNCTIONS } = require('./readiness');
 
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/;
 const q = s => '"' + String(s).replace(/"/g, '""') + '"';
@@ -72,10 +72,10 @@ function grantStatements({ owner, app, migrator, db }, present = null) {
   if (has('table:securisite_meta.schema_migrations')) {
     out.push(S(`GRANT SELECT ON securisite_meta.schema_migrations TO ${q(app)};`));
   }
-  // PG-9 : RLS policies on tenants/sites/zones/memberships/membership_audit
-  // call this SECURITY DEFINER helper — APP needs EXECUTE to evaluate them at all.
-  if (has('function:securisite_meta.current_actor_tenant_ids')) {
-    out.push(S(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_tenant_ids() TO ${q(app)};`));
+  // PG-9/PG-10 : RLS policies call these SECURITY DEFINER helpers — APP needs
+  // EXECUTE to evaluate them at all.
+  for (const fn of RLS_FUNCTIONS) {
+    if (has('function:securisite_meta.' + fn)) out.push(S(`GRANT EXECUTE ON FUNCTION securisite_meta.${fn}() TO ${q(app)};`));
   }
   out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA public GRANT SELECT ON TABLES TO ${q(app)};`));
   if (has('schema:securisite_meta')) {
@@ -145,7 +145,7 @@ async function apply(env) {
     const present = await presentObjects(client);
     deferred = !present.has('schema:securisite_meta')
       || Object.keys(PRIVILEGES).some(t => !present.has('table:' + t))
-      || !present.has('function:securisite_meta.current_actor_tenant_ids');
+      || RLS_FUNCTIONS.some(fn => !present.has('function:securisite_meta.' + fn));
     for (const { sql } of grantStatements(names, present)) await client.query(sql);
   } finally { await client.end(); }
   return { ...names, deferred };

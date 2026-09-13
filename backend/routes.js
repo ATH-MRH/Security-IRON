@@ -3,13 +3,29 @@ const bcrypt  = require('bcryptjs');
 const db      = require('./database');
 const alerts  = require('./alerts');
 const scope   = require('./scope');
+const securityAudit = require('./security-audit');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 const now  = () => new Date().toISOString();
 const int  = v => parseInt(v, 10);
+// PG-10 : IP/UA/request_id communs à tout événement audité depuis ce routeur.
+const auditFields = req => ({
+  requestId: req.requestId || null, origin: 'http',
+  ipAddress: req.ip || null, userAgent: req.headers['user-agent'] || null,
+});
+const actorFields = req => ({ actorUserId: req.user?.id ?? null, actorUsername: req.user?.username ?? null, actorRole: req.user?.role ?? null });
 const requireAdmin = (req, res, next) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Accès administrateur requis' });
+  if (req.user?.role !== 'admin') {
+    // Attendu (pas fire-and-forget) avant d'écrire la réponse : recordBestEffort
+    // n'échoue jamais (avale sa propre erreur), donc .then() suffit — pas besoin
+    // d'un handler async ici (Express 4 ne relaie pas ses rejets).
+    securityAudit.recordBestEffort({
+      ...auditFields(req), ...actorFields(req),
+      eventType: 'auth.access.denied', resourceType: 'admin', action: 'access', outcome: 'denied',
+    }).then(() => res.status(403).json({ error: 'Accès administrateur requis' }));
+    return;
+  }
   next();
 };
 
@@ -40,11 +56,21 @@ router.post('/admin/users', requireAdmin, async (req, res, next) => {
     const exists = await db.get('SELECT id FROM users WHERE username=$1', [u.username]);
     if (exists) return res.status(409).json({ error: 'Identifiant déjà utilisé' });
     const hash = await bcrypt.hash(u.password, 10);
-    const row = await db.get(
-      `INSERT INTO users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4)
-       RETURNING id, username, nom_complet, role, created_at`,
-      [u.username.trim(), hash, u.nom_complet || u.username.trim(), u.role || 'agent']
-    );
+    // PG-10 : l'audit success partage la transaction de la mutation — si l'un
+    // échoue, l'autre est annulé avec lui (jamais de faux success).
+    const row = await db.transaction(async client => {
+      const created = await client.get(
+        `INSERT INTO users (username, password_hash, nom_complet, role) VALUES ($1,$2,$3,$4)
+         RETURNING id, username, nom_complet, role, created_at`,
+        [u.username.trim(), hash, u.nom_complet || u.username.trim(), u.role || 'agent']
+      );
+      await securityAudit.record({
+        ...auditFields(req), ...actorFields(req),
+        eventType: 'user.create', resourceType: 'user', resourceId: String(created.id), action: 'create', outcome: 'success',
+        detail: { username: created.username, role: created.role },
+      }, client);
+      return created;
+    });
     res.json(row);
   } catch (e) { next(e); }
 });
@@ -54,14 +80,23 @@ router.put('/admin/users/:id', requireAdmin, async (req, res, next) => {
     const u = req.body || {};
     const current = await db.get('SELECT * FROM users WHERE id=$1', [req.params.id]);
     if (!current) return res.status(404).json({ error: 'Utilisateur introuvable' });
-    await db.query(
-      'UPDATE users SET nom_complet=$1, role=$2 WHERE id=$3',
-      [u.nom_complet || current.nom_complet, u.role || current.role, req.params.id]
-    );
-    if (u.password) {
-      await db.query('UPDATE users SET password_hash=$1 WHERE id=$2', [await bcrypt.hash(u.password, 10), req.params.id]);
-    }
-    res.json(await db.get('SELECT id, username, nom_complet, role, created_at FROM users WHERE id=$1', [req.params.id]));
+    const row = await db.transaction(async client => {
+      await client.query(
+        'UPDATE users SET nom_complet=$1, role=$2 WHERE id=$3',
+        [u.nom_complet || current.nom_complet, u.role || current.role, req.params.id]
+      );
+      const passwordChanged = Boolean(u.password);
+      if (passwordChanged) {
+        await client.query('UPDATE users SET password_hash=$1 WHERE id=$2', [await bcrypt.hash(u.password, 10), req.params.id]);
+      }
+      await securityAudit.record({
+        ...auditFields(req), ...actorFields(req),
+        eventType: 'user.update', resourceType: 'user', resourceId: String(req.params.id), action: 'update', outcome: 'success',
+        detail: { changed_fields: ['nom_complet', 'role', ...(passwordChanged ? ['password'] : [])].filter((f, i, a) => a.indexOf(f) === i) },
+      }, client);
+      return client.get('SELECT id, username, nom_complet, role, created_at FROM users WHERE id=$1', [req.params.id]);
+    });
+    res.json(row);
   } catch (e) { next(e); }
 });
 
@@ -70,11 +105,18 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res, next) => {
     const id = Number(req.params.id);
     if (id === req.user.id) return res.status(400).json({ error: 'Impossible de supprimer votre propre compte' });
     const admins = int((await db.get(`SELECT COUNT(*) as c FROM users WHERE role='admin'`)).c);
-    const target = await db.get('SELECT role FROM users WHERE id=$1', [id]);
+    const target = await db.get('SELECT role, username FROM users WHERE id=$1', [id]);
     if (!target) return res.status(404).json({ error: 'Utilisateur introuvable' });
     if (target.role === 'admin' && admins <= 1) return res.status(400).json({ error: 'Au moins un administrateur doit rester' });
     try {
-      await db.query('DELETE FROM users WHERE id=$1', [id]);
+      await db.transaction(async client => {
+        await client.query('DELETE FROM users WHERE id=$1', [id]);
+        await securityAudit.record({
+          ...auditFields(req), ...actorFields(req),
+          eventType: 'user.delete', resourceType: 'user', resourceId: String(id), action: 'delete', outcome: 'success',
+          detail: { username: target.username, role: target.role },
+        }, client);
+      });
     } catch (e) {
       // PG-7/PG-8 : memberships référence users en RESTRICT et memberships est
       // append-only (aucune suppression possible). Un compte ayant eu une
@@ -84,6 +126,40 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res, next) => {
       throw e;
     }
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// PG-10 : lecture du journal de sécurité global. requireAdmin (rôle JWT) est
+// une première porte grossière ; l'application réelle est la RLS (migration
+// 006, policy security_audit_soc_read) — via withActorContext, seul un
+// membership actif de rôle 'soc' voit quoi que ce soit, et seulement sous son
+// propre tenant. Un « admin » JWT sans membership soc reçoit donc une liste
+// vide, pas une erreur : la RLS est fail-closed par construction (PG-9).
+router.get('/admin/security-audit', requireAdmin, async (req, res, next) => {
+  try {
+    const q = req.query || {};
+    const limit = Math.min(Math.max(parseInt(q.limit, 10) || 50, 1), 500);
+    const conditions = [];
+    const params = [];
+    const push = (col, value) => { params.push(value); conditions.push(`${col} = $${params.length}`); };
+    if (typeof q.event_type === 'string' && q.event_type) push('event_type', q.event_type);
+    if (typeof q.resource_type === 'string' && q.resource_type) push('resource_type', q.resource_type);
+    if (typeof q.actor === 'string' && q.actor) push('actor_username', q.actor);
+    for (const [param, op] of [['from', '>='], ['to', '<=']]) {
+      if (typeof q[param] !== 'string' || !q[param]) continue;
+      const parsed = new Date(q[param]);
+      if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: `Paramètre ${param} invalide` });
+      params.push(parsed.toISOString()); conditions.push(`created_at ${op} $${params.length}`);
+    }
+    params.push(limit);
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const rows = await scope.withActorContext(req.user.id, client => client.all(
+      `SELECT id, created_at, request_id, correlation_id, actor_user_id, actor_username, actor_role,
+              tenant_id, site_id, zone_id, event_type, resource_type, resource_id, action, outcome,
+              origin, ip_address, user_agent, detail
+       FROM public.security_audit ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+      params));
+    res.json(rows);
   } catch (e) { next(e); }
 });
 

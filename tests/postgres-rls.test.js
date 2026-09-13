@@ -88,7 +88,8 @@ after(async () => {
 
 test('readiness requires RLS enabled with its policies and helper function on all 5 tables', async () => {
   assert.equal(await assertReady(pool, { directory }), undefined);
-  assert.deepEqual(Object.keys(RLS_POLICIES).sort(), ['membership_audit', 'memberships', 'sites', 'tenants', 'zones']);
+  // PG-10 adds security_audit (its own, stricter RLS function — see postgres-security-audit.test.js).
+  assert.deepEqual(Object.keys(RLS_POLICIES).sort(), ['membership_audit', 'memberships', 'security_audit', 'sites', 'tenants', 'zones']);
 });
 
 test('readiness fails if RLS is disabled on one table', async t => {
