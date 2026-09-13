@@ -999,7 +999,10 @@ function renderLapiHistory(){
   const list = (cache.lapiLectures||[]).slice(0,12);
   if(list.length===0){ c.innerHTML=''; e.style.display='block'; return; }
   e.style.display='none';
-  c.innerHTML = list.map(l=>`<div class="captured-thumb" onclick="rechargerLecture('${l.id}')"><img src="${l.image||''}" alt=""><div class="plate-tag">${l.plaque_detectee||'?'}</div></div>`).join('');
+  // PG-25 (hardening) : image/plaque_detectee viennent de POST /lapi sans
+  // validation serveur (texte libre) — escapeHtml() partout, y compris dans
+  // l'attribut src (neutralise un guillemet qui casserait l'attribut).
+  c.innerHTML = list.map(l=>`<div class="captured-thumb" onclick="rechargerLecture('${l.id}')"><img src="${escapeHtml(l.image||'')}" alt=""><div class="plate-tag">${escapeHtml(l.plaque_detectee||'?')}</div></div>`).join('');
 }
 
 function rechargerLecture(id){
@@ -1024,7 +1027,9 @@ function renderLapiTable(){
   const tbody = document.querySelector('#tableLapi tbody'); if(!tbody) return;
   const list = cache.lapiLectures||[];
   if(list.length===0){ tbody.innerHTML='<tr><td colspan="6" class="empty-state">Aucune lecture</td></tr>'; return; }
-  tbody.innerHTML = list.map(l=>`<tr><td>${fmtDateTime(l.datetime)}</td><td><strong>${l.plaque_detectee||'?'}</strong></td><td>${l.confiance}%</td><td><span class="badge ${l.statut==='valide'?'success':(l.statut==='refuse'?'danger':(l.statut==='detecte'?'info':'warning'))}">${l.statut}</span></td><td>${l.action?'<span class="badge muted">'+l.action+'</span>':'—'}</td><td><button class="btn btn-sm btn-outline" onclick="rechargerLecture('${l.id}')">👁️</button></td></tr>`).join('');
+  // PG-25 (hardening) : toutes ces valeurs viennent de POST /lapi sans
+  // validation serveur (texte libre) — escapeHtml() partout.
+  tbody.innerHTML = list.map(l=>`<tr><td>${fmtDateTime(l.datetime)}</td><td><strong>${escapeHtml(l.plaque_detectee||'?')}</strong></td><td>${escapeHtml(String(l.confiance ?? ''))}%</td><td><span class="badge ${l.statut==='valide'?'success':(l.statut==='refuse'?'danger':(l.statut==='detecte'?'info':'warning'))}">${escapeHtml(l.statut||'')}</span></td><td>${l.action?'<span class="badge muted">'+escapeHtml(l.action)+'</span>':'—'}</td><td><button class="btn btn-sm btn-outline" onclick="rechargerLecture('${l.id}')">👁️</button></td></tr>`).join('');
 }
 
 async function clearLapiHistory(){
@@ -1062,7 +1067,7 @@ function renderPietons(){
   document.getElementById('pietonSusp').textContent = cache.incidents.filter(i=>i.statut!=='resolu'&&(i.type.includes('intrusion')||i.type.includes('suspect'))).length;
   const tbody = document.querySelector('#tablePietons tbody');
   if(list.length===0){ tbody.innerHTML='<tr><td colspan="9" class="empty-state">Aucun passage</td></tr>'; return; }
-  tbody.innerHTML = list.slice(0,200).map(p=>`<tr><td>${fmtDateTime(p.datetime)}</td><td>${escapeHtml(p.nom)}</td><td><code>${p.badge||''}</code></td><td><span class="badge ${p.type==='Employé'?'info':'muted'}">${p.type}</span></td><td>${escapeHtml(p.point)}</td><td>${p.sens==='entree'?'➡️ Entrée':'⬅️ Sortie'}</td><td><span class="badge ${p.resultat==='autorise'?'success':'danger'}">${p.resultat==='autorise'?'Autorisé':'Refusé'}</span></td><td>${escapeHtml(p.notes||'')}</td><td><button class="btn btn-sm btn-outline admin-only" onclick='editPieton(${JSON.stringify(p)})'>✏️</button> <button class="btn btn-sm btn-danger admin-only" onclick="deletePieton('${p.id}')">🗑️</button></td></tr>`).join('');
+  tbody.innerHTML = list.slice(0,200).map(p=>`<tr><td>${fmtDateTime(p.datetime)}</td><td>${escapeHtml(p.nom)}</td><td><code>${escapeHtml(p.badge||'')}</code></td><td><span class="badge ${p.type==='Employé'?'info':'muted'}">${p.type}</span></td><td>${escapeHtml(p.point)}</td><td>${p.sens==='entree'?'➡️ Entrée':'⬅️ Sortie'}</td><td><span class="badge ${p.resultat==='autorise'?'success':'danger'}">${p.resultat==='autorise'?'Autorisé':'Refusé'}</span></td><td>${escapeHtml(p.notes||'')}</td><td><button class="btn btn-sm btn-outline admin-only" onclick="editPieton('${p.id}')">✏️</button> <button class="btn btn-sm btn-danger admin-only" onclick="deletePieton('${p.id}')">🗑️</button></td></tr>`).join('');
 }
 
 function openPietonModal(existing){
@@ -1081,7 +1086,17 @@ function openPietonModal(existing){
   });
 }
 
-function editPieton(p){ openPietonModal(p); }
+// PG-25 (hardening) : prenait auparavant l'enregistrement entier, sérialisé
+// tel quel dans un attribut onclick délimité par des guillemets simples —
+// nom/point/notes étant du texte libre non validé (POST /pietons), un
+// simple guillemet simple dans l'un de ces champs cassait l'attribut et
+// permettait d'injecter du HTML/JS arbitraire — XSS stockée exécutée dans
+// le navigateur de quiconque affiche ce tableau (souvent un compte admin).
+// Même motif que editIncident/deleteVehicule/etc. partout ailleurs dans ce
+// fichier : ne transporter qu'un identifiant opaque (jamais du texte
+// libre) dans un attribut HTML, et relire l'enregistrement depuis le
+// cache déjà chargé.
+function editPieton(id){ const p=(cache.pietons||[]).find(x=>x.id===id); if(!p) return; openPietonModal(p); }
 
 async function deletePieton(id){
   if(!confirm('Supprimer ce passage ?')) return;
@@ -1300,7 +1315,10 @@ function renderBadges(){
   tbody.innerHTML = cache.badges.map(b=>{
     const exp = new Date(b.validite) < new Date();
     const etat = exp ? 'Expiré' : (b.etat==='inactif'?'Inactif':'Actif');
-    return `<tr><td><strong>${b.ref}</strong></td><td>${escapeHtml(b.nom||'')}</td><td><span class="badge ${b.type==='V'?'info':(b.type==='E'?'success':(b.type==='P'?'warning':'muted'))}">${typeLabel(b.type)}</span></td><td><span class="badge ${b.niveau==='N4'?'danger':(b.niveau==='N3'?'warning':(b.niveau==='N2'?'info':'muted'))}">${b.niveau}</span></td><td>${fmtDate(b.emis)}</td><td>${fmtDate(b.validite)}</td><td><span class="badge ${exp||b.etat==='inactif'?'danger':'success'}">${etat}</span></td><td><button class="btn btn-sm btn-outline" onclick="reimprimerBadge('${b.ref}')">🖨️</button> <button class="btn btn-sm btn-outline admin-only" onclick="desactiverBadge('${b.ref}')">⏸️</button> <button class="btn btn-sm btn-danger admin-only" onclick="deleteBadge('${b.ref}')">🗑️</button></td></tr>`;
+    // PG-25 (hardening) : b.ref peut être fourni tel quel par l'appelant
+    // (POST /badges) — escapeHtml() en affichage et dans les attributs onclick.
+    const ref = escapeHtml(b.ref);
+    return `<tr><td><strong>${ref}</strong></td><td>${escapeHtml(b.nom||'')}</td><td><span class="badge ${b.type==='V'?'info':(b.type==='E'?'success':(b.type==='P'?'warning':'muted'))}">${typeLabel(b.type)}</span></td><td><span class="badge ${b.niveau==='N4'?'danger':(b.niveau==='N3'?'warning':(b.niveau==='N2'?'info':'muted'))}">${escapeHtml(b.niveau||'')}</span></td><td>${fmtDate(b.emis)}</td><td>${fmtDate(b.validite)}</td><td><span class="badge ${exp||b.etat==='inactif'?'danger':'success'}">${etat}</span></td><td><button class="btn btn-sm btn-outline" onclick="reimprimerBadge('${ref}')">🖨️</button> <button class="btn btn-sm btn-outline admin-only" onclick="desactiverBadge('${ref}')">⏸️</button> <button class="btn btn-sm btn-danger admin-only" onclick="deleteBadge('${ref}')">🗑️</button></td></tr>`;
   }).join('');
 }
 

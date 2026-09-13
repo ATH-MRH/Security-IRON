@@ -31,6 +31,30 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// PG-25 (hardening) : le rôle/l'existence du compte n'étaient jamais
+// revérifiés après l'émission du JWT (jusqu'à 8h, backend/auth.js) sur ce
+// routeur — un compte supprimé, ou un rôle rétrogradé (admin -> agent),
+// restait pleinement actif jusqu'à expiration naturelle du token, y
+// compris sur /admin/*. Seul backend/alerts.js revérifiait déjà (PG-10).
+// Même mécanisme, étendu ici, avant toute autre vérification (y compris
+// /admin/*, qui en a au moins autant besoin) : une session dont le compte
+// n'existe plus est un événement de sécurité audité, jamais une simple
+// 401 muette — même event_type qu'ailleurs (auth.session.revoked).
+router.use(async (req, res, next) => {
+  try {
+    const fresh = req.user ? await db.get('SELECT id, username, role FROM public.users WHERE id=$1', [req.user.id]) : null;
+    if (!fresh) {
+      await securityAudit.recordBestEffort({
+        ...auditFields(req), actorUserId: req.user?.id ?? null,
+        eventType: 'auth.session.revoked', resourceType: 'session', action: 'access', outcome: 'denied',
+      });
+      return res.status(401).json({ error: 'Session révoquée' });
+    }
+    req.user = fresh;
+    next();
+  } catch (e) { next(e); }
+});
+
 // PG-8 : toute donnée métier (tout sauf /admin/*, qui reste une capacité de
 // compte/système gérée par le rôle JWT, pas par le périmètre memberships)
 // exige un périmètre actif. Aucun filtrage de ligne n'est ajouté ici : les

@@ -37,7 +37,31 @@ const { observability } = require('./backend/observability');
 const SHUTDOWN_GRACE_MS = 10000;
 
 const app = express();
-app.use(cors());
+// PG-25 (hardening) : cors() sans options reflétait N'IMPORTE QUELLE
+// origine (Access-Control-Allow-Origin dynamique) sans nécessité
+// démontrée — ce serveur sert le frontend ET l'API sur la même origine
+// (express.static + /api/*, plus bas), aucun besoin cross-origin connu
+// aujourd'hui. ALLOWED_ORIGIN (liste séparée par des virgules, optionnelle)
+// permet un futur déploiement où le frontend serait servi séparément ;
+// non configuré (par défaut), aucune origine cross-site n'est autorisée —
+// { origin: false } désactive complètement les en-têtes CORS, ce qui
+// n'affecte jamais les requêtes same-origin du frontend lui-même (la
+// politique CORS ne s'applique qu'aux requêtes cross-origin d'un
+// navigateur, jamais aux appels same-origin ni serveur-à-serveur).
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors(ALLOWED_ORIGINS.length ? { origin: ALLOWED_ORIGINS } : { origin: false }));
+// PG-25 (hardening) : en-têtes de sécurité de base, sans nouvelle
+// dépendance — jamais posés par défaut par Express. Pas de
+// Content-Security-Policy générique ici : une CSP correcte dépend du
+// contenu réel de chaque page (scripts/styles inline existants) et une
+// valeur mal calibrée casserait le frontend sans bénéfice réel — à
+// calibrer explicitly si/quand nécessaire, pas devinée.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(requestContext()); // PG-10 : req.requestId, en-tête X-Request-Id — avant toute route.
 app.use(observability());  // PG-18 : une ligne de log JSON structurée par requête — avant toute route.

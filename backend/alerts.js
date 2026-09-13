@@ -70,7 +70,33 @@ router.post('/', wrap(async (req, res) => res.status(201).json(await service.cre
 // PG-15 : bouton de détresse — aucun champ requis, niveau/type jamais au
 // choix de l'appelant (toujours 4/'SOS'). Avant la route /:id pour ne jamais
 // prêter à confusion, même si la méthode HTTP suffit déjà à les distinguer.
-router.post('/sos', wrap(async (req, res) => res.status(201).json(await service.sos(req.body, req.user))));
+// PG-25 (hardening) : « abus SOS » — seuil volontairement TRÈS généreux et
+// PAR COMPTE : jamais un frein pour un vrai appel de détresse, y compris
+// une main qui presse plusieurs fois par doute ou plusieurs urgences
+// réelles rapprochées ; bloque seulement un flot automatisé (des dizaines
+// à la seconde) capable de noyer le tableau de bord SOC sous de faux
+// signaux. Jamais un silence : toujours une réponse explicite (429),
+// jamais un SOS avalé sans réponse ni indication à l'appelant.
+const SOS_WINDOW_MS = 60 * 1000;
+const SOS_MAX_PER_WINDOW = 20;
+const sosCounts = new Map(); // userId -> { count, windowStart }
+function sosLimited(userId) {
+  const now = Date.now();
+  const entry = sosCounts.get(userId);
+  if (!entry || now - entry.windowStart > SOS_WINDOW_MS) { sosCounts.set(userId, { count: 1, windowStart: now }); return false; }
+  entry.count++;
+  return entry.count > SOS_MAX_PER_WINDOW;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of sosCounts) if (now - entry.windowStart > SOS_WINDOW_MS) sosCounts.delete(key);
+}, SOS_WINDOW_MS).unref();
+router.post('/sos', wrap(async (req, res) => {
+  if (sosLimited(req.user.id)) {
+    return res.status(429).json({ error: 'Trop de signaux SOS envoyés. Si l’urgence persiste, contactez directement le poste de sécurité.' });
+  }
+  res.status(201).json(await service.sos(req.body, req.user));
+}));
 // PG-20 : résumé de shift SOC — avant /:id (sinon capturé comme un id
 // d'alerte littéral 'shift-summary'), réservé au SOC (summarizeShift le
 // vérifie déjà, mais l'ordre de montage seul ne protège rien : la
