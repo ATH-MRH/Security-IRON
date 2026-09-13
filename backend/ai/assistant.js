@@ -31,6 +31,7 @@
 const db = require('../database');
 const service = require('../alert-core/service');
 const ai = require('./provider');
+const { recordAiEvent } = require('./audit');
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const NOT_ACTIVE = new Set(['CLOTUREE', 'FAUSSE_ALERTE', 'ANNULEE', 'RESOLUE']); // même définition que frontend/js/soc-kpis.js (PG-16)
@@ -107,6 +108,7 @@ async function ask(question, user, client = db) {
   // effectuer.
   const suggestions = user.isSoc ? active.flatMap(suggestFor).slice(0, 10) : [];
 
+  await recordAiEvent({ user, requestType: 'assistant', resourceType: 'ai', provider: result.provider, model: result.model, resultText: result.text }); // PG-24
   return { ...result, generated_by_ai: true, question: text, suggestions };
 }
 

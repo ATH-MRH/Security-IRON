@@ -46,7 +46,20 @@ router.use((req, res, next) => (req.path.startsWith('/admin') ? next() : withSco
 // tenant résolu ici — sans quoi une alerte créée depuis POST /incidents ou
 // /pietons échouerait la contrainte NOT NULL de security_alerts.tenant_id
 // (migration 009). Même convention que backend/alerts.js (PG-8/PG-10).
-router.use((req, res, next) => { if (req.tenantId != null && req.user) req.user.tenantId = req.tenantId; next(); });
+// PG-24 : requestId/correlationId/ipAddress/userAgentHeader posés en plus,
+// pour que backend/ai/audit.js (résumé d'incident) ait le même contexte
+// que les appels IA montés depuis backend/alerts.js — jamais recalculé
+// différemment ici.
+router.use((req, res, next) => {
+  if (req.tenantId != null && req.user) req.user.tenantId = req.tenantId;
+  if (req.user) {
+    req.user.requestId = req.requestId || null;
+    req.user.correlationId = req.correlationId || null;
+    req.user.ipAddress = req.ip || null;
+    req.user.userAgentHeader = req.headers['user-agent'] || null;
+  }
+  next();
+});
 
 /* ============================================================ */
 /*  ADMINISTRATION SYSTÈME                                      */
@@ -389,7 +402,7 @@ router.get('/incidents', async (req, res, next) => {
 // PG-20 : résumé IA d'un incident — même périmètre que GET /incidents
 // ci-dessus, aucun filtrage supplémentaire inventé (voir backend/ai/summaries.js).
 router.get('/incidents/:id/summary', async (req, res, next) => {
-  try { res.json(await aiSummaries.summarizeIncident(req.params.id, db)); }
+  try { res.json(await aiSummaries.summarizeIncident(req.params.id, req.user, db)); }
   catch (e) { next(e); }
 });
 

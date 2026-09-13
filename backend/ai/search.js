@@ -46,6 +46,7 @@ const service = require('../alert-core/service');
 const scope = require('../scope');
 const map = require('../map');
 const ai = require('./provider');
+const { recordAiEvent } = require('./audit');
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const MAX_RESULTS = 30;
@@ -113,6 +114,7 @@ async function search(query, user, client = db) {
   const prompt = "Réponds à cette recherche pour un opérateur SOC en t'appuyant strictement sur les résultats fournis dans le contexte (jamais une information hors de ces résultats), en citant leurs identifiants, en 4 phrases maximum : " + text;
   const result = await ai.complete({ prompt, context });
 
+  await recordAiEvent({ user, requestType: 'search', resourceType: 'ai', provider: result.provider, model: result.model, resultText: result.text }); // PG-24
   return { ...result, generated_by_ai: true, query: text, results };
 }
 

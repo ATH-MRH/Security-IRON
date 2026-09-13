@@ -19,9 +19,9 @@ serveur, jamais le corps de la requête ; nullables car de nombreux
 tenant) · `event_type` / `resource_type` / `action` (TEXT libres, **pas** de
 CHECK figé : de nouveaux types apparaîtront avec PG-15/19+ sans migration) ·
 `outcome` (`CHECK IN ('success','denied','failure')`) · `origin` (`CHECK IN
-('http','system','migration','automation')` — une origine `ia` viendra par
-migration dédiée si nécessaire, PG-19+) · `ip_address INET` · `user_agent
-TEXT` · `detail JSONB` (sanitisé, voir plus bas).
+('http','system','migration','automation','ai')` — `ai` ajoutée par la
+migration `010_ai_audit_origin.sql` (PG-24), voir `docs/ai.md`) ·
+`ip_address INET` · `user_agent TEXT` · `detail JSONB` (sanitisé, voir plus bas).
 
 Index : `(tenant_id, created_at DESC)`, `(actor_user_id, created_at DESC)`,
 `(event_type, created_at DESC)`, `(resource_type, resource_id, created_at

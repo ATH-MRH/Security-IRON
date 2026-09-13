@@ -1,4 +1,4 @@
-# SécuriSite — IA : architecture, résumés, assistant, corrélation, recherche (PG-19 à PG-23)
+# SécuriSite — IA : architecture, résumés, assistant, corrélation, recherche, audit (PG-19 à PG-24)
 
 ## Portée
 
@@ -22,7 +22,11 @@ uniquement). API seule pour ce lot, pas de point d'entrée frontend dédié
 et l'explicabilité des signaux, pas l'UI — laissée à une passe ultérieure.
 PG-23 (§27) ajoute la recherche scoped (« RAG » au sens recherche, pas
 génération libre) — `backend/ai/search.js`, `GET /api/alerts/search?q=`.
-PG-24+ (audit IA) reste un lot distinct, non entrepris ici.
+
+PG-24 (§28) ajoute l'audit IA append-only — `backend/ai/audit.js`,
+réutilisant `public.security_audit` (migration 006, PG-10) via une
+nouvelle origine `'ai'` (migration 010). PG-25+ (hardening, performance,
+backup, déploiement, acceptance, RC) restent des lots distincts.
 
 ## Aucun fournisseur réel
 
@@ -346,3 +350,58 @@ vide/trop longue refusée, isolation tenant sur les sites ET les alertes,
 own-vs-scope, narrowing site-level, un vrai payload d'injection stocké
 trouvé sans fuite intertenant (contexte envoyé au provider inclus), et
 citation avec source vérifiable.
+
+## PG-24 — audit IA : un journal existant, pas une nouvelle table
+
+`backend/ai/audit.js` réutilise `public.security_audit` (migration 006,
+PG-10) plutôt qu'une table dédiée : la migration 006 anticipait déjà ce
+lot (« Un IA aura une origine dédiée plus tard (PG-19+) : ajout par
+migration »). La migration `010_ai_audit_origin.sql` élargit la seule
+contrainte qui l'empêchait (`origin CHECK`) pour y ajouter `'ai'`. Un seul
+journal de sécurité transversal, déjà append-only (triggers), déjà RLS
+(lecture réservée aux memberships `soc` de leur propre tenant), déjà
+testé — pas une deuxième table à maintenir et auditer séparément.
+
+Chaque appel IA (résumés PG-20, assistant PG-21, corrélation PG-22,
+recherche PG-23) écrit, via le point d'entrée unique
+`recordAiEvent()`, un événement `event_type='ai.<type>'` (`ai.alert_summary`,
+`ai.timeline_summary`, `ai.closing_report`, `ai.incident_summary`,
+`ai.shift_summary`, `ai.assistant`, `ai.correlation`, `ai.search`) :
+
+- **Champs** (§28) : `provider`/`model` → `detail.provider`/`detail.model` ;
+  type de requête → `event_type` + `detail.request_type` ; acteur →
+  `actor_user_id`/`actor_username` ; tenant → `tenant_id` ; ressource →
+  `resource_type`/`resource_id` (`alert`/`incident`/`ai` générique pour un
+  shift/une corrélation/une recherche multi-ressources) ; horodatage →
+  `created_at` ; correlation/request id → `correlation_id`/`request_id`
+  (posés par PG-10/PG-18, jamais recalculés différemment ici) ; résultat →
+  `detail.result_ref`.
+- **« Ne stocker que le contexte nécessaire »** : jamais le texte généré
+  en clair — seulement une empreinte SHA-256 (`result_ref`), suffisante
+  pour vérifier après coup qu'une réponse donnée correspond à cet
+  événement, sans dupliquer le contenu. Prouvé par test : le texte réel
+  généré n'apparaît jamais, même sérialisé, dans la ligne d'audit.
+- **« Ne jamais stocker : password/JWT/secret/API key/DATABASE_URL »** :
+  `detail` passe par `sanitizeDetail()` (PG-10), réutilisée telle quelle —
+  defense en profondeur, en plus du fait qu'aucun de ces éléments n'est de
+  toute façon jamais construit ici (seuls `provider`/`model`/
+  `request_type`/`result_ref`/`human_decision` y figurent).
+- **`human_decision`** : présent dans le schéma mais toujours `null` pour
+  ce lot — le câblage qui l'alimenterait (enregistrer qu'un humain a
+  confirmé/rejeté une suggestion PG-21, en respectant append-only : une
+  **nouvelle** ligne, jamais une modification de celle-ci) est un lot
+  distinct, non entrepris ici. Champ présent, honnêtement non alimenté
+  plutôt que deviné — prouvé par test.
+- **Best-effort** (`recordBestEffort`, PG-10) : un audit IA manquant ne
+  bloque jamais une réponse déjà générée — ce n'est pas une mutation
+  critique fail-closed comme `alert.create`/`alert.action`.
+
+## Tests (PG-24)
+
+`tests/postgres-ai-audit.test.js` (HTTP, PostgreSQL réel) : chaque type de
+requête IA écrit son propre événement correctement typé, jamais le texte
+généré en clair (seulement son hash), `human_decision` présent mais null,
+résumé d'incident avec le bon `resource_type`/tenant, immutabilité
+(UPDATE/DELETE rejetés) sur une ligne `ai`, RLS/cross-tenant (un SOC de
+tenant A ne lit jamais l'audit IA de tenant B), et l'échec d'audit ne
+bloque jamais une réponse déjà générée.

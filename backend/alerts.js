@@ -45,6 +45,10 @@ router.use((req, res, next) => {
   // dans la même transaction que la mutation qu'ils décrivent (règle 13).
   req.user.tenantId = req.tenantId;
   req.user.requestId = req.requestId || null;
+  // PG-24 : posé par backend/observability.js (PG-18), monté avant ce
+  // routeur — relie un événement d'audit IA à sa ligne de télémétrie
+  // opérationnelle, jamais recalculé ici.
+  req.user.correlationId = req.correlationId || null;
   req.user.ipAddress = req.ip || null;
   req.user.userAgentHeader = req.headers['user-agent'] || null;
   next();

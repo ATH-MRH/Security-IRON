@@ -23,7 +23,7 @@
 const db = require('./database');
 
 const OUTCOMES = ['success', 'denied', 'failure'];
-const ORIGINS = ['http', 'system', 'migration', 'automation'];
+const ORIGINS = ['http', 'system', 'migration', 'automation', 'ai']; // 'ai' : PG-24, migration 010
 const OUTCOME_SET = new Set(OUTCOMES);
 const ORIGIN_SET = new Set(ORIGINS);
 

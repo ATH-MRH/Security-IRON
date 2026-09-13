@@ -24,11 +24,19 @@
 const db = require('../database');
 const service = require('../alert-core/service');
 const ai = require('./provider');
+const { recordAiEvent } = require('./audit');
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const NOT_ACTIVE = new Set(['CLOTUREE', 'FAUSSE_ALERTE', 'ANNULEE', 'RESOLUE']); // même définition que frontend/js/soc-kpis.js (PG-16)
+// PG-24 : resourceType par type de résumé ('alert' pour les trois résumés
+// d'alerte, 'incident' pour l'incident, 'ai' générique pour un shift qui
+// n'a pas une seule ressource).
+const RESOURCE_TYPE = { alert_summary: 'alert', timeline_summary: 'alert', closing_report: 'alert', incident_summary: 'incident', shift_summary: 'ai' };
 
-function label(result, kind, resourceId) {
+// PG-24 : un seul point de sortie pour les 5 fonctions -> un seul point
+// d'audit (backend/ai/audit.js), jamais dupliqué par fonction.
+async function label(result, kind, resourceId, user) {
+  await recordAiEvent({ user, requestType: kind, resourceType: RESOURCE_TYPE[kind], resourceId, provider: result.provider, model: result.model, resultText: result.text });
   return { kind, resource_id: resourceId, ...result, generated_by_ai: true };
 }
 
@@ -44,14 +52,14 @@ async function summarizeAlert(id, user, client = db) {
   const alert = await service.detail(id, user, client); // own/scope + tenant déjà appliqués
   const context = alertContext(alert);
   const prompt = 'Résume cette alerte de sécurité pour un opérateur SOC : site, type, niveau, statut et chronologie essentielle, en 3 phrases maximum.';
-  return label(await ai.complete({ prompt, context }), 'alert_summary', id);
+  return label(await ai.complete({ prompt, context }), 'alert_summary', id, user);
 }
 
 async function summarizeTimeline(id, user, client = db) {
   const alert = await service.detail(id, user, client);
   const context = { id: alert.id, timeline: alertContext(alert).timeline };
   const prompt = 'Résume uniquement la chronologie de cette alerte (qui a fait quoi, dans quel ordre), sans répéter ce qui est déjà connu (site/type/niveau).';
-  return label(await ai.complete({ prompt, context }), 'timeline_summary', id);
+  return label(await ai.complete({ prompt, context }), 'timeline_summary', id, user);
 }
 
 async function closingReport(id, user, client = db) {
@@ -59,16 +67,16 @@ async function closingReport(id, user, client = db) {
   const context = alertContext(alert);
   const prompt = 'Rédige un rapport de clôture structuré pour cette alerte : contexte, actions menées, résolution, durée totale de traitement. '
     + "Si l'alerte n'est pas encore clôturée, indique-le explicitement comme un brouillon, jamais comme un rapport final.";
-  return label(await ai.complete({ prompt, context }), 'closing_report', id);
+  return label(await ai.complete({ prompt, context }), 'closing_report', id, user);
 }
 
-async function summarizeIncident(id, client = db) {
+async function summarizeIncident(id, user, client = db) {
   const incident = await client.get('SELECT * FROM incidents WHERE id=$1', [id]);
   if (!incident) fail('Incident introuvable', 404);
   const { id: incidentId, ref, type, lieu, gravite, statut, description, actions, datetime } = incident;
   const context = { id: incidentId, ref, type, lieu, gravite, statut, description, actions, datetime };
   const prompt = 'Résume cet incident de sécurité pour un rapport SOC : type, lieu, gravité, statut et actions déjà menées, en 3 phrases maximum.';
-  return label(await ai.complete({ prompt, context }), 'incident_summary', id);
+  return label(await ai.complete({ prompt, context }), 'incident_summary', id, user);
 }
 
 async function summarizeShift(user, client = db, { sinceHours = 12 } = {}) {
@@ -91,7 +99,7 @@ async function summarizeShift(user, client = db, { sinceHours = 12 } = {}) {
     items: recent.slice(0, 30).map(a => ({ site: a.site, type: a.type, level: a.level, status: a.status, created_at: a.created_at })),
   };
   const prompt = "Rédige un résumé de shift SOC pour la relève : volume d'alertes, alertes critiques/SOS, sites concernés, points d'attention, en 5 phrases maximum.";
-  return label(await ai.complete({ prompt, context }), 'shift_summary', null);
+  return label(await ai.complete({ prompt, context }), 'shift_summary', null, user);
 }
 
 module.exports = { summarizeAlert, summarizeTimeline, closingReport, summarizeIncident, summarizeShift };
