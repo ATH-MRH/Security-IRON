@@ -16,6 +16,22 @@ test('sans SECURISITE_CAMERAS_CONFIG_FILE : registre vide, jamais "ouvert par d�
   assert.equal(registry.resolve('anything'), null);
 });
 
+test('SECURISITE_CAMERAS_CONFIG_FILE pointant vers un fichier absent (volume monté, jamais encore rempli) : registre vide, jamais une erreur (Coolify, premier déploiement)', () => {
+  const path = require('node:path');
+  const os = require('node:os');
+  process.env.SECURISITE_CAMERAS_CONFIG_FILE = path.join(os.tmpdir(), 'securisite-cameras-absent-' + Date.now() + '.json');
+  assert.doesNotThrow(() => registry.all());
+  assert.deepEqual(registry.all(), []);
+  delete process.env.SECURISITE_CAMERAS_CONFIG_FILE;
+});
+
+test('SECURISITE_CAMERAS_CONFIG_FILE pointant vers un chemin réellement cassé (répertoire, pas un fichier) : échec bruyant, jamais confondu avec "absent"', () => {
+  const os = require('node:os');
+  process.env.SECURISITE_CAMERAS_CONFIG_FILE = os.tmpdir(); // un répertoire existe, mais n'est pas lisible comme fichier JSON
+  assert.throws(() => registry.all(), /illisible/);
+  delete process.env.SECURISITE_CAMERAS_CONFIG_FILE;
+});
+
 test('configure/resolve : une caméra valide est acceptée et retrouvable par id', () => {
   registry.configure([{ id: 'cam1', name: 'Entrée', type: 'http', tenantId: 't1', url: 'http://192.168.1.50/snap.jpg' }]);
   const cam = registry.resolve('cam1');

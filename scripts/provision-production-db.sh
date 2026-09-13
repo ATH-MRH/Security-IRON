@@ -18,24 +18,31 @@
 # — restauré explicitement ici pour ne jamais laisser la base
 # administrative `postgres` dans un état modifié.
 #
-# Prérequis :
-#   - `docker compose -f docker-compose.prod.yml up -d db` déjà lancé et
-#     en bonne santé (`docker compose ps` -> db "healthy").
-#   - `.env` (à côté de ce script, jamais committé) rempli avec de vrais
-#     secrets — voir .env.production.example.
+# Prérequis (Coolify) :
+#   - Le service `db` de la stack Coolify est démarré et "Healthy" dans
+#     l'interface (équivaut à `docker compose up -d db`).
+#   - Toutes les variables d'environnement (voir .env.production.example)
+#     sont déjà renseignées côté Coolify (onglet "Environment Variables"
+#     de la ressource) — Coolify les injecte dans l'environnement des
+#     conteneurs, donc dans celui-ci si vous l'exécutez depuis le terminal
+#     Coolify de la ressource ; sinon, les exporter manuellement dans le
+#     shell avant de lancer ce script.
+#   - À exécuter depuis le terminal Coolify de la ressource (onglet
+#     "Terminal"), ou en SSH sur le serveur dans le répertoire où Coolify a
+#     cloné ce dépôt (`docker compose -f docker-compose.prod.yml ps` doit y
+#     fonctionner tel quel).
 #   - Ce script ne demande, n'affiche et ne journalise AUCUN secret.
 #
-# N'EST PAS exécuté automatiquement par ce dépôt ni par CI — action
-# humaine explicite requise, sur le serveur réel, une fois les secrets en
-# place.
+# N'EST PAS exécuté automatiquement par Coolify ni par CI — action humaine
+# explicite requise, sur le serveur réel, une fois les secrets en place.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE_FILE="docker-compose.prod.yml"
 COMPOSE=(docker compose -f "$COMPOSE_FILE")
 
-: "${POSTGRES_SUPERUSER:=postgres}"
-: "${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD requis (dans .env, jamais en argument de commande)}"
+: "${POSTGRES_USER:=postgres}"
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis (dans .env, jamais en argument de commande)}"
 : "${SECURISITE_DB_NAME:=securisite}"
 : "${SECURISITE_OWNER_ROLE:=securisite_owner}"
 : "${SECURISITE_MIGRATOR_ROLE:=securisite_migrator}"
@@ -45,32 +52,32 @@ COMPOSE=(docker compose -f "$COMPOSE_FILE")
 : "${PGSSL:=disable}"
 
 echo "[provision] 1/6 — vérification que 'db' est prêt…"
-"${COMPOSE[@]}" exec -T db pg_isready -U "$POSTGRES_SUPERUSER" -d postgres >/dev/null \
+"${COMPOSE[@]}" exec -T db pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null \
   || { echo "[provision] ERREUR : le service 'db' n'est pas prêt — lancer d'abord : docker compose -f $COMPOSE_FILE up -d db" >&2; exit 1; }
 
 echo "[provision] 2/6 — création des rôles OWNER/MIGRATOR/APP (base neutre 'postgres')…"
 "${COMPOSE[@]}" run --rm --no-deps \
   -e NODE_ENV=production \
-  -e DATABASE_URL="postgres://${POSTGRES_SUPERUSER}:${POSTGRES_SUPERUSER_PASSWORD}@db:5432/postgres" \
+  -e DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/postgres" \
   -e PGSSL="$PGSSL" \
   -e SECURISITE_OWNER_ROLE -e SECURISITE_MIGRATOR_ROLE -e SECURISITE_APP_ROLE \
   -e SECURISITE_MIGRATOR_PASSWORD -e SECURISITE_APP_PASSWORD \
   app node backend/db/postgresql/provision-roles.js
 
 echo "[provision] 3/6 — restauration de l'état de la base 'postgres' (effet de bord de l'étape précédente)…"
-"${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" db \
-  psql -h db -U "$POSTGRES_SUPERUSER" -d postgres -v ON_ERROR_STOP=1 \
+"${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+  psql -h db -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
   -c "GRANT CONNECT, TEMP ON DATABASE postgres TO PUBLIC;"
 
 echo "[provision] 4/6 — création de la base '${SECURISITE_DB_NAME}' (OWNER=${SECURISITE_OWNER_ROLE})…"
-DB_EXISTS="$("${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" db \
-  psql -h db -U "$POSTGRES_SUPERUSER" -d postgres -tAc \
+DB_EXISTS="$("${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+  psql -h db -U "$POSTGRES_USER" -d postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname = '${SECURISITE_DB_NAME}'" | tr -d '[:space:]')"
 if [ "$DB_EXISTS" = "1" ]; then
   echo "[provision]     déjà présente, inchangée."
 else
-  "${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" db \
-    psql -h db -U "$POSTGRES_SUPERUSER" -d postgres -v ON_ERROR_STOP=1 \
+  "${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
+    psql -h db -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
     -c "CREATE DATABASE \"${SECURISITE_DB_NAME}\" OWNER \"${SECURISITE_OWNER_ROLE}\";"
 fi
 
@@ -83,7 +90,7 @@ echo "[provision] 5/6 — migrations 001->010 (rôle MIGRATOR)…"
 echo "[provision] 6/6 — finalisation des GRANT (schéma désormais présent)…"
 "${COMPOSE[@]}" run --rm --no-deps \
   -e NODE_ENV=production \
-  -e DATABASE_URL="postgres://${POSTGRES_SUPERUSER}:${POSTGRES_SUPERUSER_PASSWORD}@db:5432/${SECURISITE_DB_NAME}" \
+  -e DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${SECURISITE_DB_NAME}" \
   -e PGSSL="$PGSSL" \
   -e SECURISITE_OWNER_ROLE -e SECURISITE_MIGRATOR_ROLE -e SECURISITE_APP_ROLE \
   -e SECURISITE_MIGRATOR_PASSWORD -e SECURISITE_APP_PASSWORD \

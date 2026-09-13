@@ -9,9 +9,15 @@
 # sauvegardes plus vieilles que SECURISITE_BACKUP_RETENTION_DAYS (7 par
 # défaut) dans le même répertoire.
 #
-# Exemple de tâche planifiée (à ajouter manuellement, jamais par ce
-# dépôt) :
-#   0 3 * * * cd /opt/securisite && ./scripts/backup-production.sh >> /var/log/securisite-backup.log 2>&1
+# Exemple de tâche planifiée (à ajouter manuellement sur le serveur,
+# jamais par ce dépôt ni par Coolify) :
+#   0 3 * * * cd /opt/securisite && SECURISITE_BACKUP_DIR=/opt/securisite/backups ./scripts/backup-production.sh >> /var/log/securisite-backup.log 2>&1
+#
+# SECURISITE_BACKUP_DIR (défaut : ./backups, relatif au dépôt) — pointer
+# vers un chemin qui survit à un redéploiement Coolify (donc PAS
+# l'intérieur du répertoire de checkout que Coolify peut recréer), par
+# exemple un répertoire dédié sur le disque du serveur ou un volume
+# Coolify monté spécifiquement pour les sauvegardes (docs/production-coolify.md §15).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

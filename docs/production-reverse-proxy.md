@@ -1,10 +1,16 @@
 # SécuriSite — reverse proxy production (security.irongs.com)
 
-Ce document liste les **exigences** que le reverse proxy déjà en place (ou
-à installer) sur le serveur dédié doit satisfaire — il **n'installe ni ne
-choisit** Nginx, Caddy, Traefik ou Coolify à la place de ce qui existe déjà
-sur ce serveur. Information manquante à ce stade : lequel de ces systèmes
-(ou un autre) tourne réellement sur le serveur cible.
+> **Coolify confirmé comme plateforme cible** — voir
+> `docs/production-coolify.md`, qui couvre le cas réel (Coolify gère
+> domaine/HTTPS/certificat/proxy lui-même, aucun Nginx/Caddy/Traefik
+> déclaré dans `docker-compose.prod.yml`). Ce document reste comme
+> référence générale (exigences SSE/timeout indépendantes du proxy exact,
+> exemples pour Nginx/Caddy/Traefik bruts) — utile si Coolify change un
+> jour, ou pour un déploiement hors Coolify.
+
+Ce document liste les **exigences** qu'un reverse proxy doit satisfaire en
+général — il n'installe ni ne choisit de système à la place de ce qui
+existe déjà sur un serveur donné.
 
 ## Exigences, quel que soit le proxy retenu
 

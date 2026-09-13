@@ -83,7 +83,19 @@ function loadFromFile() {
   if (!file) return [];
   let raw;
   try { raw = fs.readFileSync(file, 'utf8'); }
-  catch (e) { throw new Error(`SECURISITE_CAMERAS_CONFIG_FILE illisible (${file}) : ${e.message}`); }
+  catch (e) {
+    // Fichier absent (ENOENT) : traité comme "aucune configuration",
+    // exactement comme la variable elle-même absente — un déploiement qui
+    // monte le volume caméra sans y avoir encore déposé cameras.json (cas
+    // normal au premier déploiement, docs/production-coolify.md §12) ne
+    // doit jamais faire échouer une requête, seulement rester fail-closed
+    // (registre vide). Toute AUTRE erreur (permissions, chemin invalide
+    // pointant vers un répertoire, etc.) reste un échec bruyant : une
+    // configuration réellement cassée ne doit jamais se faire passer pour
+    // "aucune caméra" silencieusement.
+    if (e && e.code === 'ENOENT') return [];
+    throw new Error(`SECURISITE_CAMERAS_CONFIG_FILE illisible (${file}) : ${e.message}`);
+  }
   let parsed;
   try { parsed = JSON.parse(raw); }
   catch (e) { throw new Error(`SECURISITE_CAMERAS_CONFIG_FILE JSON invalide (${file}) : ${e.message}`); }

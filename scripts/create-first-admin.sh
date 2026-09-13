@@ -10,11 +10,12 @@
 #      tableau de bord/les alertes/les incidents (scope.requireScope()).
 #
 # Idempotent : rejouable sans risque (les deux étapes le sont).
-# À exécuter APRÈS scripts/provision-production-db.sh (rôles + migrations)
-# et un premier `docker compose -f docker-compose.prod.yml up migrate`
-# réussi. N'affiche ni ne journalise aucun secret au-delà de ce que
-# create-admin.js affiche déjà lui-même (rien : il ne journalise jamais
-# le mot de passe).
+# À exécuter APRÈS scripts/provision-production-db.sh (rôles + migrations),
+# depuis le terminal Coolify de la ressource (ou en SSH sur le serveur,
+# dans le répertoire où Coolify a cloné ce dépôt) — mêmes prérequis que
+# scripts/provision-production-db.sh. N'affiche ni ne journalise aucun
+# secret au-delà de ce que create-admin.js affiche déjà lui-même (rien :
+# il ne journalise jamais le mot de passe).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

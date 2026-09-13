@@ -1,36 +1,27 @@
-# SécuriSite — production (serveur dédié), architecture PostgreSQL.
+# SécuriSite — production, déployé par Coolify depuis GitHub (branche
+# `main`) sur security.irongs.com.
 #
-# Remplace l'ancien docker-compose.prod.yml (modèle SQLite, obsolète depuis
-# la migration PostgreSQL PG-6→PG-30 — voir docs/production-readiness-plan.md
-# §1). Aucune valeur secrète réelle dans ce fichier : tout vient de
-# variables d'environnement, à fournir via un fichier `.env` local
-# (jamais committé — voir .env.production.example) ou le gestionnaire de
-# secrets de la plateforme. `docker compose` charge automatiquement un
-# fichier `.env` situé à côté de ce fichier.
+# Coolify gère domaine, HTTPS, certificat TLS et reverse proxy : AUCUN
+# Nginx/Caddy/Traefik n'est déclaré ici, aucun label de proxy écrit à la
+# main — Coolify les ajoute lui-même au déploiement, à partir du domaine
+# et du port que vous assignez au service `app` dans son interface (voir
+# docs/production-coolify.md, §"Étapes dans l'interface Coolify"). Aucune
+# valeur secrète réelle dans ce fichier : tout vient des variables
+# d'environnement que Coolify injecte au déploiement (voir
+# .env.production.example pour la liste complète, sans valeurs).
 #
-# PostgreSQL n'est JAMAIS exposé à l'hôte : seul le réseau `internal`
-# (interne à ce compose) y accède. `app` n'est pas non plus publié
-# publiquement par défaut ici — un reverse proxy déjà en place sur ce
-# serveur (Nginx/Caddy/Traefik/Coolify) doit l'atteindre soit via un port
-# lié à 127.0.0.1 (proxy sur l'hôte), soit via un réseau Docker partagé
-# (proxy conteneurisé) — voir docs/production-reverse-proxy.md, aucun des
-# deux n'est choisi arbitrairement ici.
+# PostgreSQL n'est JAMAIS exposé publiquement : ni `ports:`, ni domaine
+# Coolify assigné à `db` — seul le réseau `internal` (interne à ce
+# compose) y accède.
 #
 # Séquence de démarrage : db (healthy) -> migrate (MIGRATOR, une fois,
 # succès obligatoire) -> app (APP uniquement). Les rôles PostgreSQL
 # (OWNER/MIGRATOR/APP) ne sont PAS créés par ce compose : provisioning
 # initial séparé, une fois, voir scripts/provision-production-db.sh —
-# jamais automatique à chaque `docker compose up` (nécessiterait d'exposer
-# en permanence des identifiants superutilisateur à un conteneur qui
-# démarre systématiquement).
-#
-# Commandes (à exécuter UNIQUEMENT sur le serveur cible, jamais depuis ce
-# poste de développement) :
-#   docker compose -f docker-compose.prod.yml build
-#   docker compose -f docker-compose.prod.yml up -d db
-#   # (une fois) : ./scripts/provision-production-db.sh
-#   docker compose -f docker-compose.prod.yml up migrate
-#   docker compose -f docker-compose.prod.yml up -d app
+# jamais automatique à chaque déploiement (nécessiterait d'exposer en
+# permanence des identifiants superutilisateur à un conteneur qui démarre
+# systématiquement). Un redéploiement Coolify ordinaire (nouveau commit
+# sur `main`) ne rejoue que `migrate` (idempotent, sûr) puis `app`.
 
 x-app-image: &app-image
   image: securisite-app:${IMAGE_TAG:-latest}
@@ -45,22 +36,29 @@ services:
       # par scripts/provision-production-db.sh pour créer les rôles
       # OWNER/MIGRATOR/APP et la base ; jamais par l'application au
       # runtime (voir service `app` : rôle APP exclusivement).
-      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD requis}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
       # Pas de POSTGRES_DB ici : la base `securisite` doit être créée avec
       # OWNER=securisite_owner (jamais le superutilisateur par défaut) —
       # scripts/provision-production-db.sh s'en charge dans le bon ordre
-      # (piège rencontré et documenté en staging : créer la base sans le
-      # bon OWNER fait échouer les GRANT du rôle MIGRATOR ensuite).
+      # (piège rencontré et documenté en préparant ce déploiement : créer
+      # la base sans le bon OWNER fait échouer les GRANT du rôle MIGRATOR
+      # ensuite). L'image crée par défaut une base `${POSTGRES_USER}`,
+      # inutilisée, sans conséquence.
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
+      # Volume nommé, persistant : survit aux redéploiements Coolify
+      # (redeploy = nouvelle image applicative, jamais une recréation de
+      # ce volume). À vérifier une fois dans l'interface Coolify : ce
+      # volume doit apparaître dans l'onglet Stockage du service `db`,
+      # jamais marqué comme éphémère (§"Volumes", docs/production-coolify.md).
       - securisite_pgdata:/var/lib/postgresql/data
     networks:
       - internal
-    # PAS de `ports:` ici : PostgreSQL n'est joignable que depuis le
-    # réseau Docker interne `internal`, jamais depuis l'hôte ni Internet.
+    # PAS de `ports:`, PAS de domaine Coolify sur ce service : PostgreSQL
+    # n'est joignable que depuis le réseau Docker interne `internal`.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,7 +69,8 @@ services:
   # avec le rôle MIGRATOR — jamais avec APP (qui n'a aucun droit DDL) ni
   # OWNER (NOLOGIN, ne se connecte jamais). Échec ici = `app` ne démarre
   # jamais (fail-closed, cohérent avec server.js#start() qui refuse déjà
-  # d'écouter sans base saine).
+  # d'écouter sans base saine). Idempotent : un redéploiement Coolify
+  # ordinaire (base déjà à jour) affiche "aucune" migration appliquée.
   migrate:
     <<: *app-image
     build: .
@@ -79,10 +78,10 @@ services:
     command: ["node", "backend/db/postgresql/migrate-cli.js"]
     environment:
       DATABASE_URL: postgres://${SECURISITE_MIGRATOR_ROLE:-securisite_migrator}:${SECURISITE_MIGRATOR_PASSWORD:?SECURISITE_MIGRATOR_PASSWORD requis}@db:5432/${SECURISITE_DB_NAME:-securisite}
-      # `disable` par défaut : lien interne au réseau Docker de ce compose,
-      # jamais exposé. Passer à verify-full (+ PGSSLROOTCERT) si
-      # PostgreSQL n'est PAS colocalisé dans ce même compose (base managée
-      # externe) — voir docs/postgresql-deployment.md §3.
+      # `disable` : lien interne au réseau Docker de ce compose, jamais
+      # exposé. Passer à verify-full (+ PGSSLROOTCERT) uniquement si
+      # PostgreSQL n'est PAS le service `db` ci-dessus (base managée
+      # externe à Coolify) — voir docs/postgresql-deployment.md §3.
       PGSSL: ${PGSSL:-disable}
     networks:
       - internal
@@ -101,36 +100,40 @@ services:
       DATABASE_URL: postgres://${SECURISITE_APP_ROLE:-securisite_app}:${SECURISITE_APP_PASSWORD:?SECURISITE_APP_PASSWORD requis}@db:5432/${SECURISITE_DB_NAME:-securisite}
       PGSSL: ${PGSSL:-disable}
       # Frontend et API servis par ce même conteneur (express.static) sur
-      # le même domaine : laisser vide sauf si un domaine séparé consomme
-      # l'API (docs/production-readiness-plan.md §4).
+      # security.irongs.com : laisser vide, aucune configuration CORS
+      # supplémentaire nécessaire.
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
-      # Optionnel : voir le montage commenté ci-dessous. Absent = aucune
+      # Optionnel : voir le volume caméra ci-dessous. Absent = aucune
       # caméra, fail-closed (jamais "ouvert par défaut").
-      # SECURISITE_CAMERAS_CONFIG_FILE: /run/secrets/cameras.json
-    # volumes:
-    #   # Config caméra : fichier local sur LE SERVEUR (jamais dans Git,
-    #   # jamais construit dans l'image) — voir docs/camera-proxy.md.
-    #   - ${SECURISITE_CAMERAS_CONFIG_FILE_HOST:-./cameras.json}:/run/secrets/cameras.json:ro
+      SECURISITE_CAMERAS_CONFIG_FILE: /run/securisite/cameras/cameras.json
+    volumes:
+      # Configuration caméra : volume nommé persistant, JAMAIS dans Git,
+      # JAMAIS construit dans l'image. Vide au premier déploiement (le
+      # fichier cameras.json n'y existe pas encore -> SECURISITE_
+      # CAMERAS_CONFIG_FILE pointe vers un fichier absent -> registre
+      # vide, fail-closed, jamais une erreur de démarrage) — voir
+      # docs/camera-proxy.md et docs/production-coolify.md §12 pour la
+      # procédure de dépôt du fichier une fois des caméras réelles à
+      # déclarer.
+      - securisite_cameras:/run/securisite/cameras
     networks:
       - internal
-    # PAS de `ports:` publié par défaut : un reverse proxy déjà présent
-    # sur ce serveur doit l'atteindre. Décommenter LA SEULE ligne qui
-    # correspond à la topologie réelle (voir docs/production-reverse-proxy.md) :
-    #   - un proxy qui tourne DIRECTEMENT SUR L'HÔTE (Nginx/Caddy installés
-    #     hors Docker) : lier au loopback uniquement, jamais 0.0.0.0 :
-    #       ports: ["127.0.0.1:3000:3000"]
-    #   - un proxy CONTENEURISÉ (Traefik/Coolify, ou Nginx/Caddy en
-    #     conteneur) : ne pas publier de port ici, rejoindre à la place le
-    #     réseau Docker partagé du proxy (nom exact à vérifier sur le
-    #     serveur) :
-    #       networks: [internal, <réseau-partagé-du-proxy>]
-    #     et ajouter les labels du proxy concerné (exemples Traefik dans
-    #     docs/production-reverse-proxy.md).
+    # PAS de `ports:` ici : Coolify route security.irongs.com directement
+    # vers ce conteneur, sur le réseau qu'il attache lui-même au
+    # déploiement (son propre proxy géré, jamais un réseau nommé à la
+    # main dans ce fichier) — port interne à indiquer dans l'interface
+    # Coolify : 3000 (voir docs/production-coolify.md).
+    expose:
+      - "3000"
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # Coolify lit ce healthcheck Docker natif pour décider si le
+    # déploiement est réussi — tant qu'il échoue, l'ancienne version reste
+    # servie (bascule sans interruption) : /api/ready fait un aller-retour
+    # PostgreSQL réel, jamais seulement "le process a démarré".
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/ready || exit 1"]
       interval: 15s
@@ -141,7 +144,12 @@ services:
 networks:
   internal:
     driver: bridge
-    internal: false # false = les conteneurs peuvent sortir vers Internet (IA/push futurs) ; PostgreSQL reste protégé par l'absence de `ports:`, pas par l'isolation réseau seule
+    # Les conteneurs peuvent sortir vers Internet (fournisseurs push/IA
+    # réels, futurs, décision humaine séparée — docs/push.md, docs/ai.md) ;
+    # PostgreSQL reste protégé par l'absence totale de `ports:`/domaine
+    # Coolify sur `db`, jamais par l'isolation réseau seule.
+    internal: false
 
 volumes:
   securisite_pgdata:
+  securisite_cameras:

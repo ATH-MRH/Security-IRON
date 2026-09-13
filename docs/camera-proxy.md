@@ -164,6 +164,18 @@ dans le cadre d'un correctif de sécurité. Une future évolution pourrait
 migrer ce registre vers PostgreSQL si le besoin d'une gestion en libre-service
 (opérateur, pas utilisateur final) est démontré.
 
+**Le registre est chargé une seule fois, au premier appel après le
+démarrage du processus, puis mis en cache en mémoire** (`camera-registry.js`,
+`all()`) : modifier ou déposer `SECURISITE_CAMERAS_CONFIG_FILE` **exige un
+redémarrage du conteneur applicatif** pour que le changement soit pris en
+compte — vérifié explicitement (dépôt du fichier à chaud sans effet tant
+que le conteneur n'est pas redémarré ; effectif immédiatement après
+redémarrage). Sous Coolify : bouton « Restart » de la ressource. Un
+fichier absent (volume vide, pas encore rempli) donne un registre vide,
+jamais une erreur de démarrage ; un fichier présent mais réellement cassé
+(JSON invalide, permissions) fait échouer les routes caméra bruyamment,
+jamais silencieusement.
+
 ## Tests
 
 - `tests/ssrf-guard.test.js` : matrice de blocage, injection de test

@@ -16,18 +16,20 @@ source pour le détail complet et la preuve (tests) qui l'accompagne.
 ## 1. Architecture production recommandée
 
 **Modèle retenu : serveur Node.js unique (`node server.js`) + PostgreSQL
-managé ou dédié, derrière un reverse proxy TLS.** C'est le modèle que tout
-le roadmap PG-6→PG-30 a construit, durci et testé (RLS, scope, audit,
-rate-limit, SSRF) — pas une hypothèse.
+dédié, derrière Coolify (reverse proxy géré par la plateforme).** C'est le
+modèle que tout le roadmap PG-6→PG-30 a construit, durci et testé (RLS,
+scope, audit, rate-limit, SSRF) — pas une hypothèse. Détail Coolify complet :
+`docs/production-coolify.md`.
 
 ```
 Internet
-   │  HTTPS (443)
+   │  HTTPS (443, security.irongs.com)
    ▼
-Reverse proxy (nginx/Caddy/ALB) — TLS, domaine, en-têtes, SSE non bufferisé
-   │  HTTP interne (127.0.0.1:PORT ou réseau privé)
+Coolify (reverse proxy géré par la plateforme — TLS, certificat, domaine,
+         aucun Nginx/Caddy/Traefik déclaré à la main)
+   │  réseau Docker interne
    ▼
-node server.js (rôle securisite_app)  ──►  PostgreSQL (rôle securisite_app)
+node server.js (rôle securisite_app, conteneur `app`) ──► PostgreSQL (conteneur `db`, rôle securisite_app)
    │
    └─ sert aussi le frontend statique (express.static) : pas de serveur
       frontend séparé, pas de build à déployer à part
@@ -236,11 +238,12 @@ l'infrastructure production réelle si un engagement chiffré est requis.
 
 ## 11. HTTPS / domaine / reverse proxy
 
-Domaine confirmé : `security.irongs.com`. Rien dans ce dépôt ne termine
-TLS lui-même — **exigences détaillées et exemples pour Nginx/Caddy/
-Traefik/Coolify dans `docs/production-reverse-proxy.md`**, sans en choisir
-un arbitrairement : reste à vérifier lequel tourne déjà sur le serveur
-cible (voir §21). Rappel des points structurants :
+Domaine confirmé : `security.irongs.com`. Plateforme confirmée : Coolify
+— gère domaine/HTTPS/certificat/reverse proxy lui-même, aucun
+Nginx/Caddy/Traefik déclaré dans `docker-compose.prod.yml`. Détail complet
+et étapes exactes de l'interface Coolify : `docs/production-coolify.md`
+(`docs/production-reverse-proxy.md` reste comme référence générale, non
+spécifique à Coolify). Rappel des points structurants :
 
 - **TLS côté reverse proxy**, jamais dans le processus Node en production
   — modèle standard, cohérent avec `PGSSL=verify-full` déjà exigé côté
@@ -371,12 +374,13 @@ un rôle `soc` via RLS, jamais par simple lecture de logs) :
 (`docs/postgresql-deployment.md` §7) — un superviseur externe n'a qu'à
 lancer `node server.js` et le laisser gérer son propre cycle de vie.
 
-- **Docker (retenu)** : `docker-compose.prod.yml` réécrit — services
-  `db` (PostgreSQL 16, aucun port publié), `migrate` (une exécution,
-  `restart: "no"`, bloque `app` tant qu'il n'a pas réussi), `app`
-  (`restart: unless-stopped`, healthcheck `/api/ready`, aucun port publié
-  par défaut — voir `docs/production-reverse-proxy.md` pour la ligne à
-  décommenter selon le proxy déjà en place). `Dockerfile` mis à jour
+- **Docker + Coolify (retenu)** : `docker-compose.prod.yml` adapté à
+  Coolify — services `db` (PostgreSQL 16, aucun port publié), `migrate`
+  (une exécution, `restart: "no"`, bloque `app` tant qu'il n'a pas réussi),
+  `app` (`restart: unless-stopped`, healthcheck `/api/ready`, `expose:
+  3000` jamais publié sur l'hôte — Coolify route `security.irongs.com`
+  vers ce port via son interface, aucun label de proxy écrit à la main,
+  voir `docs/production-coolify.md`). `Dockerfile` mis à jour
   (`postgresql16-client` ajouté). Séquence vérifiée de bout en bout sur un
   déploiement local jetable :
   ```
@@ -432,10 +436,9 @@ quelles contre l'URL réelle :
 - [x] Hébergement : serveur dédié — confirmé
 - [x] Domaine : `security.irongs.com` — confirmé
 - [x] Décision données existantes : base neuve, aucun import (§8 sans objet)
-- [x] `docker-compose.prod.yml` / `Dockerfile` corrigés (§1/§18) — vérifiés
-      par un déploiement local jetable complet
-- [ ] Quel reverse proxy tourne déjà sur ce serveur (Nginx/Caddy/Traefik/
-      Coolify/aucun) — voir `docs/production-reverse-proxy.md` (§21)
+- [x] `docker-compose.prod.yml` / `Dockerfile` corrigés et adaptés à
+      Coolify (§1/§18) — vérifiés par un déploiement local jetable complet
+- [x] Plateforme confirmée : Coolify — `docs/production-coolify.md`
 - [ ] Configuration caméra réelle si applicable (§21, §12)
 
 ### B. À sauvegarder
@@ -446,10 +449,12 @@ quelles contre l'URL réelle :
 - [ ] Toutes les variables d'environnement — modèle prêt : `.env.production.example` (§4)
 - [ ] Tous les secrets réels, générés côté serveur uniquement, jamais
       transmis dans ce chat (§5)
-- [ ] Reverse proxy pour `security.irongs.com` selon
-      `docs/production-reverse-proxy.md` — TLS, SSE non bufferisé,
-      `trust proxy` si l'IP client réelle est exigée (§11)
-- [ ] `SECURISITE_CAMERAS_CONFIG_FILE_HOST` si des caméras réelles existent (§12)
+- [ ] Domaine + port assignés au service `app` dans l'interface Coolify
+      (`docs/production-coolify.md` §3) — `trust proxy` si l'IP client
+      réelle est exigée (§11)
+- [ ] Dépôt de `cameras.json` dans le volume `securisite_cameras` si des
+      caméras réelles existent, puis redémarrage du conteneur `app` (§12,
+      `docs/production-coolify.md` §7)
 
 ### D. À migrer
 - [x] Outillage prêt et vérifié : `scripts/provision-production-db.sh`
@@ -481,17 +486,14 @@ quelles contre l'URL réelle :
 
 ## 21. Informations que je ne peux pas connaître — à fournir
 
-Résolu par ce tour : hébergement (serveur dédié), domaine
-(`security.irongs.com`), données existantes (aucune, base neuve). Restant :
+Résolu par ce tour et le précédent : hébergement (serveur dédié), domaine
+(`security.irongs.com`), données existantes (aucune, base neuve),
+plateforme (Coolify). Restant :
 
-- **Accès SSH / accès à l'infrastructure cible** : je n'ai aucun accès
-  réseau à ce serveur — toute exécution réelle des commandes/scripts de ce
-  plan devra être faite par vous, sur le serveur, une fois les secrets en
-  place.
-- **Reverse proxy déjà présent sur ce serveur** (Nginx/Caddy/Traefik/
-  Coolify/aucun) — détermine quelle ligne du `docker-compose.prod.yml`
-  décommenter et quel exemple de `docs/production-reverse-proxy.md`
-  appliquer.
+- **Accès SSH / accès à l'infrastructure cible, ou au terminal Coolify de
+  la ressource** : je n'ai aucun accès réseau à ce serveur — toute
+  exécution réelle des commandes/scripts de ce plan devra être faite par
+  vous, une fois les secrets en place.
 - **PostgreSQL** : conteneurisé dans ce même compose (modèle par défaut de
   ce plan) ou instance managée séparée ? Version disponible si séparée.
 - **Secrets** : gestionnaire de secrets du serveur (fichier `.env` local
