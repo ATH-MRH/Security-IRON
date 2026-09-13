@@ -1,0 +1,17 @@
+{
+  "name": "SécuriSite — SOC / Centre de Sûreté",
+  "short_name": "SécuriSite",
+  "description": "SécuriSite — SOC / Centre de Sûreté du Site (accès, parking, LAPI, alertes)",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "fr",
+  "dir": "ltr",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "icons": [
+    { "src": "assets/iron-global-securite-logo.png", "sizes": "550x550", "type": "image/png", "purpose": "any" }
+  ]
+}
