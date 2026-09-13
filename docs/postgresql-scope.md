@@ -268,16 +268,25 @@ déjà le mécanisme des triggers d'audit PG-7 (`memberships`,
 `COMMIT`/`ROLLBACK` : sur un pool où les connexions sont réutilisées, la
 transaction suivante — même sur la même connexion physique, même pour un
 autre acteur — démarre sans aucun contexte. `backend/scope.js` expose
-`withActorContext(userId, fn, database?)` comme mécanisme prêt à l'emploi
-pour un futur point d'entrée qui aurait besoin de lire une des 5 tables
-protégées ; **aucune route ne le fait encore aujourd'hui** (aucun handler
-`routes.js`/`alerts.js` ne requête `tenants`/`sites`/`zones`/`memberships`/
-`membership_audit` au runtime — PG-8 s'arrête à la porte « au moins un
-membership actif »), donc rien dans le flux de requêtes actuel ne pose
-`securisite.actor_user_id` en dehors des triggers d'audit et des outils de
-provisioning. `tests/postgres-rls.test.js` prouve la propriété directement
-(acteurs A/B en séquence sur un pool à une seule connexion, rollback,
-absence de contexte) plutôt que via une route qui n'existe pas encore.
+`withActorContext(userId, fn, database?)` — utilisé depuis PG-17 par
+`backend/map.js` (premier point d'entrée à lire `sites`/`zones` au runtime),
+et depuis PG-28 par `resolveScope()` elle-même (voir ci-dessous) ;
+`tests/postgres-rls.test.js` prouve la propriété directement (acteurs A/B en
+séquence sur un pool à une seule connexion, rollback, absence de contexte).
+
+**Correctif critique (PG-28, revue déploiement)** : jusqu'à ce lot,
+`resolveScope()` interrogeait `memberships`/`tenants` **sans jamais poser
+`securisite.actor_user_id`** — sous le rôle applicatif réel
+(`securisite_app`, `NOBYPASSRLS`), RLS filtrait alors ces lignes à zéro pour
+tout acteur, donc `hasAccess` restait **toujours faux** et aucune route
+gardée par `requireScope()` (l'essentiel de la surface métier) ne
+fonctionnait. Masqué depuis PG-8/PG-9 par le fait que toute la suite de
+tests se connecte en tant que superutilisateur local (`BYPASSRLS`
+implicite) — jamais exercé sous le rôle réellement documenté pour la
+production avant `tests/postgres-scope-rls.test.js` (PG-28), qui boote le
+serveur avec un rôle `securisite_app` réellement provisionné
+(`provision-roles.js#apply`) et prouve l'accès réel. `resolveScope()` pose
+maintenant elle-même l'acteur via `withActorContext`.
 
 ### Limite connue
 

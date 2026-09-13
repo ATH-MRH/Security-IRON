@@ -75,8 +75,25 @@ function hasRoleOf(memberships, tenantId, role) {
   return memberships.some(m => m.tenant_id === tenantId && m.role === role);
 }
 
+// PG-28 (revue déploiement) : jusqu'ici, cette requête tournait SANS jamais
+// poser `securisite.actor_user_id` — sous le rôle applicatif réel
+// (`securisite_app`, NOBYPASSRLS, PG-9), la RLS sur `memberships`/`tenants`
+// (migration 005) filtre alors TOUJOURS ces lignes à zéro pour tout acteur
+// non posé, donc `hasAccess` était TOUJOURS faux et absolument aucune route
+// gardée par requireScope() (l'essentiel de la surface métier) ne
+// fonctionnait sous ce rôle — masqué depuis PG-8/PG-9 par le fait que toute
+// la suite de tests se connecte en tant que superutilisateur (BYPASSRLS
+// implicite). Vérifié empiriquement avec un rôle restreint réel avant ce
+// correctif : `hasAccess=false`, 0 membership renvoyée, pour un utilisateur
+// qui en possède pourtant une. `withActorContext` pose l'acteur (même
+// convention que backend/map.js, PG-17) pour que cette requête — comme
+// toute autre sur les 5 tables protégées — voie réellement ses propres
+// lignes. `client` doit être un objet "base" (`.transaction()`, comme le
+// module `db` par défaut) — tous les appelants actuels le sont déjà ;
+// passer un client déjà engagé dans une transaction échouerait bruyamment
+// ici plutôt que de revenir silencieusement au bug ci-dessus.
 async function resolveScope(userId, client = db) {
-  const memberships = await loadActiveMemberships(userId, client);
+  const memberships = await withActorContext(userId, c => loadActiveMemberships(userId, c), client);
   const tenantIds = [...new Set(memberships.map(m => m.tenant_id))];
   return {
     userId,

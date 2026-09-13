@@ -47,7 +47,16 @@ rôle — RLS ne restreint ici que la **lecture**.
 ## `backend/security-audit.js`
 
 `record(event, client = db)` — insère une ligne, propage toute erreur SQL
-comme n'importe quel appel repository (aucun try/catch interne).
+comme n'importe quel appel repository (aucun try/catch interne). L'INSERT
+n'a **jamais** de `RETURNING` (correctif PG-28, revue déploiement) : RLS
+est active sur `security_audit` (plus bas) et n'aurait renvoyé la ligne que
+si elle satisfaisait AUSSI `security_audit_soc_read` — un événement à
+`tenant_id` NULL (login, refus avant résolution de périmètre) ne peut
+jamais la satisfaire, donc sous le rôle applicatif réel
+(`securisite_app`), un `RETURNING id` faisait échouer l'INSERT **entier**
+(`42501`), pas seulement l'ensemble renvoyé — masqué en test tant que la
+suite se connecte en superutilisateur (`BYPASSRLS`). `id` n'était lu par
+aucun appelant : rien perdu à le retirer.
 `recordBestEffort(event, client)` — enveloppe `record`, avale l'erreur et la
 journalise (code seul, jamais l'événement complet), retourne `null` en cas
 d'échec. `sanitizeDetail(detail)` — objet plat uniquement (les tableaux de

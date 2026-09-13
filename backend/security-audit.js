@@ -84,18 +84,27 @@ async function record(event, client = db) {
   if (!OUTCOME_SET.has(outcome)) throw new TypeError('security-audit: outcome invalide : ' + outcome);
   if (!ORIGIN_SET.has(origin)) throw new TypeError('security-audit: origin invalide : ' + origin);
   const clean = sanitizeDetail(detail);
-  const result = await client.query(
+  // PG-28 (revue déploiement) : jamais de RETURNING ici — RLS est active sur
+  // security_audit (migration 006) et ne renvoie une ligne insérée que si
+  // elle satisfait AUSSI une politique de lecture (`security_audit_soc_read`,
+  // qui exige un acteur SOC posé pour le tenant exact de la ligne). Un
+  // événement à tenant_id NULL (login, refus avant résolution de périmètre)
+  // ne peut JAMAIS satisfaire cette politique — sous le rôle applicatif réel
+  // (securisite_app, NOBYPASSRLS), un RETURNING faisait alors échouer
+  // l'INSERT tout entier (42501 "new row violates row-level security
+  // policy"), pas seulement renvoyer un ensemble vide. Vérifié empiriquement
+  // avant ce correctif. `id` n'est lu par aucun appelant de ce module —
+  // rien à renvoyer, rien à perdre en le retirant.
+  await client.query(
     `INSERT INTO public.security_audit
        (request_id, correlation_id, actor_user_id, actor_username, actor_role,
         tenant_id, site_id, zone_id, event_type, resource_type, resource_id,
         action, outcome, origin, ip_address, user_agent, detail)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-     RETURNING id`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
     [requestId, correlationId, actorUserId, actorUsername, actorRole,
      tenantId, siteId, zoneId, eventType, resourceType, resourceId,
      action, outcome, origin, ipAddress, userAgent,
      clean === null ? null : JSON.stringify(clean)]);
-  return { id: result.rows[0].id };
 }
 
 // Best-effort helper for non-transactional call sites (login, denials,

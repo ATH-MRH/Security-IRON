@@ -1,7 +1,28 @@
 # SécuriSite — déploiement PostgreSQL et provisioning
 
-Lot PG-4. Aucun accès production dans ce dépôt ; ce document décrit la procédure,
-les outils sont dans `backend/db/postgresql/`.
+Lot PG-4, complété par PG-28 (revue déploiement). Aucun accès production
+dans ce dépôt ; ce document décrit la procédure, les outils sont dans
+`backend/db/postgresql/`.
+
+> **Deux correctifs critiques trouvés par PG-28** en vérifiant, pour la
+> première fois, que l'application fonctionne réellement sous le rôle
+> `securisite_app` documenté ci-dessous (RLS pleinement appliquée, jamais
+> de `BYPASSRLS`) plutôt que sous le superutilisateur qu'utilise toute la
+> suite de tests par ailleurs — voir `tests/postgres-scope-rls.test.js` :
+> 1. `backend/scope.js#resolveScope()` ne posait jamais l'acteur RLS avant
+>    de lire `memberships`/`tenants` — sous le rôle réel, **absolument
+>    aucune route gardée par `requireScope()` ne fonctionnait** (`hasAccess`
+>    toujours faux). Corrigé.
+> 2. `backend/security-audit.js#record()` utilisait `INSERT ... RETURNING
+>    id` sur `security_audit` (RLS active) — un événement à `tenant_id`
+>    NULL (login) faisait échouer l'INSERT entier sous le rôle réel,
+>    jamais seulement son `RETURNING`. Pour un événement à l'intérieur
+>    d'une transaction critique (`alert.create`), cela aurait fait
+>    échouer la mutation elle-même. Corrigé (plus de `RETURNING`).
+>
+> Les deux étaient masqués depuis PG-8/PG-9/PG-10 : rien dans la suite de
+> tests, avant PG-28, n'exerçait jamais le chemin de requête applicatif
+> sous un rôle réellement soumis à RLS.
 
 ## 1. Modèle de rôles
 
@@ -100,18 +121,64 @@ migration a introduit une table, 3 (`db:roles`) sont rejouées avant le rollout.
 
 ## 5. Contrôles de santé
 
-- **Readiness** (démarrage) : `start()` échoue **avant** d'écouter si le registre,
-  les versions 001/002, les 18 tables, la ligne `alert_rules.id=1`, la fonction et
-  les triggers append-only, ou un privilège APP requis manquent
-  (`backend/db/postgresql/readiness.js`).
-- **Liveness** : `GET /api/*` sans jeton renvoie `401` dès que l'écoute est ouverte.
+- **Readiness** : deux niveaux distincts, jamais confondus (PG-18) —
+  - **au démarrage** : `start()` échoue **avant** d'écouter si le registre,
+    les versions 001..010, les tables métier, la ligne `alert_rules.id=1`,
+    la fonction et les triggers append-only, RLS ou un privilège APP requis
+    manquent (`backend/db/postgresql/readiness.js#assertReady`, audit
+    exhaustif, coûteux, exécuté **une seule fois**) ;
+  - **en continu** : `GET /api/ready` — un aller-retour PostgreSQL minimal
+    (`SELECT 1`), pensé pour être interrogé en continu par un orchestrateur
+    sans répéter l'audit exhaustif à chaque appel (`backend/health.js`).
+- **Liveness** : `GET /api/health` — répond `{status:'ok'}` sans aucune
+  dépendance externe, jamais bloqué par PostgreSQL (`backend/health.js`,
+  PG-18). Ne pas utiliser `GET /api/ready` comme sonde de liveness : une
+  base momentanément indisponible ferait alors redémarrer le processus
+  pour un problème qui n'est pas le sien.
 - **Migrations** : `npm run db:migrate` sortie `0` = base à jour ; `schema_migrations`
   contient exactement les versions des fichiers, avec noms et empreintes SHA-256.
 
-## 6. Déploiement : job migration → readiness → rollout
+## 6. Monitoring
+
+- **Logs structurés** (PG-18, `backend/observability.js`) : une ligne JSON
+  par requête `/api/*` (hors `/api/health`/`/api/ready`, trop fréquentes
+  pour constituer un signal) sur stdout — `request_id`, `correlation_id`,
+  `method`, `path`, `status`, `duration_ms`, `tenant_id`, `site_id`,
+  `alert_id`, `error_code`. Allowlist stricte : ni secret, ni JWT, ni
+  contenu de requête/réponse n'y figure structurellement — voir
+  `docs/observability.md`.
+- **Journal de sécurité** (PG-10, `security_audit`) : connexions,
+  refus d'accès, mutations sensibles, événements IA (PG-24) —
+  interrogeable par un rôle `soc` via RLS, jamais par simple lecture de
+  logs. Voir `docs/postgresql-security-audit.md`.
+- **Métriques de pool** : `db.stats()` (`backend/database.js`) expose
+  `total`/`idle`/`waiting` — non branché sur un exportateur externe
+  aujourd'hui (aucune nécessité démontrée), disponible pour un futur
+  point de collecte sans changement de code.
+
+## 7. Arrêt (shutdown)
+
+`server.js#start()` retourne `stop()`, **idempotent**, câblée sur
+`SIGTERM`/`SIGINT` (lancement direct `node server.js`) :
+
+1. plus aucun nouveau cycle d'escalade (`alerts.escalateDue`, PG-1) ni
+   nouvel envoi push (`push.stop()`, PG-13) ;
+2. attend la fin du cycle d'escalade en cours (au plus
+   `SHUTDOWN_GRACE_MS`, 10 s par défaut) ;
+3. ferme l'écoute HTTP (même plafond), puis force la fermeture des
+   connexions restantes ;
+4. ferme le pool PostgreSQL **en dernier** — jamais avant que tout le
+   reste ait eu sa chance de se terminer proprement.
+
+Au-delà du délai, l'arrêt se poursuit quand même (jamais un arrêt qui ne
+se termine pas) : un arrêt gracieux borné, pas un arrêt garanti sans
+perte pour un cycle déjà en cours.
+
+## 8. Déploiement : job migration → readiness → rollout
 
 1. **Job de migration** (rôle MIGRATOR) : `npm run db:migrate`. Sérialisé par un
-   verrou consultatif ; transaction par migration ; `001` conservée si `002` échoue.
+   verrou consultatif ; transaction par migration ; succès obligatoire — un job
+   en échec ne doit jamais être suivi d'un rollout applicatif.
 2. **Readiness** : l'orchestrateur ne bascule le trafic que si une instance
    applicative démarre (donc l'attestation readiness a réussi).
 3. **Rollout applicatif** : instances `securisite_app` uniquement.
@@ -121,10 +188,35 @@ migration a introduit une table, 3 (`db:roles`) sont rejouées avant le rollout.
 - **Applicatif** : redéployer la version précédente **compatible avec le schéma
   courant**. Les migrations sont *forward-only* : ne jamais rétrograder le schéma
   pour un rollback applicatif.
-- **Schéma** : restauration depuis une sauvegarde (voir lot PG-27). Il n'existe pas
-  de migration descendante automatique.
+- **Schéma** : restauration depuis une sauvegarde (`backend/db/postgresql/
+  backup.js`/`restore.js`, PG-27 — voir `docs/postgresql-backup-restore.md`).
+  Il n'existe pas de migration descendante automatique.
+- **Compatibilité réelle, migration par migration** (revue de chaque
+  fichier, pas une affirmation générique) : `001`–`004`, `006`, `008` créent
+  uniquement de nouveaux objets (tables/colonnes) — une version applicative
+  antérieure qui ne les connaît pas continue de fonctionner sans erreur, elle
+  les ignore simplement. `007` n'ajoute que des index (toujours transparent).
+  `010` élargit une contrainte `CHECK` déjà en place (`origin`) — une version
+  antérieure qui n'a jamais utilisé la valeur ajoutée (`'ai'`) n'est pas
+  affectée. **Deux exceptions, à connaître avant tout rollback applicatif :**
+  - `005` (RLS) : une version applicative antérieure à PG-9 qui lirait
+    `tenants`/`sites`/`zones`/`memberships`/`membership_audit` sans jamais
+    poser `securisite.actor_user_id` (`withActorContext`, PG-9) verrait ces
+    tables **vides** sous le rôle `securisite_app` (RLS s'applique sans
+    acteur résolu = aucune ligne visible) — pas une erreur, un
+    comportement silencieusement dégradé. Sans conséquence pour un
+    rollback vers une version postérieure à PG-6 mais antérieure à PG-9
+    qui ne lit pas ces tables (elles n'existaient pas encore dans son
+    propre périmètre de fonctionnalités) ; à vérifier explicitement pour
+    toute version intermédiaire qui le ferait.
+  - `009` (`security_alerts.tenant_id NOT NULL`) : une version applicative
+    antérieure à PG-16 qui insère une alerte sans fournir `tenant_id`
+    échoue la contrainte `NOT NULL` — rollback vers une version antérieure
+    à PG-16 **non compatible** avec le schéma issu de `009` sans
+    intervention (soit rendre la colonne nullable temporairement, soit ne
+    pas rétrograder au-delà de PG-16).
 
-## 7. Import de données SQLite → PostgreSQL (`npm run db:import`)
+## 9. Import de données SQLite → PostgreSQL (`npm run db:import`)
 
 `backend/db/postgresql/import-sqlite.js` reprend une base SécuriSite SQLite
 historique dans une cible PostgreSQL **fraîche** (migrations 001/002, aucune
@@ -155,7 +247,7 @@ node backend/db/postgresql/import-sqlite.js chemin/vers/securisite.db           
 - **Réimport** : les journaux append-only ne pouvant pas être purgés, un nouvel
   import se fait dans une base cible neuve (recréer + migrer).
 
-## 8. Notes
+## 10. Notes
 
 - `backend/db/postgresql/migrate.js` (runner) et `migrate-cli.js` (CLI) sont
   distincts de `server.js` : l'application ne migre jamais.
