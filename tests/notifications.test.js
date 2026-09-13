@@ -4,6 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const alertsSource = fs.readFileSync(path.join(__dirname, '../frontend/js/alerts.js'), 'utf8');
+// PG-16: alerts.js now calls SocKpis.compute(...) (frontend/js/soc-kpis.js) —
+// load it into the same sandbox, exactly like index.html now loads it before
+// alerts.js. Realtime (referenced only inside start()) gets its own minimal
+// stub below, defined per-fixture so each test can drive it independently.
+const socKpisSource = fs.readFileSync(path.join(__dirname, '../frontend/js/soc-kpis.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(__dirname, '../frontend/js/app.js'), 'utf8');
 const navSource = appSource.slice(appSource.indexOf('function navTo(page)'), appSource.indexOf('function switchTab('));
 const source = fs.readFileSync(path.join(__dirname, '../frontend/js/notifications.js'), 'utf8');
@@ -18,8 +23,19 @@ function fixture(data = {}) {
     if(id==='ac-comment')return element('ac-detail').querySelector('#ac-comment');
     if (!elements.has(id)) {
       let html = '', actions = [], comment = null;
+      // document.querySelectorAll('.page') isn't mocked (only the specific
+      // selectors AlertCenter/NotificationBell actually query), so navTo()'s
+      // own class toggling never reaches these elements — page-alertes
+      // starts "active" here deliberately, simulating a user already viewing
+      // that screen, which is what AlertCenter's realtime-triggered refresh
+      // gate (refreshNow()) actually checks.
+      const activeClasses = new Set(id === 'page-alertes' ? ['active'] : []);
       elements.set(id, {
-        value:'', textContent:'', classList:{toggle(){}},
+        value:'', textContent:'', hidden:false,
+        classList:{
+          toggle(name, on){ if (on === undefined) on = !activeClasses.has(name); if (on) activeClasses.add(name); else activeClasses.delete(name); },
+          contains:name=>activeClasses.has(name),
+        },
         get innerHTML(){return html;},
         set innerHTML(value){
           html=value;
@@ -32,6 +48,20 @@ function fixture(data = {}) {
     }
     return elements.get(id);
   }
+  // PG-16: AlertCenter.start() wires backend/js/realtime.js's Realtime — a
+  // minimal stub (recording registered listeners, never itself connecting
+  // to a network) is enough to prove AlertCenter's OWN wiring (does an
+  // emitted event trigger a refresh / update the live badge), without
+  // re-testing realtime.js's own reconnect/fallback logic (already covered,
+  // in isolation, by tests/frontend-realtime.test.js).
+  const realtimeListeners = [];
+  const realtimeStub = {
+    on: fn => { realtimeListeners.push(fn); return () => { const i = realtimeListeners.indexOf(fn); if (i >= 0) realtimeListeners.splice(i, 1); }; },
+    connect: () => { realtimeStub.connectCalls = (realtimeStub.connectCalls || 0) + 1; },
+    stop: () => {},
+    isConnected: () => Boolean(realtimeStub._connected),
+  };
+  const emitRealtime = (type, data) => realtimeListeners.forEach(fn => fn(type, data));
   const context = vm.createContext({
     escapeHtml, fmtDateTime: s => String(s || ''),
     API: {get:async p=>{state.requests.push(p);if(routes[p] instanceof Error)throw routes[p];if(typeof routes[p]==='function')return routes[p]();
@@ -39,12 +69,15 @@ function fixture(data = {}) {
       return structuredClone(routes[p]);},post:async(p,b)=>{state.posts.push({p,b});if(typeof routes[p]==='function')return routes[p]();},getUser:()=>({id:1})},
     document: {activeElement:null,getElementById:element,querySelector:()=>dot,querySelectorAll:selector=>selector==='[data-action]'?element('ac-detail').querySelectorAll(selector):selector==='[data-bell-alert]'||selector==='[data-bell-notification]'?buttons.filter(b=>Object.hasOwn(b.dataset,selector==='[data-bell-alert]'?'bellAlert':'bellNotification')):[]},
     showModal:(title,html)=>{state.html=html;buttons=[...html.matchAll(/<button[^>]*data-bell-(alert|notification)="([^"]+)"([^>]*)>/g)].map(m=>({dataset:{[m[1]==='alert'?'bellAlert':'bellNotification']:m[2],target:m[3].match(/data-target="([^"]+)"/)?.[1]}}));},
-    closeModal:()=>{state.closed=true;},isAdmin:()=>true,lapiStream:null,notify:m=>state.errors.push(m)
+    closeModal:()=>{state.closed=true;},isAdmin:()=>true,lapiStream:null,notify:m=>state.errors.push(m),
+    Realtime: realtimeStub,
+    setInterval:()=>0, clearInterval:()=>{}, setTimeout:()=>0, clearTimeout:()=>{},
   });
   const bell=vm.runInContext(source+'\nNotificationBell;',context);
+  vm.runInContext(socKpisSource, context);
   const center=vm.runInContext(alertsSource+'\nAlertCenter;',context);
   vm.runInContext(navSource,context);
-  return {bell,center,routes,state,dot,element,buttons:()=>buttons};
+  return {bell,center,routes,state,dot,element,buttons:()=>buttons,realtimeStub,emitRealtime};
 }
 const visitor = {id:'v1',statut:'attendu',prenom:'Lina',nom:'Visite',societe:'Société',arrivee:'2026-09-08'};
 const incident = {id:'i1',statut:'ouvert',ref:'INC-TEST',type:'Incident métier',lieu:'Quai',gravite:'critique'};
@@ -288,4 +321,118 @@ for(const fails of [false,true])test('post-action refresh '+(fails?'error':'resp
   assert.equal(f.element('ac-detail').querySelectorAll('[data-action]'),buttons);
   assert.doesNotMatch(f.element('ac-message').textContent,/Ancien refresh refusé/);
   displayed(f,'B');
+});
+
+/* ============================================================ */
+/*  PG-16 — SOC nouvelle génération : nouveaux panneaux, temps   */
+/*  réel côté client, absence de régression de contrat.          */
+/* ============================================================ */
+
+test('PG-16: AlertCenter keeps its exact original public contract, plus nothing removed', () => {
+  const f = fixture();
+  assert.deepEqual(
+    Object.keys(f.center).sort(),
+    ['load','renderList','createForm','rules','notifications','openAlert','captureSelection','start'].sort(),
+  );
+});
+
+test('PG-16: load() renders every KPI card the SOC screen now shows, from real fetched alerts only', async () => {
+  const rows = [
+    {...record('a'), level:4, status:'NOTIFIEE', site:'Poste 1', escalation_step:0},
+    {...record('b'), level:3, status:'ACQUITTEE', site:'Poste 1', escalation_step:2},
+    {...record('c'), level:1, status:'CLOTUREE', site:'Poste 2', escalation_step:0}, // terminal: excluded from every active count
+  ];
+  const f = fixture({'/alerts':rows});
+  await f.center.load();
+  const html = f.element('ac-kpis').innerHTML;
+  for (const label of ['Alertes actives','Critiques en cours','SOS en cours','Non acquittées','Escalades en cours','Alertes aujourd’hui','Prise en charge moyenne']) {
+    assert.match(html, new RegExp(label), label + ' KPI card is rendered');
+  }
+  // 2 active (a, b) out of 3 rows (c is CLOTUREE, a terminal status).
+  assert.match(html, /<div class="kpi-value">2<\/div>/);
+});
+
+test('PG-16: an empty dashboard (zero alerts, zero incidents) renders empty states, never throws', async () => {
+  const f = fixture({'/alerts':[], '/incidents':[]});
+  await assert.doesNotReject(f.center.load());
+  assert.match(f.element('ac-by-site').innerHTML, /empty-state/);
+  assert.match(f.element('ac-recent-incidents').innerHTML, /empty-state/);
+  assert.match(f.element('ac-op-timeline').innerHTML, /empty-state/);
+  assert.doesNotMatch(f.element('ac-kpis').innerHTML, /NaN|undefined|Infinity/);
+});
+
+test('PG-16: activité par site reflects the real, submitted site names of active alerts only', async () => {
+  const rows = [
+    {...record('a'), site:'Entrée Nord', status:'NOTIFIEE'},
+    {...record('b'), site:'Entrée Nord', status:'NOTIFIEE'},
+    {...record('c'), site:'Entrée Sud', status:'CLOTUREE'}, // terminal: excluded
+  ];
+  const f = fixture({'/alerts':rows});
+  await f.center.load();
+  const html = f.element('ac-by-site').innerHTML;
+  assert.match(html, /Entrée Nord/);
+  assert.match(html, /<strong>2<\/strong>/);
+  assert.doesNotMatch(html, /Entrée Sud/);
+});
+
+test('PG-16: incidents récents are fetched separately and never block or break the alerts screen', async () => {
+  const f = fixture({'/alerts':[record('a')], '/incidents':new Error('incidents indisponibles')});
+  await assert.doesNotReject(f.center.load());
+  await settle();
+  // The alerts screen itself still rendered correctly despite /incidents failing.
+  assert.match(f.element('ac-list').innerHTML, /Titre a/);
+  assert.match(f.element('ac-recent-incidents').innerHTML, /empty-state/);
+  assert.doesNotMatch(f.element('ac-message').textContent, /incidents indisponibles/);
+});
+
+test('PG-16: incidents récents render once fetched, and feed the merged operational timeline', async () => {
+  const f = fixture({
+    '/alerts':[{...record('a'), created_at:'2026-09-08T10:00:00.000Z'}],
+    '/incidents':[{id:'i1', ref:'INC-1', type:'Intrusion', lieu:'Quai', gravite:'critique', datetime:'2026-09-08T11:00:00.000Z'}],
+  });
+  await f.center.load();
+  await settle(); // the incidents fetch is deliberately decoupled from load()'s own await chain
+  assert.match(f.element('ac-recent-incidents').innerHTML, /Intrusion/);
+  assert.match(f.element('ac-recent-incidents').innerHTML, /INC-1/);
+  const timeline = f.element('ac-op-timeline').innerHTML;
+  assert.match(timeline, /Incident · Intrusion/);
+  assert.match(timeline, /Alerte · Titre a/);
+  // The later incident (11:00) must be listed before the earlier alert (10:00).
+  assert.ok(timeline.indexOf('Incident · Intrusion') < timeline.indexOf('Alerte · Titre a'));
+});
+
+test('PG-16: start() connects to Realtime and reflects the live/fallback state in the badge', async () => {
+  const f = fixture();
+  f.realtimeStub._connected = true;
+  f.center.start();
+  assert.equal(f.realtimeStub.connectCalls, 1);
+  assert.match(f.element('ac-live-badge').textContent, /Temps réel/);
+  assert.ok(f.element('ac-live-badge').classList); // toggle() calls never throw against the mock
+});
+
+test('PG-16: a realtime alert:created/alert:updated event triggers an immediate refresh, without waiting for the 5s poll', async () => {
+  const f = fixture({'/alerts':[record('a')]});
+  f.center.start();
+  const before = f.state.requests.filter(p => p === '/alerts').length;
+  f.emitRealtime('alert:created', {id:'a', at:'2026-09-08T10:00:00.000Z'});
+  await settle();
+  const after = f.state.requests.filter(p => p === '/alerts').length;
+  assert.ok(after > before, 'a fresh GET /alerts was issued in reaction to the realtime event');
+});
+
+test('PG-16: a realtime "poll" fallback event (no live SSE) also triggers the same refresh path', async () => {
+  const f = fixture({'/alerts':[record('a')]});
+  f.center.start();
+  const before = f.state.requests.filter(p => p === '/alerts').length;
+  f.emitRealtime('poll', null);
+  await settle();
+  assert.ok(f.state.requests.filter(p => p === '/alerts').length > before);
+});
+
+test('PG-16: the live badge switches to fallback wording once the connection is reported lost', async () => {
+  const f = fixture();
+  f.realtimeStub._connected = false;
+  f.center.start();
+  f.emitRealtime('poll', null); // any Realtime event also refreshes the badge
+  assert.match(f.element('ac-live-badge').textContent, /Repli/);
 });

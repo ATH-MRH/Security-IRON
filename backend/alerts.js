@@ -28,23 +28,23 @@ router.use(wrap(async (req, res, next) => {
 // « soc » pilote les actions réservées — jamais une exception username/role JWT.
 // security_alerts ne porte aucune colonne site/zone : l'accès est résolu au
 // niveau du tenant dans son ensemble (voir backend/scope.js#tenantAccess).
-router.use(wrap(async (req, res, next) => {
-  const s = await scope.resolveScope(req.user.id);
-  const tenantId = s.resolveTenant();
-  if (!s.hasAccess || tenantId == null) {
-    await auditDenied(req, 'scope', req.user.id);
-    return res.status(403).json({ error: 'Accès au périmètre refusé' });
-  }
-  req.user.alertAccess = s.tenantAccess(tenantId);
-  req.user.isSoc = s.hasRole(tenantId, 'soc');
+// PG-16 : scope.requireScope() — le même middleware que backend/routes.js —
+// remplace la résolution ad hoc précédente : ?tenant_id=/site_id=/zone_id=
+// sont désormais acceptés (et un identifiant forgé refusé) sur toutes les
+// routes Alert Core, pas seulement les routes métier historiques. Toujours
+// une intersection avec le périmètre réel, jamais une autorisation du client.
+router.use(scope.requireScope());
+router.use((req, res, next) => {
+  req.user.alertAccess = req.scope.tenantAccess(req.tenantId);
+  req.user.isSoc = req.scope.hasRole(req.tenantId, 'soc');
   // PG-10 : contexte pour les audits success posés par alert-core/service.js,
   // dans la même transaction que la mutation qu'ils décrivent (règle 13).
-  req.user.tenantId = tenantId;
+  req.user.tenantId = req.tenantId;
   req.user.requestId = req.requestId || null;
   req.user.ipAddress = req.ip || null;
   req.user.userAgentHeader = req.headers['user-agent'] || null;
   next();
-}));
+});
 const admin = (req, res, next) => {
   if (req.user.isSoc) return next();
   // recordBestEffort n'échoue jamais (avale sa propre erreur) : .then() suffit,

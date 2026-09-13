@@ -15,6 +15,9 @@ const directory = path.join(__dirname, '../backend/db/postgresql/migrations');
 const originalSQL = ['001_core_legacy.sql','002_alert_core.sql'].map(name => fs.readFileSync(path.join(directory,name)));
 const initialConfig = '{"escalation":[30,60,120],"incidentCritical":true,"badgeThreshold":3,"badgeWindowSeconds":120}';
 const stamp = '2026-09-09T10:00:00.000Z';
+// PG-16: security_alerts.tenant_id (migration 009) — frozen 'local' tenant id
+// from migration 003's backfill, present in every disposable DB this file migrates.
+const LOCAL_TENANT = '507486ba-d55e-5142-9ac2-196da97866df';
 let root, defaultName;
 const databaseName = () => 'securisite_test_pg31_' + randomBytes(6).toString('hex');
 function environment(name) {
@@ -56,6 +59,7 @@ function params(id = 'alert-a', overrides = {}) {
     id,createdAt:stamp,updatedAt:stamp,site:'site-A',zone:'zone-B',type:'type-C',level:3,
     origin:'COMMAND',createdBy:77,username:'creator',status:'NOTIFIEE',comment:'comment-D',
     latitude:36.752887,longitude:3.042048,equipment:'equipment-E',policy:'[30,60,120]',
+    tenantId:LOCAL_TENANT, // security_alerts.tenant_id (migration 009) is NOT NULL
     ...overrides,
   };
   return Object.values(values);
@@ -107,7 +111,7 @@ test('PG31: readConfig returns raw TEXT, including non-JSON content',async t=>{
   assert.equal(await repository.readConfig(f.db),'raw legacy text');
 });
 
-test('PG31: insert/find exact 16 parameter order and PostgreSQL types',async t=>{
+test('PG31: insert/find exact 17 parameter order and PostgreSQL types',async t=>{
   const f=await fixture(t);
   assert.deepEqual(await insert(f.db,'distinct',{createdAt:'created',updatedAt:'updated'}),{rowCount:1});
   assert.deepEqual(await repository.findAlert('distinct',f.db),{
@@ -115,6 +119,7 @@ test('PG31: insert/find exact 16 parameter order and PostgreSQL types',async t=>
     level:3,origin:'COMMAND',created_by:77,username:'creator',status:'NOTIFIEE',owner:null,
     acknowledged_at:null,resolved_at:null,comment:'comment-D',latitude:36.752887,longitude:3.042048,
     equipment:'equipment-E',cancellation_requested:0,escalation_step:0,policy:'[30,60,120]',
+    tenant_id:LOCAL_TENANT,
   });
 });
 test('PG31: findAlert absent is null and coordinates remain NULL',async t=>{
@@ -195,13 +200,13 @@ test('PG31: allAlerts and alertsByCreator retain level/date order and include te
   await insert(f.db,'older',{level:4,createdAt:'2026-09-08',createdBy:77});
   await insert(f.db,'other',{level:4,createdAt:'2026-09-09',createdBy:88});
   await insert(f.db,'terminal',{level:4,createdAt:'2026-09-10',createdBy:77,status:'CLOTUREE'});
-  assert.deepEqual(ids(await repository.allAlerts(f.db)),['terminal','other','older','low']);
-  assert.deepEqual(ids(await repository.alertsByCreator(77,f.db)),['terminal','older','low']);
-  assert.deepEqual(await repository.alertsByCreator(999,f.db),[]);
+  assert.deepEqual(ids(await repository.allAlerts(LOCAL_TENANT,f.db)),['terminal','other','older','low']);
+  assert.deepEqual(ids(await repository.alertsByCreator(77,LOCAL_TENANT,f.db)),['terminal','older','low']);
+  assert.deepEqual(await repository.alertsByCreator(999,LOCAL_TENANT,f.db),[]);
 });
 test('PG31: empty lists preserve []',async t=>{
   const f=await fixture(t);
-  assert.deepEqual(await repository.allAlerts(f.db),[]);
+  assert.deepEqual(await repository.allAlerts(LOCAL_TENANT,f.db),[]);
   assert.deepEqual(await repository.pendingEscalations(f.db),[]);
   assert.deepEqual(await repository.configAudit(f.db),[]);
   assert.deepEqual(await repository.notificationRecipients(999,f.db),[]);
@@ -312,7 +317,7 @@ test('PG31: SQL error rolls back only child savepoint; parent can continue and c
     assert.equal(await repository.findAlert('child',client),null);
     await insert(client,'parent-after');
   });
-  assert.deepEqual(ids(await repository.allAlerts(f.db)).sort(),['parent-after','parent-before']);
+  assert.deepEqual(ids(await repository.allAlerts(LOCAL_TENANT,f.db)).sort(),['parent-after','parent-before']);
 });
 test('PG31: nested savepoints have unique internal names and no transaction-parent COMMIT',async t=>{
   const f=await fixture(t);const commands=[];
@@ -396,7 +401,7 @@ test('PG31: every repository SQL operation uses supplied transaction client/PID'
     await repository.updateConfig(initialConfig,cx);
     const n=await repository.prepareNotificationInsert(cx)('all',77,stamp,'message');
     await repository.notifications(77,cx);await repository.findNotification(n.id,77,cx);await repository.markNotificationRead(stamp,n.id,cx);
-    await repository.allAlerts(cx);await repository.alertsByCreator(77,cx);await repository.pendingEscalations(cx);
+    await repository.allAlerts(LOCAL_TENANT,cx);await repository.alertsByCreator(77,LOCAL_TENANT,cx);await repository.pendingEscalations(cx);
     await repository.updateEscalation(1,stamp,'all',cx);await repository.requestCancellation('all',cx);
     await repository.updateState('ACQUITTEE',stamp,'owner',stamp,null,'all',cx);await repository.touchAlert(stamp,'all',cx);
     await repository.badgeRefusalCount('B',stamp,cx);await repository.recentBadgeAlert('B',stamp,cx);

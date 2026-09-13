@@ -51,10 +51,14 @@ before(async () => {
   for (let i = 0; i < DISTINCT; i++) userIds.push((await pool.get(
     "INSERT INTO public.users(username,password_hash,role) VALUES($1,'x','agent') RETURNING id", ['perfidx_' + i])).id);
   const statuses = ['NOTIFIEE', 'ACQUITTEE', 'EN_INTERVENTION', 'SOUS_CONTROLE', 'RESOLUE', 'CLOTUREE'];
+  // PG-16: security_alerts.tenant_id (migration 009) is NOT NULL — the frozen
+  // 'local' tenant id from migration 003's backfill, present in every freshly
+  // migrated DB this file creates.
+  const localTenantId = '507486ba-d55e-5142-9ac2-196da97866df';
   await insertBatch('security_alerts',
-    ['id', 'created_at', 'updated_at', 'site', 'zone', 'type', 'level', 'origin', 'created_by', 'username', 'status', 'comment', 'equipment', 'policy'],
+    ['id', 'created_at', 'updated_at', 'site', 'zone', 'type', 'level', 'origin', 'created_by', 'username', 'status', 'comment', 'equipment', 'policy', 'tenant_id'],
     i => ['ALT-' + randomUUID(), new Date(now - i * 60000).toISOString(), new Date(now - i * 60000).toISOString(), 'S', 'Z', 'T',
-      (i % 4) + 1, i % 3 === 0 ? 'REGLE_BADGE' : 'COMMAND', userIds[i % DISTINCT], 'u', statuses[i % statuses.length], '', i % 3 === 0 ? ('badge:B' + (i % DISTINCT)) : '', '[30,60,120]']);
+      (i % 4) + 1, i % 3 === 0 ? 'REGLE_BADGE' : 'COMMAND', userIds[i % DISTINCT], 'u', statuses[i % statuses.length], '', i % 3 === 0 ? ('badge:B' + (i % DISTINCT)) : '', '[30,60,120]', localTenantId]);
   await insertBatch('pietons', ['id', 'datetime', 'nom', 'badge', 'resultat'],
     i => ['PED-' + randomUUID(), new Date(now - i * 1000).toISOString(), 'N' + i, 'B' + (i % DISTINCT), i % 3 === 0 ? 'refus' : 'autorise']);
   await insertBatch('security_audit', ['event_type', 'resource_type', 'action', 'outcome', 'origin', 'actor_username'],

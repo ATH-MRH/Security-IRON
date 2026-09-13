@@ -3,7 +3,7 @@ const AlertCenter = (() => {
   const labels = {NOTIFIEE:'Notifiée',ACQUITTEE:'Acquittée',EN_INTERVENTION:'En intervention',SOUS_CONTROLE:'Sous contrôle',RESOLUE:'Résolue',CLOTUREE:'Clôturée',FAUSSE_ALERTE:'Fausse alerte',ANNULEE:'Annulée'};
   const levels = ['','Information','Vigilance','Critique','SOS / Urgence'];
   const next = {NOTIFIEE:['ACQUITTEE','Prendre en charge'],ACQUITTEE:['EN_INTERVENTION','Démarrer l’intervention'],EN_INTERVENTION:['SOUS_CONTROLE','Situation sous contrôle'],SOUS_CONTROLE:['RESOLUE','Résoudre'],RESOLUE:['CLOTUREE','Clôturer']};
-  let rows = [], selected = null, busy = false, timer, detailRequest = 0, selectionPending = false;
+  let rows = [], incidents = [], selected = null, busy = false, timer, detailRequest = 0, selectionPending = false;
   // User selection, detail requests and POST ownership have separate lifetimes.
   let selectionGeneration = 0, activeAction = null;
   function captureSelection() {
@@ -18,20 +18,68 @@ const AlertCenter = (() => {
     if (busy || !isCurrent()) return;
     busy = true;
     try {
-      const result = await API.get('/alerts');
+      const result = await API.get('/alerts'); // même chaîne d'attente que la version historique
       if (!isCurrent()) return;
       rows = result;
       document.getElementById('ac-message').textContent='';
       document.getElementById('ac-sync').textContent='Dernière synchronisation : '+new Date().toLocaleTimeString('fr-FR');
-      const open=rows.filter(a=>!finished(a)&&a.status!=='RESOLUE');
-      const today=rows.filter(a=>new Date(a.created_at).toDateString()===new Date().toDateString());
-      const ack=today.filter(a=>a.acknowledged_at);
-      const avg=ack.length ? Math.round(ack.reduce((s,a)=>s+(Date.parse(a.acknowledged_at)-Date.parse(a.created_at))/1000,0)/ack.length)+' s' : '—';
-      document.getElementById('ac-kpis').innerHTML=[['SOS en cours',open.filter(a=>a.level===4).length],['Critiques en cours',open.filter(a=>a.level===3).length],['Alertes aujourd’hui',today.length],['Prise en charge moyenne',avg]].map(([label,value])=>`<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>`).join('');
+      renderKpis();
+      renderBySite();
+      renderRecentIncidents();
+      renderOpTimeline();
       renderList();
       if(selected) await detail(selected,false);
+      // Incidents récents/timeline sont un complément d'affichage : chargés à
+      // part, jamais couplés au timing de load() lui-même (qui reste
+      // exactement celui d'un seul GET /alerts) — un /incidents lent ou en
+      // échec ne doit jamais retarder ni casser l'écran principal des alertes.
+      loadRecentIncidents(isCurrent);
     } catch(err) { if(isCurrent()) { error(err); document.getElementById('ac-sync').textContent='Connexion interrompue — données potentiellement anciennes'; } }
     finally {busy=false;}
+  }
+  async function loadRecentIncidents(isCurrent) {
+    try {
+      const result = await API.get('/incidents');
+      if (!isCurrent()) return;
+      incidents = result;
+      renderRecentIncidents();
+      renderOpTimeline();
+    } catch { /* panneau dégradé silencieusement, jamais l'écran principal */ }
+  }
+  // PG-16 : agrégation pure (frontend/js/soc-kpis.js), aucun KPI simulé — tout
+  // provient de GET /alerts, déjà filtré own/scope côté serveur (PG-8).
+  function renderKpis() {
+    const k = SocKpis.compute(rows);
+    const avg = k.avgAckSeconds===null ? '—' : k.avgAckSeconds+' s';
+    document.getElementById('ac-kpis').innerHTML=[
+      ['Alertes actives',k.active],['Critiques en cours',k.critical],['SOS en cours',k.sos],
+      ['Non acquittées',k.unacknowledged],['Escalades en cours',k.escalated],
+      ['Alertes aujourd’hui',k.today],['Prise en charge moyenne',avg],
+    ].map(([label,value])=>`<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>`).join('');
+  }
+  function renderBySite() {
+    const c = document.getElementById('ac-by-site');
+    const { bySite } = SocKpis.compute(rows);
+    if (!bySite.length) { c.innerHTML='<div class="empty-state">Aucune alerte active</div>'; return; }
+    const max = Math.max(...bySite.map(s=>s.count));
+    c.innerHTML = bySite.slice(0,8).map(s=>`<div class="ac-site-row"><span>${e(s.site)}</span><span class="ac-site-bar"><span style="width:${Math.round(s.count*100/max)}%"></span></span><strong>${s.count}</strong></div>`).join('');
+  }
+  function renderRecentIncidents() {
+    const c = document.getElementById('ac-recent-incidents');
+    const recent = incidents.slice(0,6);
+    if (!recent.length) { c.innerHTML='<div class="empty-state">Aucun incident récent</div>'; return; }
+    c.innerHTML = recent.map(i=>`<div class="alert-item ${i.gravite==='critique'?'danger':(i.gravite==='majeur'?'warning':'')}"><div class="alert-content"><div class="alert-title">${e(i.type)} <span class="badge ${i.gravite==='critique'?'danger':(i.gravite==='majeur'?'warning':'info')}">${e(i.gravite||'')}</span></div><div class="alert-meta">${e(i.lieu||'')} • ${e(i.ref||'')}</div></div><div class="alert-time">${date(i.datetime)}</div></div>`).join('');
+  }
+  // Fusionne deux flux réellement reçus (alertes créées, incidents créés) —
+  // jamais une activité inventée. Trié par horodatage, borné pour rester lisible.
+  function renderOpTimeline() {
+    const c = document.getElementById('ac-op-timeline');
+    const items = [
+      ...rows.map(a=>({at:a.created_at,label:`Alerte · ${a.type} · N${a.level}`,meta:a.site})),
+      ...incidents.map(i=>({at:i.datetime,label:`Incident · ${i.type}`,meta:i.lieu||''})),
+    ].filter(x=>x.at).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).slice(0,15);
+    if (!items.length) { c.innerHTML='<div class="empty-state">Aucune activité récente</div>'; return; }
+    c.innerHTML = `<ol class="ac-op-timeline">${items.map(x=>`<li><time>${date(x.at)}</time><span>${e(x.label)}${x.meta?' — '+e(x.meta):''}</span></li>`).join('')}</ol>`;
   }
   function renderList() {
     const query=document.getElementById('ac-search').value.toLowerCase();
@@ -122,11 +170,24 @@ const AlertCenter = (() => {
     navTo('alertes');
     await loading;
   }
+  // PG-16 : le minuteur 5 s existant reste le filet de repli (fonctionne même
+  // si le temps réel n'est jamais joignable) — Realtime.connect() ne fait que
+  // rendre la mise à jour quasi instantanée quand le flux est disponible.
+  function refreshNow(){ NotificationBell.refresh(); if(document.getElementById('page-alertes').classList.contains('active'))load(); }
+  function updateLiveBadge(){
+    const b=document.getElementById('ac-live-badge'); if(!b) return;
+    const live=Realtime.isConnected();
+    b.textContent = live ? '● Temps réel' : '● Repli (actualisation périodique)';
+    b.classList.toggle('live',live); b.classList.toggle('fallback',!live);
+  }
   function start() {
     clearInterval(timer);
     NotificationBell.refresh();
-    timer=setInterval(()=>{if(document.hidden)return;NotificationBell.refresh();if(document.getElementById('page-alertes').classList.contains('active'))load();},5000);
+    timer=setInterval(()=>{if(document.hidden)return;updateLiveBadge();NotificationBell.refresh();if(document.getElementById('page-alertes').classList.contains('active'))load();},5000);
     document.getElementById('ac-rules').hidden=!isAdmin();
+    Realtime.on((type)=>{ updateLiveBadge(); if(type==='alert:created'||type==='alert:updated'||type==='poll') refreshNow(); });
+    Realtime.connect();
+    updateLiveBadge();
   }
   return {load,renderList,createForm,rules,notifications:NotificationBell.open,openAlert,captureSelection,start};
 })();

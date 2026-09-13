@@ -215,10 +215,19 @@ Migration `005_row_level_security.sql`. **Deuxième défense**, indépendante de
 `backend/scope.js` (PG-8) : même si le code applicatif avait un bug
 d'autorisation, PostgreSQL lui-même refuse de rendre visible une ligne hors
 périmètre. RLS activée sur les 5 tables qui portent réellement un `tenant_id`
-aujourd'hui — `tenants`, `sites`, `zones`, `memberships`, `membership_audit`.
-Les tables historiques (`incidents`, `pietons`, `security_alerts`, …) n'ont
-toujours aucune colonne tenant/site/zone (limite PG-8 inchangée) : RLS n'y est
-pas applicable avant une migration qui ajouterait cette colonne.
+à ce stade — `tenants`, `sites`, `zones`, `memberships`, `membership_audit`.
+Les autres tables historiques (`incidents`, `pietons`, …) n'ont toujours
+aucune colonne tenant/site/zone (limite PG-8 inchangée) : RLS n'y est pas
+applicable avant une migration qui ajouterait cette colonne.
+
+`security_alerts` fait exception depuis PG-16 (migration `009_alert_core_tenant.sql`,
+voir `docs/soc.md`) : elle porte désormais `tenant_id`, mais **uniquement
+filtrée en première défense applicative** (`backend/alert-core/repository.js`,
+`service.js`) — la migration 009 n'a pas étendu RLS/`005` à cette table.
+Corriger une fuite intertenant réelle et démontrée était le périmètre de
+PG-16 ; ajouter une seconde défense RLS sur `security_alerts` est un lot
+distinct et légitime, non entrepris ici faute de nécessité démontrée pour
+fermer la fuite trouvée — limite connue, à réévaluer explicitement.
 
 ### Granularité : le tenant, pas site/zone
 

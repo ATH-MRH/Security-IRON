@@ -21,7 +21,12 @@ const dbUrl = new URL(baseEnv.DATABASE_URL); dbUrl.pathname = '/' + dbName;
 const env = { ...baseEnv, DATABASE_URL: dbUrl.href };
 const now = () => new Date().toISOString();
 const uid = p => p + '-' + randomBytes(4).toString('hex').toUpperCase();
-const user = { id: 2, username: 'agent', role: 'agent' };
+// PG-16: service.create() requires user.tenantId (security_alerts.tenant_id,
+// migration 009) — normally attached by routes.js after scope resolution;
+// set here 1:1 with the frozen 'local' tenant id from migration 003's backfill
+// for the direct service.fromBadge/fromIncident calls this file makes.
+const LOCAL_TENANT = '507486ba-d55e-5142-9ac2-196da97866df';
+const user = { id: 2, username: 'agent', role: 'agent', tenantId: LOCAL_TENANT };
 
 let root, stop, base, admin, agent;
 

@@ -47,6 +47,11 @@ const TABLES = [
   { name: 'alert_rules', pk: ['id'], preClear: true, seeded: true },
 ];
 const JSON_TEXT_COLUMNS = { security_alerts: ['policy'], alert_rules: ['config'] };
+// PG-16 : security_alerts.tenant_id (migration 009) n'existe pas côté SQLite
+// historique — une base source antérieure au multitenant n'a jamais connu
+// qu'un seul client. Backfill identique à celui de la migration 009 :
+// toutes les lignes importées reçoivent le tenant « local ».
+const TENANT_BACKFILL_COLUMN = { security_alerts: 'tenant_id' };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const validUtf8 = s => typeof s !== 'string' || Buffer.from(s, 'utf8').toString('utf8') === s;
@@ -173,10 +178,20 @@ async function importSqlite({ sqlitePath, targetEnv = process.env, dryRun = fals
     // 3. Import transactionnel.
     await client.query('BEGIN');
     try {
+      // PG-16 : résolu une seule fois, dans la transaction — même tenant figé
+      // que le backfill de la migration 003 (déterministe, toujours présent
+      // puisque les migrations cibles sont déjà appliquées à ce stade).
+      let localTenantId = null;
+      if (plan.some(({ spec, rows }) => TENANT_BACKFILL_COLUMN[spec.name] && rows.length)) {
+        localTenantId = (await client.query("SELECT id FROM public.tenants WHERE code='local'")).rows[0]?.id;
+        if (!localTenantId) throw fail('TENANT_BACKFILL_MISSING', 'Tenant « local » introuvable (migration 003 non appliquée ?).');
+      }
       for (const { spec, shared, rows } of plan) {
         if (!rows.length) continue;
         if (spec.preClear) await client.query(`DELETE FROM public.${spec.name}`); // remplace le seed
-        const cols = shared.map(c => `"${c}"`).join(', ');
+        const backfillCol = TENANT_BACKFILL_COLUMN[spec.name];
+        const insertCols = backfillCol ? [...shared, backfillCol] : shared;
+        const cols = insertCols.map(c => `"${c}"`).join(', ');
         const CHUNK = 500;
         for (let off = 0; off < rows.length; off += CHUNK) {
           const slice = rows.slice(off, off + CHUNK);
@@ -184,8 +199,9 @@ async function importSqlite({ sqlitePath, targetEnv = process.env, dryRun = fals
           const values = slice.map((row, r) => {
             const ph = shared.map((c, k) => {
               params.push(row[c] === undefined ? null : (typeof row[c] === 'bigint' ? row[c].toString() : row[c]));
-              return '$' + (r * shared.length + k + 1);
+              return '$' + (r * insertCols.length + k + 1);
             });
+            if (backfillCol) { params.push(localTenantId); ph.push('$' + (r * insertCols.length + shared.length + 1)); }
             return '(' + ph.join(', ') + ')';
           });
           await client.query(`INSERT INTO public.${spec.name} (${cols}) VALUES ${values.join(', ')}`, params);

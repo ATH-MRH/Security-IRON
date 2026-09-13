@@ -16,9 +16,14 @@ const base=testEnvironment(),directory=path.resolve(__dirname,'../backend/db/pos
 // memberships by the router — hand-set here 1:1 with the PG-7 backfill shape,
 // non-enumerably so any incidental deepEqual against the plain DB row shape
 // ({id,username,role}) elsewhere in this file is unaffected.
-function withAccess(user,alertAccess,isSoc){
+// PG-16: security_alerts.tenant_id (migration 009) is NOT NULL — every
+// disposable DB this file migrates gets the same frozen 'local' tenant id
+// from migration 003's backfill.
+const LOCAL_TENANT='507486ba-d55e-5142-9ac2-196da97866df';
+function withAccess(user,alertAccess,isSoc,tenantId=LOCAL_TENANT){
  Object.defineProperty(user,'alertAccess',{value:alertAccess,enumerable:false});
  Object.defineProperty(user,'isSoc',{value:isSoc,enumerable:false});
+ Object.defineProperty(user,'tenantId',{value:tenantId,enumerable:false});
  return user;
 }
 const admin=withAccess({id:1,username:'admin-test',role:'admin'},'scope',true),agent=withAccess({id:2,username:'agent-test',role:'agent'},'own',false);
@@ -155,7 +160,7 @@ let release;const gate=new Promise(x=>release=x);process.on('message',m=>{if(m==
  process.send({pid:(await c.get('SELECT pg_backend_pid() pid')).pid});
  const cx={...c,query:async(sql,args)=>{if(sql.includes('pg_advisory_xact_lock'))process.send({key:args[0]});return c.query(sql,args);}};
  if(task.kind==='escalate')await s.escalateDue(task.time,cx);
- else await s.fromBadge({badge:task.badge,resultat:'refus',point:'S'},{id:2,username:'agent-test',role:'agent'},cx);
+ else await s.fromBadge({badge:task.badge,resultat:'refus',point:'S'},{id:2,username:'agent-test',role:'agent',tenantId:'507486ba-d55e-5142-9ac2-196da97866df'},cx);
  process.send({held:true});if(task.hold)await gate;
  });await db.close();process.send({done:true});process.disconnect();})().catch(async e=>{process.send({error:{code:e.code,message:e.message}});await db.close();process.disconnect();process.exitCode=1;});`;
 function worker(t,f,task){
@@ -206,6 +211,16 @@ for(const badge of ['123',123])test('PG32B badge TEXT parity '+typeof badge,asyn
 });
 test('PG32B numeric badge direct historical HEAD parity after rollback',async t=>{
  const f=await fixture(t);await seedBadge(f,'123');const historical=historicalBadgeService(),rollback=Error('parity fixture rollback');let before;
+ // PG-16: security_alerts.tenant_id (migration 009) is a new required column that
+ // post-dates this pinned historical commit — it calls repository.insertAlert with
+ // the pre-009 16-field+client arity, since it can never learn about tenant_id.
+ // The historical module shares this process's single `repository` instance (its
+ // require('./repository') resolves to the same real file), so shim only the
+ // positional-arity gap here to keep verifying genuine badge/dedup behavior
+ // parity end-to-end; restore the real implementation immediately after.
+ const originalInsertAlert=r.insertAlert;
+ r.insertAlert=(...args)=>args.length===17?originalInsertAlert(...args.slice(0,16),LOCAL_TENANT,args[16]):originalInsertAlert(...args);
+ t.after(()=>{r.insertAlert=originalInsertAlert;});
  const snapshot=async c=>{
   const rows=await s.list(admin,c);assert.equal(rows.length,1);const d=await s.detail(rows[0].id,admin,c);
   const {id,created_at,updated_at,timeline,...fields}=d;

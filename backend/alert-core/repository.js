@@ -123,10 +123,13 @@ function prepareNotificationInsert(client = db) {
 async function findAlert(id, client = db) {
   return client.get('SELECT * FROM public.security_alerts WHERE id=$1', [id]);
 }
-async function insertAlert(id, createdAt, updatedAt, site, zone, type, level, origin, createdBy, username, status, comment, latitude, longitude, equipment, policy, client = db) {
-  const result = await client.query(`INSERT INTO public.security_alerts(id,created_at,updated_at,site,zone,type,level,origin,created_by,username,status,comment,latitude,longitude,equipment,policy)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-  [id, createdAt, updatedAt, site, zone, type, level, origin, createdBy, username, status, comment, latitude, longitude, equipment, policy]);
+// PG-16 : tenantId requis (jamais optionnel) — security_alerts.tenant_id est
+// NOT NULL depuis la migration 009, qui ferme la fuite intertenant qu'une
+// absence de colonne rendait possible (voir son en-tête).
+async function insertAlert(id, createdAt, updatedAt, site, zone, type, level, origin, createdBy, username, status, comment, latitude, longitude, equipment, policy, tenantId, client = db) {
+  const result = await client.query(`INSERT INTO public.security_alerts(id,created_at,updated_at,site,zone,type,level,origin,created_by,username,status,comment,latitude,longitude,equipment,policy,tenant_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+  [id, createdAt, updatedAt, site, zone, type, level, origin, createdBy, username, status, comment, latitude, longitude, equipment, policy, tenantId]);
   return { rowCount: result.rowCount };
 }
 async function pendingEscalations(client = db) {
@@ -160,11 +163,13 @@ async function markNotificationRead(stamp, id, client = db) {
   const result = await client.query('UPDATE public.alert_notifications SET read_at=$1 WHERE id=$2', [stamp, id]);
   return { rowCount: result.rowCount };
 }
-async function allAlerts(client = db) {
-  return client.all('SELECT * FROM public.security_alerts ORDER BY level DESC, created_at DESC');
+// PG-16 : tenantId requis — sans lui, un SOC 'scope' verrait toutes les
+// alertes de tous les tenants (voir migration 009 et tests/postgres-soc.test.js).
+async function allAlerts(tenantId, client = db) {
+  return client.all('SELECT * FROM public.security_alerts WHERE tenant_id=$1 ORDER BY level DESC, created_at DESC', [tenantId]);
 }
-async function alertsByCreator(userId, client = db) {
-  return client.all('SELECT * FROM public.security_alerts WHERE created_by=$1 ORDER BY level DESC,created_at DESC', [userId]);
+async function alertsByCreator(userId, tenantId, client = db) {
+  return client.all('SELECT * FROM public.security_alerts WHERE created_by=$1 AND tenant_id=$2 ORDER BY level DESC,created_at DESC', [userId, tenantId]);
 }
 async function timeline(id, client = db) {
   return client.all('SELECT * FROM public.alert_audit WHERE alert_id=$1 ORDER BY id', [id]);

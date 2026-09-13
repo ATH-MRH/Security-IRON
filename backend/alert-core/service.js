@@ -38,9 +38,12 @@ async function notify(alert, message, client = db) {
 // routeur, jamais recalculé ici) remplace le rôle brut. `user.alertAccess`
 // doit valoir 'own' ou 'scope' ; toute autre valeur (absente, périmètre non
 // résolu) referme l'accès au lieu de l'ouvrir.
+// PG-16 : tenant_id (migration 009) vérifié inconditionnellement, même pour
+// une alerte propre à l'appelant — jamais de fuite intertenant, même pour
+// « own » (voir tests/postgres-soc.test.js).
 async function get(id, user, client = db) {
   const a = await repository.findAlert(id, client);
-  if (!a || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable', 404);
+  if (!a || a.tenant_id !== user.tenantId || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable', 404);
   return a;
 }
 async function create(input, user, origin = 'COMMAND', transactionClient = null) {
@@ -49,8 +52,9 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   let lat = input.latitude ?? null, lng = input.longitude ?? null;
   if ((lat !== null || lng !== null) && (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180)) fail('Coordonnées GPS invalides');
   const id = 'ALT-' + randomUUID(), stamp = now();
+  if (!user.tenantId) fail('Périmètre non résolu', 403);
   const result = await atomic(async client => {
-    await repository.insertAlert(id,stamp,stamp,site,zone,type,input.level,origin,user.id,user.username,'NOTIFIEE',text(input.comment,4000),lat,lng,text(input.equipment),JSON.stringify((await config(client)).escalation),client);
+    await repository.insertAlert(id,stamp,stamp,site,zone,type,input.level,origin,user.id,user.username,'NOTIFIEE',text(input.comment,4000),lat,lng,text(input.equipment),JSON.stringify((await config(client)).escalation),user.tenantId,client);
     await audit(id,user.username,'CREATION', `${type} — niveau ${input.level}`,client);
     const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client);
     // PG-10 : même transaction que la mutation (règle 13) — un échec d'audit
@@ -133,7 +137,7 @@ async function readNotification(id, user, transactionClient = null) {
   }, transactionClient); return {ok:true};
 }
 async function list(user, client = db) {
-  const rows = user.alertAccess==='scope' ? await repository.allAlerts(client) : await repository.alertsByCreator(user.id,client);
+  const rows = user.alertAccess==='scope' ? await repository.allAlerts(user.tenantId,client) : await repository.alertsByCreator(user.id,user.tenantId,client);
   return rows;
 }
 async function detail(id, user, client = db) {
@@ -143,7 +147,7 @@ async function detail(id, user, client = db) {
 async function act(id, input, user, transactionClient = null) {
   const result = await atomic(async client=>{
     const a = await repository.findAlertForUpdate(id,client);
-    if (!a || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable',404);
+    if (!a || a.tenant_id !== user.tenantId || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable',404);
     const action=input.action, comment=text(input.comment,4000);
     if (terminal.includes(a.status)) fail('Cette alerte est clôturée',409);
     if (action==='COMMENTAIRE') {

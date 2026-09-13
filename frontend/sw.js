@@ -21,6 +21,8 @@ const SHELL_ASSETS = [
   'css/alerts.css',
   'js/api.js',
   'js/ui.js',
+  'js/realtime.js',
+  'js/soc-kpis.js',
   'js/alerts.js',
   'js/notifications.js',
   'js/sos.js',

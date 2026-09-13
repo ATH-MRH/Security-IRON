@@ -15,10 +15,13 @@ const realResolveScope = scope.resolveScope;
 
 before(async () => {
   service.currentUser = async () => ({ id: 1, username: 'admin', role: 'admin' });
-  // PG-8: alerts.js now also resolves a periметre via backend/scope.js
-  // (memberships), a real DB call this deliberately DB-less fixture cannot
-  // make. Stub it the same way service.currentUser/service.config are
-  // stubbed: full SOC scope, matching this test's pre-PG-8 role:'admin'.
+  // PG-8/PG-16: alerts.js resolves a périmètre via backend/scope.js
+  // (memberships, now through scope.requireScope()), a real DB call this
+  // deliberately DB-less fixture cannot make. Stub it the same way
+  // service.currentUser/service.config are stubbed: full SOC scope, matching
+  // this test's pre-PG-8 role:'admin'. requireScope() dispatches through
+  // module.exports.resolveScope precisely so this interception keeps working
+  // even though its middleware closure was already built at router-load time.
   scope.resolveScope = async () => ({
     hasAccess: true, tenantIds: ['fixture-tenant'],
     resolveTenant: () => 'fixture-tenant', tenantAccess: () => 'scope',

@@ -27,6 +27,9 @@ const dbUrl = new URL(baseEnv.DATABASE_URL); dbUrl.pathname = '/' + dbName;
 const env = { ...baseEnv, DATABASE_URL: dbUrl.href };
 const tag = () => randomBytes(5).toString('hex');
 const rejects = (p, code) => assert.rejects(p, e => { assert.equal(e.code, code, e.message); return true; });
+// PG-16: service.create() requires user.tenantId (security_alerts.tenant_id,
+// migration 009) — the frozen 'local' tenant id from migration 003's backfill.
+const LOCAL_TENANT = '507486ba-d55e-5142-9ac2-196da97866df';
 
 let root, pool, stop, base;
 let admin, agent; // JWT tokens
@@ -259,7 +262,7 @@ test('alert.action and alert.rules.update are recorded', async () => {
 test('a rolled-back business mutation never leaves a success security_audit row behind', async () => {
   const before = (await pool.get("SELECT count(*)::int n FROM public.security_audit WHERE event_type='alert.create'")).n;
   await assert.rejects(pool.transaction(async client => {
-    await alertCoreService.create({ site: 'S', type: 'T', level: 4 }, { id: agentId, username: 'secaudit-agent' }, 'COMMAND', client);
+    await alertCoreService.create({ site: 'S', type: 'T', level: 4 }, { id: agentId, username: 'secaudit-agent', tenantId: LOCAL_TENANT }, 'COMMAND', client);
     throw Object.assign(new Error('deliberate parent rollback'), { code: 'TEST_ROLLBACK' });
   }), e => e.code === 'TEST_ROLLBACK');
   const after = (await pool.get("SELECT count(*)::int n FROM public.security_audit WHERE event_type='alert.create'")).n;

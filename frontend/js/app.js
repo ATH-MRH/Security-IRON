@@ -21,6 +21,7 @@ async function doLogin(){
 }
 
 function doLogout(){
+  Realtime.stop();
   API.clearToken();
   location.reload();
 }

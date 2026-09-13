@@ -98,8 +98,13 @@
   <div class="content">
 
   <section class="page" id="page-alertes">
-    <div class="ac-header"><div><div class="clean-eyebrow">SÉCURISITE 2.0 / COMMAND</div><h2>Centre d’alertes</h2><p>Qualifier, prendre en charge et documenter chaque événement.</p></div><div class="ac-actions"><button class="btn btn-outline" id="ac-rules" onclick="AlertCenter.rules()">Règles & escalades</button><button class="btn btn-primary" onclick="AlertCenter.createForm()">+ Nouvelle alerte</button></div></div>
+    <div class="ac-header"><div><div class="clean-eyebrow">SÉCURISITE 2.0 / COMMAND</div><h2>Centre d’alertes</h2><p>Qualifier, prendre en charge et documenter chaque événement.</p></div><div class="ac-actions"><span class="ac-live-badge" id="ac-live-badge" role="status" title="État de la connexion temps réel">● Connexion…</span><button class="btn btn-outline" id="ac-rules" onclick="AlertCenter.rules()">Règles & escalades</button><button class="btn btn-primary" onclick="AlertCenter.createForm()">+ Nouvelle alerte</button></div></div>
     <div id="ac-kpis"></div>
+    <div class="ac-insights">
+      <div class="card"><div class="card-header"><div class="card-title">📍 Activité par site</div></div><div class="card-body" id="ac-by-site"></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🚨 Incidents récents</div><button class="btn btn-sm btn-outline" onclick="navTo('incidents')">Tout voir</button></div><div class="card-body" id="ac-recent-incidents"></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🕒 Timeline opérationnelle</div></div><div class="card-body" id="ac-op-timeline"></div></div>
+    </div>
     <div class="ac-toolbar"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher un site, un agent, un événement…" oninput="AlertCenter.renderList()"><select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderList()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select><select id="ac-status" aria-label="État" onchange="AlertCenter.renderList()"><option value="open">En cours</option><option value="all">Tous les états</option></select><button class="btn btn-outline" onclick="AlertCenter.load()">Actualiser</button></div>
     <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
     <div class="ac-layout"><div id="ac-list"></div><section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section></div>
@@ -542,6 +547,8 @@
 
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/realtime.js"></script>
+<script src="js/soc-kpis.js"></script>
 <script src="js/notifications.js"></script>
 <script src="js/alerts.js"></script>
 <script src="js/sos.js"></script>

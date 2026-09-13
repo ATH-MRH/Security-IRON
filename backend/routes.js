@@ -40,6 +40,12 @@ const requireAdmin = (req, res, next) => {
 // significative possible à ce stade — voir docs/postgresql-scope.md.
 const withScope = scope.requireScope();
 router.use((req, res, next) => (req.path.startsWith('/admin') ? next() : withScope(req, res, next)));
+// PG-16 : les déclencheurs automatiques d'alerte (alerts.fromIncident/
+// fromBadge, appelés plus bas avec ce même req.user) doivent connaître le
+// tenant résolu ici — sans quoi une alerte créée depuis POST /incidents ou
+// /pietons échouerait la contrainte NOT NULL de security_alerts.tenant_id
+// (migration 009). Même convention que backend/alerts.js (PG-8/PG-10).
+router.use((req, res, next) => { if (req.tenantId != null && req.user) req.user.tenantId = req.tenantId; next(); });
 
 /* ============================================================ */
 /*  ADMINISTRATION SYSTÈME                                      */

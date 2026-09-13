@@ -17,9 +17,14 @@ const directory=path.resolve(__dirname,'../backend/db/postgresql/migrations');
 // Attached non-enumerably: readable by service.js like any property, but
 // invisible to this file's `assert.deepEqual(currentUser(...), admin)`
 // checks, which must keep matching the plain {id,username,role} DB row.
-function withAccess(user,alertAccess,isSoc){
+// PG-16: security_alerts.tenant_id (migration 009) is NOT NULL — user.tenantId
+// must resolve to a real tenant row. Every disposable DB this file migrates
+// gets the same frozen 'local' tenant id from migration 003's backfill.
+const LOCAL_TENANT='507486ba-d55e-5142-9ac2-196da97866df';
+function withAccess(user,alertAccess,isSoc,tenantId=LOCAL_TENANT){
  Object.defineProperty(user,'alertAccess',{value:alertAccess,enumerable:false});
  Object.defineProperty(user,'isSoc',{value:isSoc,enumerable:false});
+ Object.defineProperty(user,'tenantId',{value:tenantId,enumerable:false});
  return user;
 }
 const admin=withAccess({id:1,username:'admin-fixture',role:'admin'},'scope',true);

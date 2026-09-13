@@ -117,13 +117,15 @@ test('the app role can perform its DML but cannot alter structure or touch appen
     assert.equal((await client.query("SELECT count(*)::int n FROM public.users WHERE username='prov_app'")).rows[0].n, 1);
     await client.query("UPDATE public.users SET role='admin' WHERE username='prov_app'");
     await client.query("DELETE FROM public.users WHERE username='prov_app'");
-    await client.query("INSERT INTO public.security_alerts(id,created_at,updated_at,site,zone,type,level,origin,created_by,username,status,policy) VALUES('ALT-p',now()::text,now()::text,'s','z','t',1,'o',1,'u','NOTIFIEE','[]')");
+    // PG-16: security_alerts.tenant_id (migration 009) is NOT NULL — the frozen
+    // 'local' tenant id from migration 003's backfill.
+    await client.query("INSERT INTO public.security_alerts(id,created_at,updated_at,site,zone,type,level,origin,created_by,username,status,policy,tenant_id) VALUES('ALT-p',now()::text,now()::text,'s','z','t',1,'o',1,'u','NOTIFIEE','[]','507486ba-d55e-5142-9ac2-196da97866df')");
     await client.query("INSERT INTO public.alert_audit(alert_id,created_at,actor,action,detail) VALUES('ALT-p',now()::text,'a','A','d')");
     await assert.rejects(client.query('CREATE TABLE public.hack(x int)'), /permission denied|must be owner/i);
     await assert.rejects(client.query('DROP TABLE public.users'), /permission denied|must be owner/i);
     await assert.rejects(client.query("UPDATE public.alert_audit SET actor='x'"), /permission denied|Audit immuable/i);
     await assert.rejects(client.query('DELETE FROM public.alert_audit'), /permission denied|Audit immuable/i);
-    await assert.rejects(client.query("INSERT INTO securisite_meta.schema_migrations(version,name,checksum,applied_at,execution_ms) VALUES(9,'x',repeat('a',64),now(),0)"), /permission denied/i);
+    await assert.rejects(client.query("INSERT INTO securisite_meta.schema_migrations(version,name,checksum,applied_at,execution_ms) VALUES(999,'x',repeat('a',64),now(),0)"), /permission denied/i);
   } finally { await client.end(); }
 });
 

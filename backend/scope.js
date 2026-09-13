@@ -118,7 +118,14 @@ function auditDenied(req, resourceType, detail) {
 function requireScope() {
   return async (req, res, next) => {
     try {
-      const scope = await resolveScope(req.user.id);
+      // module.exports.resolveScope, not the bare local reference: this
+      // middleware closure is created once, at router-build time (router.use
+      // (scope.requireScope())) — long before a test could ever monkey-patch
+      // scope.resolveScope the way service.currentUser/service.config already
+      // are elsewhere. Dispatching through the exports object keeps that same
+      // interception point working here too, with no behavioural difference
+      // in production (module.exports.resolveScope === resolveScope there).
+      const scope = await module.exports.resolveScope(req.user.id);
       const param = key => (typeof req.query[key] === 'string' && req.query[key] ? req.query[key] : null);
       const tenantId = scope.resolveTenant(param('tenant_id'));
       if (!scope.hasAccess || tenantId == null) {
