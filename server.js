@@ -29,7 +29,9 @@ const alerts     = require('./backend/alerts');
 const map        = require('./backend/map');
 const realtimeRoutes = require('./backend/realtime-routes');
 const push       = require('./backend/push');
+const health     = require('./backend/health');
 const { requestContext } = require('./backend/request-context');
+const { observability } = require('./backend/observability');
 
 // Plafond d'arrêt gracieux : au-delà, on ferme le pool même si un cycle traîne.
 const SHUTDOWN_GRACE_MS = 10000;
@@ -38,7 +40,9 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(requestContext()); // PG-10 : req.requestId, en-tête X-Request-Id — avant toute route.
+app.use(observability());  // PG-18 : une ligne de log JSON structurée par requête — avant toute route.
 
+app.use('/api', health);   // PG-18 : /api/health (liveness), /api/ready (readiness) — non authentifiées.
 app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement
 app.use('/api/camera', camera);                   // proxy caméras IP (avant JWT : les <img> n'envoient pas de token)

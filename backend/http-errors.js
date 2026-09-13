@@ -44,6 +44,11 @@ function logError(tag, err, classification) {
 function sendError(res, err, tag) {
   const c = classifyError(err);
   logError(tag || 'HTTP', err, c);
+  // PG-18 : code machine pour la télémétrie opérationnelle (backend/observability.js),
+  // à côté de — jamais dans — classifyError() : son contrat de retour {kind,status,body}
+  // est fixé par des tests deepEqual existants (tests/postgres-http-errors.test.js,
+  // tests/postgres-e2e.test.js), jamais élargi silencieusement ici.
+  res.locals.errorCode = c.kind === 'business' ? null : ((err && (err.code || err.name)) || 'inconnue');
   res.status(c.status).json(c.body);
 }
 
