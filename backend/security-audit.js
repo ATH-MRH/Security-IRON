@@ -109,4 +109,4 @@ async function recordBestEffort(event, client = db) {
   }
 }
 
-module.exports = { record, recordBestEffort, sanitizeDetail, OUTCOMES, ORIGINS };
+module.exports = { record, recordBestEffort, sanitizeDetail, OUTCOMES, ORIGINS, FORBIDDEN_DETAIL_PATTERN };
