@@ -3,6 +3,7 @@ const service = require('./alert-core/service');
 const scope = require('./scope');
 const securityAudit = require('./security-audit');
 const { sendError } = require('./http-errors');
+const aiSummaries = require('./ai/summaries');
 const router = express.Router();
 
 // Express 4 ne relaie pas les rejets d'une promesse : chaque handler async est encapsulé.
@@ -63,8 +64,22 @@ router.post('/', wrap(async (req, res) => res.status(201).json(await service.cre
 // choix de l'appelant (toujours 4/'SOS'). Avant la route /:id pour ne jamais
 // prêter à confusion, même si la méthode HTTP suffit déjà à les distinguer.
 router.post('/sos', wrap(async (req, res) => res.status(201).json(await service.sos(req.body, req.user))));
+// PG-20 : résumé de shift SOC — avant /:id (sinon capturé comme un id
+// d'alerte littéral 'shift-summary'), réservé au SOC (summarizeShift le
+// vérifie déjà, mais l'ordre de montage seul ne protège rien : la
+// vérification métier reste dans backend/ai/summaries.js).
+router.get('/shift-summary', wrap(async (req, res) => {
+  const hours = req.query.since_hours ? Number(req.query.since_hours) : undefined;
+  res.json(await aiSummaries.summarizeShift(req.user, undefined, hours === undefined ? {} : { sinceHours: hours }));
+}));
 router.get('/:id', wrap(async (req, res) => res.json(await service.detail(req.params.id, req.user))));
 router.post('/:id/actions', wrap(async (req, res) => res.json(await service.act(req.params.id, req.body, req.user))));
+// PG-20 : résumés IA — lisent via service.detail() (own/scope déjà
+// appliqués, PG-8), jamais un accès parallèle à la base. Toujours identifiés
+// comme générés (generated_by_ai: true, backend/ai/summaries.js#label).
+router.get('/:id/summary', wrap(async (req, res) => res.json(await aiSummaries.summarizeAlert(req.params.id, req.user))));
+router.get('/:id/timeline-summary', wrap(async (req, res) => res.json(await aiSummaries.summarizeTimeline(req.params.id, req.user))));
+router.get('/:id/closing-report', wrap(async (req, res) => res.json(await aiSummaries.closingReport(req.params.id, req.user))));
 router.use((req, res) => res.status(404).json({ error: 'Route Alert Core introuvable' }));
 
 // Mapping transport unifié (backend/http-errors.js) : métier verbatim ; conflit

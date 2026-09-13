@@ -22,7 +22,7 @@ function fixture(data = {}) {
   function element(id) {
     if(id==='ac-comment')return element('ac-detail').querySelector('#ac-comment');
     if (!elements.has(id)) {
-      let html = '', actions = [], comment = null;
+      let html = '', actions = [], comment = null, aiBtn = null;
       // document.querySelectorAll('.page') isn't mocked (only the specific
       // selectors AlertCenter/NotificationBell actually query), so navTo()'s
       // own class toggling never reaches these elements — page-alertes
@@ -41,8 +41,13 @@ function fixture(data = {}) {
           html=value;
           actions=[...value.matchAll(/data-action="([^"]+)"/g)].map(m=>({dataset:{action:m[1]},disabled:false}));
           comment=value.includes('id="ac-comment"')?{value:'',focus(){}}:null;
+          // PG-20: AlertCenter#detail() wires the AI-summary button via
+          // target.querySelector('#ac-ai-summary-btn') — a distinct mock
+          // object per innerHTML set, so a stale onclick from a previous
+          // render is never mistaken for the current one.
+          aiBtn=value.includes('id="ac-ai-summary-btn"')?{onclick:null}:null;
         },
-        querySelector:selector=>selector==='#ac-comment'?comment:null,
+        querySelector:selector=>selector==='#ac-comment'?comment:selector==='#ac-ai-summary-btn'?aiBtn:null,
         querySelectorAll:selector=>selector==='[data-action]'?actions:[]
       });
     }
@@ -435,4 +440,44 @@ test('PG-16: the live badge switches to fallback wording once the connection is 
   f.center.start();
   f.emitRealtime('poll', null); // any Realtime event also refreshes the badge
   assert.match(f.element('ac-live-badge').textContent, /Repli/);
+});
+
+test('PG-20: the AI summary is never fetched automatically, only on explicit request', async () => {
+  const f = fixture({'/alerts': [{ ...alert, id: 'a1' }]});
+  await f.center.openAlert('a1'); await settle();
+  assert.equal(f.state.requests.includes('/alerts/a1/summary'), false);
+});
+
+test('PG-20: clicking "Résumé IA" fetches GET /alerts/:id/summary and renders the labelled result', async () => {
+  const f = fixture({'/alerts': [{ ...alert, id: 'a1' }],
+    '/alerts/a1/summary': { kind: 'alert_summary', resource_id: 'a1', text: 'Résumé de test', provider: 'local', generated_by_ai: true, simulated: true }});
+  await f.center.openAlert('a1'); await settle();
+  const btn = f.element('ac-detail').querySelector('#ac-ai-summary-btn');
+  assert.ok(btn, 'the AI summary button is wired via target.querySelector');
+  await btn.onclick(); await settle();
+  assert.ok(f.state.requests.includes('/alerts/a1/summary'));
+  const panel = f.element('ac-ai-summary');
+  assert.equal(panel.hidden, false);
+  assert.match(panel.innerHTML, /Généré par IA/);
+  assert.match(panel.innerHTML, /Résumé de test/);
+});
+
+test('PG-20: a summary fetch failure is shown as an alert, never a silent panel', async () => {
+  const f = fixture({'/alerts': [{ ...alert, id: 'a1' }], '/alerts/a1/summary': Object.assign(new Error('IA indisponible'), {})});
+  await f.center.openAlert('a1'); await settle();
+  const btn = f.element('ac-detail').querySelector('#ac-ai-summary-btn');
+  await btn.onclick(); await settle();
+  assert.match(f.element('ac-ai-summary').innerHTML, /IA indisponible/);
+});
+
+test('PG-20: switching to another alert before the summary resolves discards the stale response', async () => {
+  const summary = deferred();
+  const f = fixture({'/alerts': [record('old'), record('B')], '/alerts/old/summary': () => summary.promise});
+  await f.center.openAlert('old'); await settle();
+  const btn = f.element('ac-detail').querySelector('#ac-ai-summary-btn');
+  const pending = btn.onclick();
+  await f.center.openAlert('B'); await settle();
+  summary.resolve({ text: 'Résumé de old', generated_by_ai: true });
+  await pending; await settle();
+  assert.doesNotMatch(f.element('ac-ai-summary').innerHTML, /Résumé de old/);
 });

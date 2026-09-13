@@ -5,6 +5,7 @@ const alerts  = require('./alerts');
 const scope   = require('./scope');
 const securityAudit = require('./security-audit');
 const push    = require('./push');
+const aiSummaries = require('./ai/summaries');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -383,6 +384,13 @@ router.get('/incidents', async (req, res, next) => {
   try {
     res.json(await db.all('SELECT * FROM incidents ORDER BY datetime DESC'));
   } catch (e) { next(e); }
+});
+
+// PG-20 : résumé IA d'un incident — même périmètre que GET /incidents
+// ci-dessus, aucun filtrage supplémentaire inventé (voir backend/ai/summaries.js).
+router.get('/incidents/:id/summary', async (req, res, next) => {
+  try { res.json(await aiSummaries.summarizeIncident(req.params.id, db)); }
+  catch (e) { next(e); }
 });
 
 router.post('/incidents', async (req, res, next) => {

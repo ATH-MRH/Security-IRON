@@ -44,3 +44,9 @@
 .carte-site-row{padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
 .carte-site-row:last-child{border-bottom:none}
 @media(max-width:1000px){.carte-layout{grid-template-columns:1fr}}
+
+/* PG-20 : résumé IA à la demande (voir docs/ai.md) — toujours son propre
+   bandeau, jamais confondu avec un contenu rédigé par un humain. */
+.ac-ai-summary{margin-top:14px;padding:14px;background:var(--bg-2);border:1px dashed var(--border);border-radius:8px}
+.ac-ai-badge{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px}
+.ac-ai-summary p{margin:0;white-space:pre-wrap}
