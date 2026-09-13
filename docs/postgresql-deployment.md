@@ -18,7 +18,12 @@ Trois rôles distincts, un seul utilisé par l'application en fonctionnement.
 `backend/db/postgresql/readiness.js` (`PRIVILEGES`), et `SELECT` sur
 `securisite_meta.schema_migrations`. Les journaux append-only (`alert_audit`,
 `alert_config_audit`) ne reçoivent qu'`INSERT` + `SELECT`. `securisite_app` ne peut
-ni créer, ni modifier une structure, ni contourner RLS.
+ni créer, ni modifier une structure, ni contourner RLS — `NOBYPASSRLS` est
+maintenant réellement significatif depuis PG-9 (migration `005`) : la Row Level
+Security est active sur `tenants`/`sites`/`zones`/`memberships`/
+`membership_audit`, et `securisite_app` reçoit en plus `EXECUTE` sur
+`securisite_meta.current_actor_tenant_ids()` (la fonction que ces politiques
+appellent) — voir `docs/postgresql-scope.md`.
 
 Les noms de rôles sont surchargables : `SECURISITE_OWNER_ROLE`,
 `SECURISITE_MIGRATOR_ROLE`, `SECURISITE_APP_ROLE`.

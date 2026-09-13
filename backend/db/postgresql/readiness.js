@@ -24,6 +24,18 @@ const AUDIT_TRIGGERS = {
   membership_audit: ['membership_audit_no_mutation', 'membership_audit_no_truncate'],
   memberships: ['memberships_no_delete', 'memberships_identity_lock'],
 };
+// PG-9 : deuxième défense indépendante de backend/scope.js — granularité
+// tenant uniquement (voir migration 005). N'existe que sur les tables qui
+// portent réellement un tenant_id ; les tables historiques restent hors
+// périmètre RLS tant qu'elles n'ont pas cette colonne (voir docs/postgresql-scope.md).
+const RLS_FUNCTION = 'current_actor_tenant_ids';
+const RLS_POLICIES = {
+  tenants: ['tenants_actor_tenant'],
+  sites: ['sites_actor_tenant'],
+  zones: ['zones_actor_tenant'],
+  memberships: ['memberships_actor_tenant'],
+  membership_audit: ['membership_audit_actor_tenant'],
+};
 // Verbes réellement exécutés par le runtime (backend/routes.js, auth.js, sync.js, alert-core).
 // Les journaux append-only n'exigent qu'INSERT + SELECT : jamais UPDATE ni DELETE.
 const PRIVILEGES = {
@@ -121,7 +133,33 @@ async function assertReady(client, { directory } = {}) {
       'Triggers append-only absents ou désactivés : ' + disabled.join(', '));
   }
 
-  // 7. Privilèges runtime nécessaires du rôle courant, table par table et verbe par verbe.
+  // 7. RLS (PG-9) : activé sur chaque table concernée, politique attendue
+  //    présente, fonction de résolution d'acteur elle-même présente.
+  const rlsFn = await client.get(`
+    SELECT 1 AS ok FROM pg_catalog.pg_proc p
+    JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'securisite_meta' AND p.proname = $1`, [RLS_FUNCTION]);
+  if (!rlsFn) throw fail('READINESS_RLS_MISSING', 'Fonction RLS absente : ' + RLS_FUNCTION);
+  const rlsTables = Object.keys(RLS_POLICIES);
+  const rlsState = await client.all(`
+    SELECT c.relname AS name, c.relrowsecurity AS enabled
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = ANY($1)`, [rlsTables]);
+  const disabledRls = rlsTables.filter(name => !rlsState.some(r => r.name === name && r.enabled));
+  if (disabledRls.length) {
+    throw fail('READINESS_RLS_MISSING', 'RLS désactivée ou table absente : ' + disabledRls.join(', '));
+  }
+  const rlsPolicies = await client.all(`
+    SELECT tablename AS name, policyname FROM pg_catalog.pg_policies
+    WHERE schemaname = 'public' AND tablename = ANY($1)`, [rlsTables]);
+  const presentPolicies = new Set(rlsPolicies.map(p => p.name + '.' + p.policyname));
+  const missingPolicies = rlsTables.flatMap(name => RLS_POLICIES[name].filter(p => !presentPolicies.has(name + '.' + p)));
+  if (missingPolicies.length) {
+    throw fail('READINESS_RLS_MISSING', 'Politique(s) RLS absente(s) : ' + missingPolicies.join(', '));
+  }
+
+  // 8. Privilèges runtime nécessaires du rôle courant, table par table et verbe par verbe.
   const shortfall = await client.all(`
     SELECT t.name, v.verb
     FROM unnest($1::text[], $2::text[]) AS t(name, verbs),
@@ -134,4 +172,7 @@ async function assertReady(client, { directory } = {}) {
   }
 }
 
-module.exports = { assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS, PRIVILEGES };
+module.exports = {
+  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
+  RLS_FUNCTION, RLS_POLICIES, PRIVILEGES,
+};

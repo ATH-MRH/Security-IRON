@@ -119,4 +119,17 @@ function requireScope() {
   };
 }
 
-module.exports = { resolveScope, requireScope };
+// PG-9 : contexte d'acteur transaction-scoped pour la RLS PostgreSQL
+// (migration 005). SET LOCAL ne survit jamais à COMMIT/ROLLBACK et ne peut
+// donc jamais fuiter vers la transaction suivante empruntant la même
+// connexion du pool, ni vers un autre utilisateur. Aucune route ne lit
+// encore une table protégée par RLS au runtime (voir docs/postgresql-scope.md)
+// — ce mécanisme est prêt pour la première qui le fera.
+async function withActorContext(userId, fn, database = db) {
+  return database.transaction(async client => {
+    await client.query("SELECT set_config('securisite.actor_user_id', $1, true)", [userId == null ? '' : String(userId)]);
+    return fn(client);
+  });
+}
+
+module.exports = { resolveScope, requireScope, withActorContext };

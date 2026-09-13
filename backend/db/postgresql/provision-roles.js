@@ -72,6 +72,11 @@ function grantStatements({ owner, app, migrator, db }, present = null) {
   if (has('table:securisite_meta.schema_migrations')) {
     out.push(S(`GRANT SELECT ON securisite_meta.schema_migrations TO ${q(app)};`));
   }
+  // PG-9 : RLS policies on tenants/sites/zones/memberships/membership_audit
+  // call this SECURITY DEFINER helper — APP needs EXECUTE to evaluate them at all.
+  if (has('function:securisite_meta.current_actor_tenant_ids')) {
+    out.push(S(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_tenant_ids() TO ${q(app)};`));
+  }
   out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA public GRANT SELECT ON TABLES TO ${q(app)};`));
   if (has('schema:securisite_meta')) {
     out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA securisite_meta GRANT SELECT ON TABLES TO ${q(app)};`));
@@ -105,6 +110,11 @@ async function presentObjects(client) {
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE c.relkind IN ('r','p') AND n.nspname IN ('public','securisite_meta')`);
   for (const r of tables.rows) set.add('table:' + (r.s === 'public' ? r.t : r.s + '.' + r.t));
+  const functions = await client.query(`
+    SELECT n.nspname AS s, p.proname AS f FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'securisite_meta'`);
+  for (const r of functions.rows) set.add('function:' + r.s + '.' + r.f);
   return set;
 }
 
@@ -134,7 +144,8 @@ async function apply(env) {
     }
     const present = await presentObjects(client);
     deferred = !present.has('schema:securisite_meta')
-      || Object.keys(PRIVILEGES).some(t => !present.has('table:' + t));
+      || Object.keys(PRIVILEGES).some(t => !present.has('table:' + t))
+      || !present.has('function:securisite_meta.current_actor_tenant_ids');
     for (const { sql } of grantStatements(names, present)) await client.query(sql);
   } finally { await client.end(); }
   return { ...names, deferred };

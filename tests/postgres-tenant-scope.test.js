@@ -164,17 +164,24 @@ test('readiness now requires tenants/sites/zones and passes on a 003-migrated da
   } finally { await pool.close(); }
 });
 
-test('PG-6 does not activate anything: the app role gets SELECT only on the scope tables', async t => {
+test('PG-6 does not activate anything at the grant level; PG-9 row-level security requires a real actor context', async t => {
   assert.equal(PRIVILEGES.tenants, 'SELECT');
   assert.equal(PRIVILEGES.sites, 'SELECT');
   assert.equal(PRIVILEGES.zones, 'SELECT');
   const { env, n } = await scoped(t);
   const role = 'sec_test_scope_app_' + tag();
+  let userId;
   await withClient(env, async c => {
     await c.query(`CREATE ROLE "${role}" LOGIN PASSWORD 'x'`);
     await c.query(`GRANT CONNECT ON DATABASE "${n}" TO "${role}"`);
     await c.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
+    await c.query(`GRANT USAGE ON SCHEMA securisite_meta TO "${role}"`);
+    await c.query(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_tenant_ids() TO "${role}"`);
     for (const s of SCOPE) await c.query(`GRANT SELECT ON public.${s} TO "${role}"`);
+    userId = (await c.query(
+      "INSERT INTO public.users(username,password_hash,role) VALUES('scope-rls','fixture','agent') RETURNING id")).rows[0].id;
+    await c.query('INSERT INTO public.memberships(user_id,tenant_id,role,alert_access) VALUES($1,$2,$3,$4)',
+      [userId, LOCAL_TENANT, 'agent', 'own']);
   });
   t.after(async () => {
     await root.query(`DROP OWNED BY "${role}"`).catch(() => {});
@@ -183,9 +190,14 @@ test('PG-6 does not activate anything: the app role gets SELECT only on the scop
   const u = new URL(env.DATABASE_URL); u.username = role; u.password = 'x';
   const app = new Client({ connectionString: u.href }); await app.connect();
   try {
-    assert.equal((await app.query('SELECT count(*)::int n FROM public.tenants')).rows[0].n, 1);
+    // Grant level unchanged since PG-6: SELECT only, never a write, regardless of RLS.
     await rejects(app.query("INSERT INTO public.tenants(code,name) VALUES('x','X')"), '42501');
     await rejects(app.query("UPDATE public.sites SET name='x'"), '42501');
     await rejects(app.query('DELETE FROM public.zones'), '42501');
+    // PG-9: a bare table-level GRANT is not enough to read anything without an
+    // actor context — fail-closed by construction, never an implicit "everyone sees all".
+    assert.equal((await app.query('SELECT count(*)::int n FROM public.tenants')).rows[0].n, 0, 'no actor context: RLS hides every row');
+    await app.query("SELECT set_config('securisite.actor_user_id',$1,false)", [String(userId)]);
+    assert.equal((await app.query('SELECT count(*)::int n FROM public.tenants')).rows[0].n, 1, 'own tenant becomes visible with a real, active membership');
   } finally { await app.end(); }
 });

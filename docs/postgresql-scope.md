@@ -209,13 +209,85 @@ lui-même (contrat déjà testé : `PG32A service adds no SQL...`) — `alertAcc
 `isSoc` sont résolus une fois, côté routeur, jamais recalculés en base par le
 service métier.
 
+## Row Level Security — lot PG-9
+
+Migration `005_row_level_security.sql`. **Deuxième défense**, indépendante de
+`backend/scope.js` (PG-8) : même si le code applicatif avait un bug
+d'autorisation, PostgreSQL lui-même refuse de rendre visible une ligne hors
+périmètre. RLS activée sur les 5 tables qui portent réellement un `tenant_id`
+aujourd'hui — `tenants`, `sites`, `zones`, `memberships`, `membership_audit`.
+Les tables historiques (`incidents`, `pietons`, `security_alerts`, …) n'ont
+toujours aucune colonne tenant/site/zone (limite PG-8 inchangée) : RLS n'y est
+pas applicable avant une migration qui ajouterait cette colonne.
+
+### Granularité : le tenant, pas site/zone
+
+Volontairement plus grossière que `backend/scope.js` : une appartenance
+active — à n'importe quel niveau (tenant, site ou zone) — sous un tenant rend
+**tout ce tenant** visible via RLS. Dupliquer la hiérarchie fine tenant >
+site > zone dans les politiques RLS créerait une seconde source de vérité
+susceptible de diverger de `scope.js` ; l'application reste seule responsable
+du filtrage fin site/zone, RLS n'est qu'un filet en cas de bug applicatif.
+
+### Fonction de résolution — `securisite_meta.current_actor_tenant_ids()`
+
+`SECURITY DEFINER`, `STABLE`, `search_path` figé. Renvoie l'ensemble des
+`tenant_id` couverts par les memberships **actifs** (et pointant vers un
+tenant actif) de `current_setting('securisite.actor_user_id', true)`. Tourne
+avec les privilèges du propriétaire de la fonction (`OWNER`, propriétaire des
+tables) — **volontairement sans `FORCE ROW LEVEL SECURITY`** sur les 5 tables :
+avec `FORCE`, même l'appel `SECURITY DEFINER` se heurterait à sa propre
+politique (l'owner y serait soumis aussi) et ne verrait plus jamais rien —
+récursion garantie. Sans contexte d'acteur (`securisite.actor_user_id` non
+posé, ou posé sur un utilisateur sans membership actif), la fonction renvoie
+un ensemble vide : **fail-closed** — un simple `GRANT SELECT` de table ne
+suffit jamais à lire une ligne.
+
+### Politiques
+
+`tenants_actor_tenant` / `sites_actor_tenant` / `zones_actor_tenant` /
+`memberships_actor_tenant` / `membership_audit_actor_tenant` — `FOR ALL`,
+`USING`/`WITH CHECK` identiques : `<colonne tenant> IN (SELECT
+securisite_meta.current_actor_tenant_ids())` (`id` pour `tenants`,
+`tenant_id` pour les quatre autres).
+
+### Contexte transaction-scoped
+
+`securisite.actor_user_id` est posé par `SET LOCAL`/`set_config(...,true)` —
+déjà le mécanisme des triggers d'audit PG-7 (`memberships`,
+`membership_audit`), réutilisé tel quel. `SET LOCAL` ne survit jamais à
+`COMMIT`/`ROLLBACK` : sur un pool où les connexions sont réutilisées, la
+transaction suivante — même sur la même connexion physique, même pour un
+autre acteur — démarre sans aucun contexte. `backend/scope.js` expose
+`withActorContext(userId, fn, database?)` comme mécanisme prêt à l'emploi
+pour un futur point d'entrée qui aurait besoin de lire une des 5 tables
+protégées ; **aucune route ne le fait encore aujourd'hui** (aucun handler
+`routes.js`/`alerts.js` ne requête `tenants`/`sites`/`zones`/`memberships`/
+`membership_audit` au runtime — PG-8 s'arrête à la porte « au moins un
+membership actif »), donc rien dans le flux de requêtes actuel ne pose
+`securisite.actor_user_id` en dehors des triggers d'audit et des outils de
+provisioning. `tests/postgres-rls.test.js` prouve la propriété directement
+(acteurs A/B en séquence sur un pool à une seule connexion, rollback,
+absence de contexte) plutôt que via une route qui n'existe pas encore.
+
+### Limite connue
+
+`current_actor_tenant_ids()` ne recalcule que l'ensemble des tenants couverts
+— comme `backend/scope.js#allows`, elle ne revalide pas qu'un identifiant de
+site/zone interne à une requête appartient réellement au tenant demandé (non
+applicable ici : les politiques RLS ne filtrent que par tenant, jamais par
+site/zone).
+
 ## Readiness et droits
 
 `backend/db/postgresql/readiness.js` exige désormais `tenants`, `sites`, `zones`,
 `memberships`, `membership_audit`, la fonction de garde
 `securisite_meta.reject_membership_mutation` et les triggers append-only de
 `memberships` / `membership_audit` (un `DROP` ou un `DISABLE` fait échouer
-`start()` avant l'écoute). Le rôle applicatif reçoit **`SELECT` seul** sur
+`start()` avant l'écoute), **et** (PG-9) la RLS activée + les 5 politiques +
+`securisite_meta.current_actor_tenant_ids()` présentes (`READINESS_RLS_MISSING`
+sinon). Le rôle applicatif reçoit **`SELECT` seul** sur
 `tenants`/`sites`/`zones`/`memberships` (et `INSERT` sur `membership_audit`,
 uniquement atteignable via le trigger `AFTER` — inerte tant que PG-8 n'a pas
-accordé l'écriture de `memberships`).
+accordé l'écriture de `memberships`), plus `EXECUTE` sur
+`current_actor_tenant_ids()` (PG-9).
