@@ -28,3 +28,19 @@
 .ac-op-timeline li:last-child{border-bottom:none}
 .ac-op-timeline time{color:var(--text-muted);white-space:nowrap;font-family:var(--font-mono);font-size:11px}
 @media(max-width:1000px){.ac-insights{grid-template-columns:1fr}}
+
+/* PG-17 : carte relative (sans fond de carte réel — voir docs/map.md). */
+.carte-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(240px,1fr);gap:18px;align-items:start}
+.carte-canvas-card .card-body{padding:0;position:relative}
+#carte-canvas{display:block;width:100%;aspect-ratio:1000/640;background:var(--bg-2)}
+.carte-marker rect{fill:var(--primary);stroke:var(--bg);stroke-width:1.5}
+.carte-marker.carte-sos circle{animation:pulse 1.2s infinite}
+#carte-empty{padding:60px 20px}
+.carte-legend{display:flex;gap:16px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted)}
+.carte-swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.carte-swatch-site{background:var(--primary);border-radius:2px}
+.carte-swatch-alert{background:var(--warning);border-radius:50%}
+.carte-swatch-sos{background:var(--danger);border-radius:50%}
+.carte-site-row{padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.carte-site-row:last-child{border-bottom:none}
+@media(max-width:1000px){.carte-layout{grid-template-columns:1fr}}

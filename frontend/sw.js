@@ -23,6 +23,8 @@ const SHELL_ASSETS = [
   'js/ui.js',
   'js/realtime.js',
   'js/soc-kpis.js',
+  'js/map-provider.js',
+  'js/map.js',
   'js/alerts.js',
   'js/notifications.js',
   'js/sos.js',

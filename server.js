@@ -26,6 +26,7 @@ const routes     = require('./backend/routes');
 const sync       = require('./backend/sync');
 const camera     = require('./backend/camera');
 const alerts     = require('./backend/alerts');
+const map        = require('./backend/map');
 const realtimeRoutes = require('./backend/realtime-routes');
 const push       = require('./backend/push');
 const { requestContext } = require('./backend/request-context');
@@ -42,6 +43,7 @@ app.use('/api/auth', auth.router);
 app.use('/api/sync', sync);                       // serveur-à-serveur, clé partagée uniquement
 app.use('/api/camera', camera);                   // proxy caméras IP (avant JWT : les <img> n'envoient pas de token)
 app.use('/api/alerts', auth.authMiddleware, alerts.router);
+app.use('/api/map', auth.authMiddleware, map);           // PG-17 : lecture sites/zones géolocalisés (own/scope, RLS)
 // PG-12 : /stream s'authentifie lui-même (Bearer ou ticket — EventSource ne
 // peut pas envoyer d'en-tête) ; pas de auth.authMiddleware ici, il gérerait
 // mal l'absence de Bearer sur une connexion EventSource légitime.

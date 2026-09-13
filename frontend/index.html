@@ -48,6 +48,7 @@
   <div class="nav-section">
     <div class="nav-title">Command Center</div>
     <div class="nav-item" data-page="alertes"><span class="nav-icon">◉</span> Centre d’alertes</div>
+    <div class="nav-item" data-page="carte"><span class="nav-icon">🗺️</span> Carte</div>
     <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Tableau de bord</div>
     <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span> Main courante</div>
     <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span> Journal d'incidents</div>
@@ -108,6 +109,25 @@
     <div class="ac-toolbar"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher un site, un agent, un événement…" oninput="AlertCenter.renderList()"><select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderList()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select><select id="ac-status" aria-label="État" onchange="AlertCenter.renderList()"><option value="open">En cours</option><option value="all">Tous les états</option></select><button class="btn btn-outline" onclick="AlertCenter.load()">Actualiser</button></div>
     <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
     <div class="ac-layout"><div id="ac-list"></div><section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section></div>
+  </section>
+  <!-- CARTE (PG-17) -->
+  <section class="page" id="page-carte">
+    <div class="ac-header"><div><div class="clean-eyebrow">SÉCURISITE 2.0 / COMMAND</div><h2>Carte</h2><p>Sites, zones et événements géolocalisés — vue relative, sans fond de carte réel.</p></div></div>
+    <p id="carte-message" role="alert"></p>
+    <div class="carte-layout">
+      <div class="card carte-canvas-card">
+        <div class="card-body">
+          <svg id="carte-canvas" viewBox="0 0 1000 640" role="img" aria-label="Carte relative des sites et alertes géolocalisés"></svg>
+          <div class="empty-state" id="carte-empty">Aucune coordonnée GPS disponible dans ce périmètre.</div>
+        </div>
+        <div class="carte-legend" id="carte-legend" hidden>
+          <span><span class="carte-swatch carte-swatch-site"></span> Site</span>
+          <span><span class="carte-swatch carte-swatch-alert"></span> Alerte</span>
+          <span><span class="carte-swatch carte-swatch-sos"></span> SOS</span>
+        </div>
+      </div>
+      <div class="card"><div class="card-header"><div class="card-title">📍 Sites du périmètre</div></div><div class="card-body" id="carte-sites-list"></div></div>
+    </div>
   </section>
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
@@ -549,6 +569,8 @@
 <script src="js/ui.js"></script>
 <script src="js/realtime.js"></script>
 <script src="js/soc-kpis.js"></script>
+<script src="js/map-provider.js"></script>
+<script src="js/map.js"></script>
 <script src="js/notifications.js"></script>
 <script src="js/alerts.js"></script>
 <script src="js/sos.js"></script>
