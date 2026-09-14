@@ -30,6 +30,9 @@ const SHELL_ASSETS = [
   'js/sos.js',
   'js/app.js',
   'assets/iron-global-securite-logo.png',
+  'assets/icon-192.png',
+  'assets/icon-512.png',
+  'assets/icon-maskable-512.png',
   'vendor/chart.umd.min.js',
   'vendor/qrcode.min.js',
 ];

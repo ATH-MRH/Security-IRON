@@ -9,10 +9,14 @@ distribution Electron existante (`electron/`).
 
 Champs standards : `name`, `short_name`, `start_url`, `scope`, `display:
 standalone`, `background_color`/`theme_color` alignés sur `--bg`/`--primary`
-de `css/style.css` (thème sombre par défaut), une icône (le logo existant,
-`assets/iron-global-securite-logo.png`, 550×550 — pas encore de jeu
-d'icônes redimensionnées 192/512/maskable dédiées ; limite connue, à
-affiner si l'installation PWA devient un canal de distribution prioritaire).
+de `css/style.css` (thème sombre par défaut). Icônes générées depuis le logo
+existant (`assets/iron-global-securite-logo.png`, 550×550, transparent) :
+`icon-192.png`/`icon-512.png` (redimensionnement direct, `purpose: any`) et
+`icon-maskable-512.png` (logo recentré dans la zone de sécurité W3C — 80 %
+au centre, fond opaque `#070b14` — pour ne pas être rogné par un masque
+adaptatif Android, `purpose: maskable`). Le logo original reste déclaré en
+dernière entrée (550×550) pour compatibilité. Régénérées avec
+`scripts/generate-pwa-icons.py` si le logo change.
 
 ## `frontend/sw.js`
 
