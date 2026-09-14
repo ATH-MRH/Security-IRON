@@ -169,9 +169,14 @@ test('the SOC Alert Center panel (alerts.css) mirrors its accent bars and text a
   assert.doesNotMatch(alertsCssSource, /border-left/, 'alerts.css should have no physical border-left left over');
 });
 
-test('the SOS button and search icon reposition under RTL instead of staying pinned to the visual left', () => {
-  assert.match(cssSource, /\.sos-button\{[^}]*inset-inline-start:24px/);
+test('the search icon repositions under RTL instead of staying pinned to the visual left', () => {
   assert.match(cssSource, /\.search-box::before\{[^}]*inset-inline-start:12px/);
+});
+
+test('the SOS button lives in the topbar as a normal flex item (moved out of its old fixed floating position)', () => {
+  const topbar = htmlSource.slice(htmlSource.indexOf('class="topbar-right"'), htmlSource.indexOf('class="content"'));
+  assert.match(topbar, /id="sosButton"/, 'SOS button should be inside .topbar-right');
+  assert.doesNotMatch(cssSource, /\.sos-button\{[^}]*position:fixed/, 'SOS button should no longer be a fixed floating button');
 });
 
 test('a form <select> dropdown arrow explicitly moves to the correct edge under [dir="rtl"]', () => {

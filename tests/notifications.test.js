@@ -10,7 +10,7 @@ const alertsSource = fs.readFileSync(path.join(__dirname, '../frontend/js/alerts
 // stub below, defined per-fixture so each test can drive it independently.
 const socKpisSource = fs.readFileSync(path.join(__dirname, '../frontend/js/soc-kpis.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(__dirname, '../frontend/js/app.js'), 'utf8');
-const navSource = appSource.slice(appSource.indexOf('function navTo(page)'), appSource.indexOf('function switchTab('));
+const navSource = appSource.slice(appSource.indexOf('function openSidebar('), appSource.indexOf('function switchTab('));
 const source = fs.readFileSync(path.join(__dirname, '../frontend/js/notifications.js'), 'utf8');
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function fixture(data = {}) {
@@ -35,7 +35,12 @@ function fixture(data = {}) {
         classList:{
           toggle(name, on){ if (on === undefined) on = !activeClasses.has(name); if (on) activeClasses.add(name); else activeClasses.delete(name); },
           contains:name=>activeClasses.has(name),
+          // openSidebar/closeSidebar (frontend/js/app.js) use add/remove
+          // directly rather than toggle — same backing set either way.
+          add:name=>activeClasses.add(name),
+          remove:name=>activeClasses.delete(name),
         },
+        setAttribute(){}, getAttribute:()=>null,
         get innerHTML(){return html;},
         set innerHTML(value){
           html=value;

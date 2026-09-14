@@ -528,14 +528,17 @@ td strong{color:var(--text-bright)}
 .btn-capture .dot{width:14px;height:14px;background:#fff;border-radius:50%;border:2px solid var(--danger);box-shadow:0 0 8px rgba(255,255,255,0.6);animation:pulse 1.2s infinite}
 .btn-capture:disabled .dot{background:var(--text-dim);animation:none}
 .plate-display{
-  background:linear-gradient(180deg,#1a1f2e,#0d1220);border:2px solid var(--primary);
-  padding:14px 24px 14px 50px;font-family:var(--font-mono);
-  font-size:32px;font-weight:700;letter-spacing:6px;color:var(--primary);text-align:center;
+  /* Plaque algérienne (format NNNNNN-CAA-WW, depuis 2009) : fond blanc,
+     texte noir, sans bandeau latéral de code pays (contrairement au format
+     européen/français) — voir extrairePlaque()/generePlaque() dans app.js
+     et ui.js pour le format des données lui-même. */
+  background:#f4f4f2;border:2px solid var(--primary);
+  padding:14px 28px;font-family:var(--font-mono);
+  font-size:32px;font-weight:700;letter-spacing:6px;color:#0a0a0a;text-align:center;
   margin:14px 0;position:relative;min-height:68px;display:flex;align-items:center;justify-content:center;
-  text-shadow:0 0 12px var(--primary-glow);box-shadow:inset 0 0 20px rgba(0,212,255,0.1),0 0 12px var(--primary-glow);
+  box-shadow:inset 0 0 20px rgba(0,212,255,0.06),0 0 12px var(--primary-glow);
 }
-.plate-display.empty{color:var(--text-dim);font-size:13px;letter-spacing:2px;font-weight:500;text-shadow:none}
-.plate-display::before{content:"FR";position:absolute;left:0;top:0;bottom:0;width:36px;background:#003399;color:#fcd116;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;letter-spacing:1px;border-right:2px solid var(--primary);font-family:var(--font-mono)}
+.plate-display.empty{background:transparent;color:var(--text-dim);font-size:13px;letter-spacing:2px;font-weight:500;text-shadow:none;box-shadow:none}
 .confidence-bar{height:6px;background:var(--bg-2);overflow:hidden;margin:4px 0;border:1px solid var(--border)}
 .confidence-fill{height:100%;background:linear-gradient(90deg,var(--success),#00cc7d);transition:width .3s;box-shadow:0 0 8px var(--success-glow)}
 .confidence-fill.medium{background:linear-gradient(90deg,var(--warning),#cc9300);box-shadow:0 0 8px var(--warning-glow)}
@@ -748,8 +751,9 @@ td code,code{border-radius:9px;background:#eef5ff;color:#1d4ed8;border:0}
   border:0;letter-spacing:0;font-family:var(--font-body);box-shadow:0 14px 26px rgba(37,117,252,.24);
 }
 .plate-display{
-  background:#fff;color:#1d4ed8;text-shadow:none;letter-spacing:4px;
+  background:#fff;color:#0a0a0a;text-shadow:none;letter-spacing:4px;
 }
+.plate-display.empty{background:transparent}
 .confidence-bar{border-radius:999px;border:0;background:#e6edf6}
 .confidence-fill{border-radius:999px}
 .mc-poste{border-radius:999px;background:linear-gradient(135deg,#2575fc,#21c7a8);color:#fff;box-shadow:none}
@@ -973,10 +977,12 @@ body{
 .topbar .user-chip,
 .topbar-right select,
 .topbar .btn-icon,
-.topbar .btn-logout{
+.topbar .btn-logout,
+.topbar .sos-button{
   height:42px!important;
   flex:0 0 auto;
 }
+.topbar .sos-button{width:42px!important}
 .topbar .btn-logout{
   white-space:nowrap;
 }
@@ -1227,32 +1233,33 @@ body.role-agent .admin-only{ display:none !important; }
   .admin-search{width:100%;min-width:0}
 }
 
-/* PG-15 : bouton de détresse — appui maintenu, jamais un simple clic. */
+/* PG-15 : bouton de détresse — appui maintenu, jamais un simple clic.
+   Dans la barre supérieure (.topbar-right) : plus un bouton flottant, donc
+   plus de position fixe ni de z-index dédié — juste un élément flex de
+   plus, dimensionné comme les autres boutons ronds de la topbar. */
 .sos-button{
-  position:fixed;
-  inset-inline-start:24px;
-  bottom:24px;
-  z-index:1900;
-  width:64px;
-  height:64px;
+  position:relative;
+  flex:0 0 auto;
+  width:38px;
+  height:38px;
   border-radius:50%;
   border:2px solid var(--danger);
   background:var(--surface);
   color:var(--danger);
   font-family:var(--font-mono);
   font-weight:800;
-  font-size:13px;
-  letter-spacing:1px;
+  font-size:8px;
+  letter-spacing:.5px;
   cursor:pointer;
   overflow:hidden;
-  box-shadow:0 0 18px var(--danger-glow),0 8px 20px rgba(0,0,0,0.5);
+  box-shadow:0 0 10px var(--danger-glow);
   transition:transform .15s;
   -webkit-user-select:none;
   user-select:none;
   touch-action:none;
 }
-.sos-button:hover{transform:scale(1.05)}
-.sos-button.sos-holding{transform:scale(1.12)}
+.sos-button:hover{transform:scale(1.08)}
+.sos-button.sos-holding{transform:scale(1.18)}
 .sos-button:disabled{opacity:.6;cursor:wait}
 .sos-fill{
   position:absolute;
@@ -1264,9 +1271,6 @@ body.role-agent .admin-only{ display:none !important; }
   pointer-events:none;
 }
 .sos-label{position:relative}
-@media(max-width:720px){
-  .sos-button{inset-inline-start:16px;bottom:16px;width:56px;height:56px;font-size:11px}
-}
 
 /* ===== RTL (arabe) =====
    La quasi-totalité de la mise en page (barre latérale, marge du contenu,
@@ -1279,4 +1283,40 @@ body.role-agent .admin-only{ display:none !important; }
 [dir="rtl"] .form-group select{
   background-position:left 12px center;
   padding-inline:32px 12px;
+}
+
+/* ===== Navigation mobile (smartphone) =====
+   La barre latérale fixe (jusqu'à 268px) n'a jamais été pensée pour un
+   écran de téléphone : le seul comportement existant en dessous de 760px
+   la rétrécissait à 232px sans jamais la faire disparaître, laissant
+   souvent moins de 150px pour le contenu. En dessous de 860px, elle passe
+   hors-écran par défaut (position déjà fixe, seul le décalage change) et
+   s'ouvre en tiroir par-dessus le contenu via le bouton ☰ de la topbar —
+   plus jamais une largeur de contenu écrasée sur mobile. Placé en toute
+   fin de feuille de style pour l'emporter sur les autres définitions de
+   .sidebar/.main (largeurs différentes selon les thèmes ci-dessus), quel
+   que soit leur ordre. */
+.menu-toggle{
+  display:none;
+  flex:0 0 auto;
+  width:38px;height:38px;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+  font-size:18px;line-height:1;cursor:pointer;
+  align-items:center;justify-content:center;
+}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:90}
+.sidebar-backdrop.show{display:block}
+
+@media(max-width:860px){
+  .menu-toggle{display:flex}
+  .sidebar{width:260px;inset-inline-start:-280px;transition:inset-inline-start .25s ease}
+  .sidebar.open{inset-inline-start:0}
+  .main{margin-inline-start:0}
+  .topbar .user-info,.btn-logout-text{display:none}
+  .topbar-right{gap:6px}
+}
+
+@media(max-width:420px){
+  .login-box{padding:28px 22px}
+  .login-brand h2{font-size:22px;letter-spacing:2px}
 }

@@ -37,14 +37,8 @@
 <!-- ===== App ===== -->
 <div class="app" id="app" style="display:none">
 
-<!-- PG-15 : bouton de détresse, appui maintenu ~1,5 s. Isolé de la navigation :
-     toujours visible et actionnable quelle que soit la page affichée. -->
-<button class="sos-button" id="sosButton" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
-  <span class="sos-fill" id="sosFill"></span>
-  <span class="sos-label">SOS</span>
-</button>
-
-<aside class="sidebar">
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+<aside class="sidebar" id="sidebar">
   <div class="brand">
     <h1><img class="app-logo app-logo-sidebar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité"> SécuriSite</h1>
     <p>SOC // Centre de Sûreté</p>
@@ -81,11 +75,19 @@
 <div class="main">
   <div class="topbar">
     <div class="topbar-left">
+      <button class="menu-toggle" id="menuToggle" type="button" onclick="toggleSidebar()" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="sidebar">☰</button>
       <img class="app-logo app-logo-topbar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
       <div class="page-title" id="pageTitle">Tableau de bord</div>
       <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
     </div>
     <div class="topbar-right">
+      <!-- PG-15 : bouton de détresse, appui maintenu ~1,5 s. Dans la barre
+           supérieure : toujours visible et actionnable quelle que soit la
+           page affichée, sans flotter par-dessus la navigation. -->
+      <button class="sos-button" id="sosButton" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
+        <span class="sos-fill" id="sosFill"></span>
+        <span class="sos-label">SOS</span>
+      </button>
       <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
         <option value="fr-ar">FR / AR</option>
         <option value="fr">Français</option>
@@ -96,7 +98,7 @@
         <div class="avatar" id="userAvatar">A</div>
         <div class="user-info"><strong id="userName">Administrateur</strong><span>Agent de sûreté</span></div>
       </div>
-      <button class="btn btn-outline btn-logout" title="Déconnexion" onclick="doLogout()">🚪 Déconnexion</button>
+      <button class="btn btn-outline btn-logout" title="Déconnexion" onclick="doLogout()">🚪 <span class="btn-logout-text">Déconnexion</span></button>
     </div>
   </div>
 
@@ -376,7 +378,7 @@
           <div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-bottom:3px;font-family:var(--font-mono);letter-spacing:1px"><span>CONFIANCE OCR</span><span id="lapiConfidenceVal">0%</span></div><div class="confidence-bar"><div class="confidence-fill" id="lapiConfidenceBar" style="width:0%"></div></div></div>
           <div id="lapiVehiculeInfo" style="margin-bottom:14px"></div>
           <div class="form-row">
-            <div class="form-group"><label>Plaque corrigée</label><input type="text" id="lapiPlateEdit" style="text-transform:uppercase;font-family:var(--font-mono);font-weight:700;letter-spacing:2px"></div>
+            <div class="form-group"><label>Plaque corrigée</label><input type="text" id="lapiPlateEdit" placeholder="Ex: 123456-114-16" style="text-transform:uppercase;font-family:var(--font-mono);font-weight:700;letter-spacing:2px"></div>
             <div class="form-group"><label>Type</label><select id="lapiType"><option value="VL">VL</option><option value="PL">PL</option><option value="utilitaire">Utilitaire</option><option value="2R">2R</option></select></div>
           </div>
           <div class="form-row">

@@ -45,7 +45,25 @@ document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click',()=>navTo(item.dataset.page));
 });
 
+// Mobile : la barre latérale est hors-écran par défaut sous le seuil de
+// largeur défini en CSS (@media(max-width:860px)) — ce toggle n'a aucun
+// effet visuel au-delà, la classe 'open' n'y étant simplement jamais lue.
+function openSidebar(){
+  document.getElementById('sidebar')?.classList.add('open');
+  document.getElementById('sidebarBackdrop')?.classList.add('show');
+  document.getElementById('menuToggle')?.setAttribute('aria-expanded','true');
+}
+function closeSidebar(){
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('sidebarBackdrop')?.classList.remove('show');
+  document.getElementById('menuToggle')?.setAttribute('aria-expanded','false');
+}
+function toggleSidebar(){
+  document.getElementById('sidebar')?.classList.contains('open') ? closeSidebar() : openSidebar();
+}
+
 function navTo(page){
+  closeSidebar(); // un choix de page referme toujours le menu mobile
   if((page==='utilisateurs' || page==='parametres') && !isAdmin()) return navTo('dashboard');
   if(page!=='lapi' && lapiStream){ try{ arreterCamera(); }catch{} }
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===page));
@@ -546,7 +564,7 @@ function renderVehicules(){
 function openVehiculeModal(mode){
   if(mode==='entree'){
     showModal('Entrée véhicule',`
-      <div class="form-row"><div class="form-group"><label>Plaque</label><input type="text" id="vPlaque" style="text-transform:uppercase"></div><div class="form-group"><label>Type</label><select id="vType"><option value="VL">VL</option><option value="PL">PL</option><option value="utilitaire">Utilitaire</option><option value="2R">2R</option></select></div></div>
+      <div class="form-row"><div class="form-group"><label>Plaque</label><input type="text" id="vPlaque" placeholder="Ex: 123456-114-16" style="text-transform:uppercase"></div><div class="form-group"><label>Type</label><select id="vType"><option value="VL">VL</option><option value="PL">PL</option><option value="utilitaire">Utilitaire</option><option value="2R">2R</option></select></div></div>
       <div class="form-row"><div class="form-group"><label>Conducteur</label><input type="text" id="vCond"></div><div class="form-group"><label>Société</label><input type="text" id="vSoc"></div></div>
       <div class="form-row"><div class="form-group"><label>Motif</label><select id="vMotif"><option>Livraison</option><option>Visite</option><option>Maintenance</option><option>Personnel</option></select></div><div class="form-group"><label>Place</label><input type="text" id="vPlace" placeholder="Ex: A12"></div></div>
     `, async ()=>{
@@ -879,7 +897,13 @@ function enhanceForOCR(ctx,w,h){
 function extrairePlaque(text){
   if(!text) return null;
   const c = text.replace(/\s+/g,'').replace(/[^A-Z0-9-]/g,'');
-  let m = c.match(/([A-HJ-NP-Z]{2})-?(\d{3})-?([A-HJ-NP-Z]{2})/);
+  // Plaque algérienne (immatriculation depuis 2009) : NNNNNN-CAA-WW — numéro
+  // de série (jusqu'à 6 chiffres), catégorie de véhicule + 2 derniers
+  // chiffres de l'année d'immatriculation, puis code de wilaya (01 à 58,
+  // aucune lettre) — testée en priorité, avant les anciens formats français.
+  let m = c.match(/(\d{4,6})-?(\d{3})-?(0[1-9]|[1-4]\d|5[0-8])$/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m = c.match(/([A-HJ-NP-Z]{2})-?(\d{3})-?([A-HJ-NP-Z]{2})/);
   if(m) return m[1]+'-'+m[2]+'-'+m[3];
   m = c.match(/(\d{1,4})([A-Z]{1,3})(\d{2,3})/);
   if(m) return m[1]+' '+m[2]+' '+m[3];

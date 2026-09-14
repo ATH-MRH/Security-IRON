@@ -427,6 +427,9 @@ const I18N_AR = {
   "Miroir": "مرآة",
   "Auto (3s)": "تلقائي (3ث)",
   "Aucune plaque": "لا توجد لوحة",
+  "Non détecté": "غير مكتشف",
+  "Format non reconnu": "الصيغة غير معروفة",
+  "Ex: 123456-114-16": "مثال: 123456-114-16",
   "CONFIANCE OCR": "ثقة القراءة الضوئية (OCR)",
   "Livraison": "توصيل",
   "Autre": "آخر",
@@ -477,7 +480,8 @@ const I18N_AR = {
   "Qualifier, prendre en charge et documenter chaque événement.": "تصنيف كل حدث والتكفل به وتوثيقه.",
   "📷 Module LAPI prêt. Cliquez « Activer la caméra » puis le bouton": "وحدة قراءة اللوحات جاهزة. انقر على « تفعيل الكاميرا » ثم الزر",
   "Locale": "محلية",
-  "Ronde": "دورية"
+  "Ronde": "دورية",
+  "Ouvrir le menu": "فتح القائمة"
 };
 
 // Many labels carry a leading/trailing icon or symbol (emoji, arrows, ✓, —)
@@ -569,9 +573,15 @@ function toDatetimeLocal(iso){ const d=new Date(iso); d.setMinutes(d.getMinutes(
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function rand(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+// Format algérien (depuis 2009) : NNNNNN-CAA-WW — série (4 à 6 chiffres),
+// catégorie de véhicule (1 chiffre) + 2 derniers chiffres de l'année
+// d'immatriculation, code de wilaya (01 à 58). Jamais de lettre.
 function generePlaque(){
-  const L='ABCDEFGHJKLMNPQRSTUVWXYZ';
-  return L[randInt(0,23)]+L[randInt(0,23)]+'-'+randInt(100,999)+'-'+L[randInt(0,23)]+L[randInt(0,23)];
+  const serie = String(randInt(1,999999)).padStart(randInt(4,6),'0');
+  const categorie = randInt(1,9);
+  const annee = String(randInt(0,25)).padStart(2,'0');
+  const wilaya = String(randInt(1,58)).padStart(2,'0');
+  return serie+'-'+categorie+annee+'-'+wilaya;
 }
 function toLocalInput(d){
   const pad = n => String(n).padStart(2,'0');
