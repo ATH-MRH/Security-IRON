@@ -51,9 +51,21 @@ Les noms de rôles sont surchargables : `SECURISITE_OWNER_ROLE`,
 
 ## 2. Ordre de provisioning (une fois par base)
 
-`db:roles` est réexécutable : il crée les rôles et accorde d'abord ce qui ne
-dépend pas du schéma (CONNECT), puis, relancé après les migrations, complète les
-`GRANT` sur `securisite_meta` et les tables métier.
+`db:roles` (`provision-roles.js#apply`) est réexécutable : il crée les rôles
+et accorde d'abord ce qui ne dépend pas du schéma (CONNECT). Le `GRANT` sur
+`securisite_meta` et les tables métier — qui dépend du schéma — n'est plus une
+étape séparée à relancer à la main après les migrations : `db:migrate`
+(`migrate-cli.js`) le fait lui-même, automatiquement, juste après avoir
+appliqué les migrations, avec la seule connexion MIGRATOR déjà en main
+(`provision-roles.js#finalizeGrants` — jamais de connexion administrateur ni
+de mot de passe APP à cette étape). Avant ce correctif, cette seconde passe
+manuelle de `db:roles` était facile à oublier ou à lancer trop tôt (avant
+qu'une migration donnée n'ait créé la fonction RLS qu'elle grante) : APP se
+retrouvait durablement sans `USAGE` sur `securisite_meta`, sans `SELECT` sur
+`securisite_meta.schema_migrations` ou sans `EXECUTE` sur les fonctions
+RLS — jamais détecté par `/api/ready` (voir §5), et provoquant des `42501` en
+production dès la première requête sur une table sous RLS (alerts, incidents,
+visiteurs, notifications, realtime).
 
 ```
 # 1. Rôles + attributs + CONNECT, en tant qu'administrateur du cluster.
@@ -64,37 +76,37 @@ psql -h HOST -U ADMIN -d securisite -v migrator_password=… -v app_password=…
 DATABASE_URL='postgres://ADMIN:…@HOST/securisite' \
 SECURISITE_MIGRATOR_PASSWORD='…' SECURISITE_APP_PASSWORD='…' \
   npm run db:roles
-#    -> « relancer après les migrations » si le schéma n'est pas encore là.
+#    -> « schéma incomplet » si le schéma n'est pas encore là : normal avant
+#       les migrations, complété automatiquement par l'étape 2.
 
 #    (La base est créée avec OWNER = securisite_owner :
 #       CREATE DATABASE securisite OWNER securisite_owner;
 #     l'ordre exact — rôle owner avant createdb — dépend de l'outil ; en cas de
 #     besoin, créer d'abord les rôles sur la base « postgres » puis la base cible.)
 
-# 2. Migrations, en tant que MIGRATOR, AVANT tout démarrage applicatif :
+# 2. Migrations, en tant que MIGRATOR, AVANT tout démarrage applicatif — GRANT
+#    runtime d'APP finalisés automatiquement dans la foulée :
 DATABASE_URL='postgres://securisite_migrator:…@HOST/securisite' PGSSL=verify-full \
   npm run db:migrate
 
-# 3. Compléter les GRANT (schéma et tables existent maintenant) :
-DATABASE_URL='postgres://ADMIN:…@HOST/securisite' \
-SECURISITE_MIGRATOR_PASSWORD='…' SECURISITE_APP_PASSWORD='…' \
-  npm run db:roles
-
-# 4. Premier administrateur applicatif (mot de passe par l'environnement ou un TTY) :
+# 3. Premier administrateur applicatif + membership SOC (mot de passe par
+#    l'environnement ou un TTY) — un seul processus Node, sans bash :
 DATABASE_URL='postgres://securisite_migrator:…@HOST/securisite' PGSSL=verify-full \
 SECURISITE_ADMIN_PASSWORD='…' \
-  npm run db:create-admin -- admin
-#    Idempotent : ne modifie jamais un compte existant.
+  npm run db:create-first-admin -- admin
+#    Idempotent : ne modifie jamais un compte ni un membership existant.
+#    (db:create-admin puis db:bootstrap-admin-membership restent utilisables
+#    séparément si besoin ; db:create-first-admin les enchaîne tous les deux.)
 
-# 5. Démarrage de l'application en tant qu'APP :
+# 4. Démarrage de l'application en tant qu'APP :
 DATABASE_URL='postgres://securisite_app:…@HOST/securisite' PGSSL=verify-full \
   npm run server
 #    start() fait db.init() -> attestation readiness (lecture seule) -> écoute.
 #    Aucune migration, aucun seed, aucune réparation au démarrage.
 ```
 
-Aux montées de version suivantes, seules les étapes 2 (migrations) et, si une
-migration a introduit une table, 3 (`db:roles`) sont rejouées avant le rollout.
+Aux montées de version suivantes, seule l'étape 2 (migrations, GRANT compris)
+est rejouée avant le rollout.
 
 ## 3. Checklist environnement (rôle APP au runtime)
 

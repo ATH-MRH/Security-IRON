@@ -63,6 +63,11 @@ test('emitSQL contains the full grant set, no password, and safe role attributes
   }
   assert.match(sql, /GRANT SELECT ON securisite_meta\.schema_migrations TO "a";/);
   assert.match(sql, /ALTER DEFAULT PRIVILEGES FOR ROLE "o" IN SCHEMA public GRANT SELECT ON TABLES TO "a";/);
+  // Migrations actually run connected as MIGRATOR, never OWNER (SET ROLE is
+  // forbidden session control, see migrate.js#validateSQL) — the default
+  // privilege that fires for real tables is this one, not the OWNER-scoped
+  // one above. Discovered wiring the automatic post-migration grant pass.
+  assert.match(sql, /ALTER DEFAULT PRIVILEGES FOR ROLE "m" IN SCHEMA public GRANT SELECT ON TABLES TO "a";/);
   // Placeholders only — never a literal password.
   assert.match(sql, /ALTER ROLE "m" PASSWORD :'migrator_password';/);
   assert.doesNotMatch(sql, /PASSWORD '[^:]/);

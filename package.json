@@ -10,6 +10,7 @@
     "db:migrate": "node backend/db/postgresql/migrate-cli.js",
     "db:create-admin": "node backend/db/postgresql/create-admin.js",
     "db:bootstrap-admin-membership": "node backend/db/postgresql/bootstrap-admin-membership.js",
+    "db:create-first-admin": "node backend/db/postgresql/create-first-admin-cli.js",
     "db:import": "node backend/db/postgresql/import-sqlite.js",
     "db:backup": "node backend/db/postgresql/backup-cli.js",
     "db:restore": "node backend/db/postgresql/restore-cli.js",

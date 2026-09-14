@@ -9,7 +9,7 @@ const path = require('node:path');
 const { Client } = require('pg');
 const db = require('../backend/database');
 const { migrate } = require('../backend/db/postgresql/migrate');
-const { assertReady, HISTORICAL, ALERT_CORE, PRIVILEGES } = require('../backend/db/postgresql/readiness');
+const { assertReady, HISTORICAL, ALERT_CORE, PRIVILEGES, RLS_FUNCTIONS } = require('../backend/db/postgresql/readiness');
 const { testEnvironment } = require('./helpers/postgres-test-config');
 
 const base = testEnvironment();
@@ -139,6 +139,11 @@ test('assertReady rejects a role that lacks a required write privilege, and list
     `GRANT USAGE ON SCHEMA securisite_meta TO ${role}`,
     `GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${role}`,
     `GRANT SELECT ON ALL TABLES IN SCHEMA securisite_meta TO ${role}`,
+    // Satisfy the earlier RLS-helper EXECUTE check too, so this test still
+    // exercises the business-table privilege shortfall it targets, not the
+    // (equally real, separately tested — see postgres-provisioning-grants.test.js)
+    // securisite_meta EXECUTE gap that production actually hit.
+    ...RLS_FUNCTIONS.map(fn => `GRANT EXECUTE ON FUNCTION securisite_meta.${fn}() TO ${role}`),
   ]);
   const limited = new URL(env.DATABASE_URL); limited.username = role; limited.password = 'x';
   try {
@@ -151,6 +156,7 @@ test('assertReady rejects a role that lacks a required write privilege, and list
     await run(env, [
       `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${role}`,
       `REVOKE ALL ON ALL TABLES IN SCHEMA securisite_meta FROM ${role}`,
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA securisite_meta FROM ${role}`,
       `REVOKE ALL ON SCHEMA public, securisite_meta FROM ${role}`,
       `REVOKE CONNECT ON DATABASE "${n}" FROM ${role}`,
       `DROP ROLE ${role}`,
@@ -169,6 +175,7 @@ test('assertReady resolves for a role holding exactly the required runtime privi
     `GRANT USAGE ON SCHEMA public TO ${role}`,
     `GRANT USAGE ON SCHEMA securisite_meta TO ${role}`,
     `GRANT SELECT ON securisite_meta.schema_migrations TO ${role}`,
+    ...RLS_FUNCTIONS.map(fn => `GRANT EXECUTE ON FUNCTION securisite_meta.${fn}() TO ${role}`),
     ...grants,
   ]);
   const scoped = new URL(env.DATABASE_URL); scoped.username = role; scoped.password = 'x';
@@ -178,6 +185,7 @@ test('assertReady resolves for a role holding exactly the required runtime privi
     await run(env, [
       `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${role}`,
       `REVOKE ALL ON securisite_meta.schema_migrations FROM ${role}`,
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA securisite_meta FROM ${role}`,
       `REVOKE ALL ON SCHEMA public, securisite_meta FROM ${role}`,
       `REVOKE CONNECT ON DATABASE "${n}" FROM ${role}`,
       `DROP ROLE ${role}`,

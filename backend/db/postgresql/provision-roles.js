@@ -14,8 +14,12 @@
  *
  * L'outil est réexécutable. Les privilèges portant sur `securisite_meta` et sur
  * les tables métier ne sont accordés que si l'objet existe déjà : lancer une
- * première fois avant les migrations (rôles + CONNECT), puis de nouveau après
- * pour compléter les GRANT.
+ * première fois avant les migrations (rôles + CONNECT, via `apply`, superuser),
+ * puis de nouveau après pour compléter les GRANT — mais cette seconde passe est
+ * désormais faite automatiquement par backend/db/postgresql/migrate-cli.js
+ * (voir `finalizeGrants` plus bas, exécuté avec la connexion MIGRATOR déjà en
+ * main, sans superuser) : ne relancer `apply()` à la main que pour réparer un
+ * déploiement déjà cassé (rôles/CONNECT absents).
  *
  * Usage :
  *   node backend/db/postgresql/provision-roles.js --emit    # imprime le SQL (psql \set)
@@ -78,8 +82,15 @@ function grantStatements({ owner, app, migrator, db }, present = null) {
     if (has('function:securisite_meta.' + fn)) out.push(S(`GRANT EXECUTE ON FUNCTION securisite_meta.${fn}() TO ${q(app)};`));
   }
   out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA public GRANT SELECT ON TABLES TO ${q(app)};`));
+  // Migrations actually run connected as MIGRATOR (never `SET ROLE owner` : forbidden
+  // session control, see migrate.js#validateSQL), so objects are created with MIGRATOR
+  // as relowner — the default privilege that fires for real tables is this one, not the
+  // OWNER-scoped one above (kept for documentation/parity, harmless since it never
+  // triggers). Discovered while wiring automatic post-migration grants (see migrate-cli.js).
+  out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(migrator)} IN SCHEMA public GRANT SELECT ON TABLES TO ${q(app)};`));
   if (has('schema:securisite_meta')) {
     out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA securisite_meta GRANT SELECT ON TABLES TO ${q(app)};`));
+    out.push(S(`ALTER DEFAULT PRIVILEGES FOR ROLE ${q(migrator)} IN SCHEMA securisite_meta GRANT SELECT ON TABLES TO ${q(app)};`));
   }
   return out;
 }
@@ -118,6 +129,30 @@ async function presentObjects(client) {
   return set;
 }
 
+function resolveNames(env, db) {
+  return {
+    owner: role('SECURISITE_OWNER_ROLE', 'securisite_owner', env),
+    migrator: role('SECURISITE_MIGRATOR_ROLE', 'securisite_migrator', env),
+    app: role('SECURISITE_APP_ROLE', 'securisite_app', env),
+    db,
+  };
+}
+
+/** Applies exactly the GRANT/ALTER DEFAULT PRIVILEGES statements that exist for
+ *  objects already present, against a connection that already has enough rights
+ *  on them (an object's owner, or a role that inherits the owner's role — never
+ *  requires CREATEROLE nor superuser). Shared by `apply` (admin connection, right
+ *  after creating the roles) and `finalizeGrants` (MIGRATOR connection, right
+ *  after applying migrations — see backend/db/postgresql/migrate-cli.js). */
+async function grantPresent(client, names) {
+  const present = await presentObjects(client);
+  const deferred = !present.has('schema:securisite_meta')
+    || Object.keys(PRIVILEGES).some(t => !present.has('table:' + t))
+    || RLS_FUNCTIONS.some(fn => !present.has('function:securisite_meta.' + fn));
+  for (const { sql } of grantStatements(names, present)) await client.query(sql);
+  return deferred;
+}
+
 async function apply(env) {
   const migratorPassword = env.SECURISITE_MIGRATOR_PASSWORD;
   const appPassword = env.SECURISITE_APP_PASSWORD;
@@ -125,12 +160,7 @@ async function apply(env) {
     throw new Error('SECURISITE_MIGRATOR_PASSWORD et SECURISITE_APP_PASSWORD sont requis (jamais journalisés).');
   }
   const cfg = configuration(env);
-  const names = {
-    owner: role('SECURISITE_OWNER_ROLE', 'securisite_owner', env),
-    migrator: role('SECURISITE_MIGRATOR_ROLE', 'securisite_migrator', env),
-    app: role('SECURISITE_APP_ROLE', 'securisite_app', env),
-    db: cfg.database,
-  };
+  const names = resolveNames(env, cfg.database);
   const client = new Client({ ...cfg, application_name: 'securisite-provision' });
   await client.connect();
   let deferred = false;
@@ -142,13 +172,32 @@ async function apply(env) {
       try { await client.query(resolved); }
       catch (err) { if (create && err.code === '42710') continue; throw err; }
     }
-    const present = await presentObjects(client);
-    deferred = !present.has('schema:securisite_meta')
-      || Object.keys(PRIVILEGES).some(t => !present.has('table:' + t))
-      || RLS_FUNCTIONS.some(fn => !present.has('function:securisite_meta.' + fn));
-    for (const { sql } of grantStatements(names, present)) await client.query(sql);
+    deferred = await grantPresent(client, names);
   } finally { await client.end(); }
   return { ...names, deferred };
+}
+
+/**
+ * Restores APP's runtime GRANTs on whatever securisite_meta/table/function
+ * objects the migrations just (re)created — no admin/superuser connection, no
+ * role passwords : run with the same MIGRATOR connection that applied the
+ * migrations (MIGRATOR inherits OWNER, which owns the database and therefore
+ * everything MIGRATOR creates in it, so it can GRANT on those objects itself).
+ *
+ * Closes the gap that caused production 42501s (missing USAGE on
+ * securisite_meta, SELECT on securisite_meta.schema_migrations, EXECUTE on the
+ * RLS helper functions) : those GRANTs used to depend on a second, manual,
+ * superuser-driven run of `apply()` after migrations — easy to forget, and
+ * `readiness.js` did not catch the gap. Idempotent ; safe to call after every
+ * migration run, applied or not.
+ */
+async function finalizeGrants(migrationEnv) {
+  const cfg = configuration(migrationEnv);
+  const names = resolveNames(migrationEnv, cfg.database);
+  const client = new Client({ ...cfg, application_name: 'securisite-provision-finalize' });
+  await client.connect();
+  try { return { ...names, deferred: await grantPresent(client, names) }; }
+  finally { await client.end(); }
 }
 
 async function main() {
@@ -170,4 +219,4 @@ if (require.main === module) {
   main().catch(err => { console.error('[provision-roles]', err.message); process.exit(1); });
 }
 
-module.exports = { roleCreationStatements, grantStatements, roleStatements, emitSQL, apply };
+module.exports = { roleCreationStatements, grantStatements, roleStatements, emitSQL, apply, finalizeGrants };

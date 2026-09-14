@@ -71,6 +71,16 @@ services:
   # jamais (fail-closed, cohérent avec server.js#start() qui refuse déjà
   # d'écouter sans base saine). Idempotent : un redéploiement Coolify
   # ordinaire (base déjà à jour) affiche "aucune" migration appliquée.
+  # Termine aussi par un GRANT automatique des privilèges runtime d'APP sur
+  # tout ce que les migrations viennent de (re)créer (schéma securisite_meta,
+  # tables, fonctions RLS) — SECURISITE_OWNER_ROLE/SECURISITE_APP_ROLE ne sont
+  # que des NOMS ici, jamais un mot de passe : MIGRATOR peut accorder ces
+  # privilèges lui-même (il possède, via OWNER, tout ce qu'il vient de créer),
+  # sans connexion superuser (voir backend/db/postgresql/migrate-cli.js et
+  # #finalizeGrants dans provision-roles.js). Corrige le piège rencontré au
+  # premier déploiement : APP sans USAGE/SELECT/EXECUTE sur securisite_meta
+  # (42501 sur alerts/incidents/visiteurs/notifications/realtime) tant que ce
+  # second passage de GRANT n'était fait qu'à la main.
   migrate:
     <<: *app-image
     build: .
@@ -83,6 +93,8 @@ services:
       # PostgreSQL n'est PAS le service `db` ci-dessus (base managée
       # externe à Coolify) — voir docs/postgresql-deployment.md §3.
       PGSSL: ${PGSSL:-disable}
+      SECURISITE_OWNER_ROLE: ${SECURISITE_OWNER_ROLE:-securisite_owner}
+      SECURISITE_APP_ROLE: ${SECURISITE_APP_ROLE:-securisite_app}
     networks:
       - internal
     depends_on:

@@ -130,6 +130,19 @@ confirmer depuis ce document).
    ```
    ./scripts/create-first-admin.sh
    ```
+   Ce script attend `docker compose` (un shell HÔTE, ou en SSH). Si le seul
+   terminal disponible est celui, DANS le conteneur `app` lui-même, que
+   Coolify propose parfois pour une ressource Docker Compose — image
+   `node:22-alpine`, sans bash ni `docker compose` (rencontré lors du
+   premier déploiement de production, où `create-admin.js` puis
+   `bootstrap-admin-membership.js` avaient dû être lancés à la main pour
+   cette raison) — exécuter directement, avec `sh`, le même outil que ce
+   script invoque en une seule commande :
+   ```
+   export DATABASE_URL='postgres://securisite_migrator:MOT_DE_PASSE@db:5432/securisite'
+   export SECURISITE_ADMIN_PASSWORD='...'
+   node backend/db/postgresql/create-first-admin-cli.js admin
+   ```
 8. **Démarrage applicatif** : déploiement complet depuis Coolify (bouton
    *Deploy*) — démarre/redémarre `app`, qui attend `db` sain et `migrate`
    réussi (`depends_on`, §"Vérifications" ci-dessous).

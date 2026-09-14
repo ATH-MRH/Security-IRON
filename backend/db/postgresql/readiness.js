@@ -96,6 +96,22 @@ async function assertReady(client, { directory } = {}) {
     throw fail('READINESS_REGISTRY_MISSING', 'Registre securisite_meta.schema_migrations absent');
   }
 
+  // 2bis. USAGE sur securisite_meta et SELECT sur son registre : la lecture qui
+  // suit (étape 3) en a besoin directement — sans ce contrôle explicite, une
+  // absence de GRANT y remonterait comme une erreur PostgreSQL brute
+  // (permission denied, 42501) au lieu d'un diagnostic clair. Ces privilèges
+  // ne sont vérifiés nulle part ailleurs (ce sont des vérifications de
+  // catalogue, jamais un accès réel aux données de securisite_meta) : leur
+  // absence a causé un déploiement production faussement déclaré sain, avant
+  // d'échouer en 42501 sur alerts/incidents/visiteurs/notifications/realtime
+  // à la première évaluation d'une politique RLS.
+  if (!(await client.get(`SELECT has_schema_privilege('securisite_meta', 'USAGE') AS ok`)).ok) {
+    throw fail('READINESS_PRIVILEGE_MISSING', 'Privilège applicatif manquant : USAGE sur le schéma securisite_meta');
+  }
+  if (!(await client.get(`SELECT has_table_privilege('securisite_meta.schema_migrations', 'SELECT') AS ok`)).ok) {
+    throw fail('READINESS_PRIVILEGE_MISSING', 'Privilège applicatif manquant : SELECT sur securisite_meta.schema_migrations');
+  }
+
   // 3. Versions 001/002 exactement : mêmes numéros, noms et empreintes que les fichiers.
   const entries = discover(migrationsDir); // même découverte + sha256 que le runner
   const rows = await client.all(
@@ -160,6 +176,19 @@ async function assertReady(client, { directory } = {}) {
     WHERE n.nspname = 'securisite_meta' AND p.proname = ANY($1)`, [RLS_FUNCTIONS]);
   const missingRlsFns = RLS_FUNCTIONS.filter(name => !rlsFns.some(r => r.proname === name));
   if (missingRlsFns.length) throw fail('READINESS_RLS_MISSING', 'Fonction(s) RLS absente(s) : ' + missingRlsFns.join(', '));
+  // Existence n'est pas exécutabilité : ces fonctions révoquent EXECUTE de
+  // PUBLIC (SECURITY DEFINER, migration 005) — sans ce GRANT explicite à
+  // APP, chaque politique RLS qui les appelle (tenants/sites/zones/
+  // memberships/security_audit, donc indirectement alerts/incidents/
+  // visiteurs/notifications/realtime) échoue en 42501 au premier accès réel,
+  // jamais détecté par les seules vérifications de catalogue ci-dessus.
+  const rlsFnShortfall = await client.all(`
+    SELECT f.name FROM unnest($1::text[]) AS f(name)
+    WHERE NOT has_function_privilege('securisite_meta.' || f.name || '()', 'EXECUTE')`, [RLS_FUNCTIONS]);
+  if (rlsFnShortfall.length) {
+    throw fail('READINESS_PRIVILEGE_MISSING',
+      'Privilège applicatif manquant : EXECUTE sur ' + rlsFnShortfall.map(r => 'securisite_meta.' + r.name + '()').join(', '));
+  }
   const rlsTables = Object.keys(RLS_POLICIES);
   const rlsState = await client.all(`
     SELECT c.relname AS name, c.relrowsecurity AS enabled

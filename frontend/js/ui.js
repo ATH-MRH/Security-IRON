@@ -12,7 +12,6 @@ const I18N_AR = {
   'Identifiant ou email': 'اسم المستخدم أو البريد الإلكتروني',
   'Mot de passe': 'كلمة المرور',
   'Connexion': 'دخول',
-  'DÉMO : admin / securisite': 'تجربة: admin / securisite',
   'SOC // Centre de Sûreté': 'مركز الأمن والحراسة',
   'Pilotage': 'القيادة',
   'Tableau de bord': 'لوحة التحكم',
