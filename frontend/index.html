@@ -17,6 +17,11 @@
 <!-- ===== Login ===== -->
 <div class="login-overlay" id="loginOverlay">
   <div class="login-box">
+    <select class="lang-select" id="langSelectLogin" onchange="setLanguage(this.value)" title="Langue" style="position:absolute;top:14px;inset-inline-end:14px;padding:6px 9px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:10px;font-family:var(--font-mono);text-transform:uppercase">
+      <option value="fr-ar">FR / AR</option>
+      <option value="fr">Français</option>
+      <option value="ar">العربية</option>
+    </select>
     <div class="login-brand">
       <img class="app-logo app-logo-login" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
       <h2>SécuriSite</h2>
@@ -81,7 +86,7 @@
       <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
     </div>
     <div class="topbar-right">
-      <select id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
+      <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
         <option value="fr-ar">FR / AR</option>
         <option value="fr">Français</option>
         <option value="ar">العربية</option>
