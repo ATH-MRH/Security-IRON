@@ -168,7 +168,8 @@ async function loadDashboard(){
   document.getElementById('kpi-alertes-critiques').textContent = SocKpis.compute(alertRows).critical;
   document.getElementById('kpi-agents-service').textContent = agentsEnServiceCount();
   document.getElementById('kpi-sites-actifs').textContent = siteRows.length;
-  document.getElementById('kpi-sites-total').textContent = `/ ${siteRows.length} site${siteRows.length>1?'s':''}`;
+  const siteWord = translateText(siteRows.length>1?'sites':'site', localStorage.getItem(I18N_KEY)||'fr');
+  document.getElementById('kpi-sites-total').textContent = `/ ${siteRows.length} ${siteWord}`;
   updateHeroGreeting();
   updateCleanHeroStatus(stats);
   drawChartFlux(); drawChartRepartition();
@@ -357,7 +358,7 @@ function drawChartHourly(alertRows){
   chartHourlyInst = new Chart(canvas, { type:'bar', data:{
     labels: hours.map(h=>String(h).padStart(2,'0')+'h'),
     datasets:[{ data:counts, backgroundColor:'rgba(37,117,252,.65)', borderRadius:4, maxBarThickness:14 }],
-  }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } } });
+  }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } } });
 }
 function drawChartAlertsDonut(alertRows){
   const canvas = document.getElementById('chartAlertsDonut');
@@ -374,7 +375,7 @@ function drawChartAlertsDonut(alertRows){
   chartAlertsDonutInst = new Chart(canvas, { type:'doughnut', data:{
     labels: groups.map(g=>g.label),
     datasets:[{ data: groups.map(g=>g.count), backgroundColor: groups.map(g=>g.color), borderWidth:0 }],
-  }, options:{ cutout:'70%', plugins:{legend:{display:false}} } });
+  }, options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}} } });
   if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span>${g.label}<strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
 }
 

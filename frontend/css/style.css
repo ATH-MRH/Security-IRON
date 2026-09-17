@@ -1243,16 +1243,16 @@ body.role-agent .admin-only{ display:none !important; }
   width:38px;
   height:38px;
   border-radius:50%;
-  border:2px solid var(--danger);
-  background:var(--surface);
-  color:var(--danger);
-  font-family:var(--font-mono);
+  border:2px solid rgba(255,255,255,.55);
+  background:var(--danger);
+  color:#fff;
+  font-family:var(--font-body);
   font-weight:800;
   font-size:8px;
   letter-spacing:.5px;
   cursor:pointer;
   overflow:hidden;
-  box-shadow:0 0 10px var(--danger-glow);
+  box-shadow:0 0 0 4px var(--danger-glow),0 6px 16px rgba(255,95,109,.4);
   transition:transform .15s;
   -webkit-user-select:none;
   user-select:none;
@@ -1262,10 +1262,13 @@ body.role-agent .admin-only{ display:none !important; }
 .sos-button.sos-holding{transform:scale(1.18)}
 .sos-button:disabled{opacity:.6;cursor:wait}
 .sos-fill{
+  /* Barre de progression de l'appui maintenu — le bouton est maintenant un
+     disque rouge plein (voir .sos-button ci-dessus), donc un remplissage
+     blanc (pas rouge sur rouge, invisible sinon) qui grandit vers l'état
+     "déclenché". */
   position:absolute;
   inset:0;
-  background:radial-gradient(circle,var(--danger) 0%,var(--danger) 60%,transparent 61%);
-  opacity:.35;
+  background:rgba(255,255,255,.35);
   transform:scaleX(0);
   transform-origin:left center;
   pointer-events:none;
@@ -1434,6 +1437,18 @@ body.role-agent .admin-only{ display:none !important; }
 }
 .topbar-search-results button:hover{background:var(--bg-2)}
 .topbar .btn-icon{background:var(--bg-2)!important;border-color:var(--border)!important;color:var(--text-muted)!important;border-radius:10px}
+@media(max-width:640px){
+  /* Recherche topbar : masquée sous 640px pour laisser la place aux icônes
+     essentielles (SOS, notifications, langue, profil) — accessible ailleurs
+     via ⌘K sur desktop/tablette, aucune fonctionnalité supprimée. */
+  .topbar-search{display:none}
+  .topbar{padding:10px 12px}
+  .topbar-right{gap:3px}
+  .topbar-right select.lang-select{width:40px!important;padding:7px 3px!important;font-size:9px!important}
+  .user-chip{padding:2px}
+  .btn-logout{padding:7px}
+  .topbar .btn-icon{width:32px;padding:0}
+}
 .topbar .btn-icon:hover{color:var(--primary)!important;border-color:var(--primary)!important;background:var(--surface)!important}
 .topbar .user-chip{background:transparent!important;border:0!important;box-shadow:none!important}
 .topbar .avatar{background:var(--primary)!important;color:#fff!important}
@@ -1445,30 +1460,35 @@ body.role-agent .admin-only{ display:none !important; }
 /* .clean-orb masqué en ligne dans le HTML (aucune donnée perdue :
    updateCleanHeroStatus()/runDashboardAnalysis() ne le référencent jamais,
    seulement #cleanHeroStatus et #cleanStatusText, tous deux conservés). */
-.ui2-hero{grid-template-columns:auto 1fr auto;gap:26px;padding:26px 30px;min-height:0}
+.ui2-hero{
+  grid-template-columns:1fr 1.15fr auto auto;gap:18px;padding:18px 24px;
+  min-height:0;align-items:center;
+}
 .ui2-hero-photo{
-  width:190px;align-self:stretch;border-radius:22px;position:relative;z-index:1;
+  align-self:stretch;min-height:132px;border-radius:18px;position:relative;z-index:1;
   background:
-    linear-gradient(0deg,rgba(10,18,38,.55),rgba(10,18,38,.15)),
+    linear-gradient(0deg,rgba(10,18,38,.6),rgba(10,18,38,.2)),
     linear-gradient(135deg,#25406e,#0f1b3d);
-  display:flex;align-items:flex-end;padding:14px;
+  display:flex;align-items:flex-end;padding:12px 16px;overflow:hidden;
 }
 .ui2-hero-photo::after{
-  content:"🛡️";font-size:34px;opacity:.35;position:absolute;inset-inline-end:14px;top:14px;
+  content:"🛡️";font-size:30px;opacity:.35;position:absolute;inset-inline-end:12px;top:10px;
 }
+.ui2-hero-photo-caption{position:relative;z-index:1;color:#fff;font-size:12px;font-weight:700;line-height:1.35;text-shadow:0 2px 8px rgba(0,0,0,.4)}
 .ui2-hero-copy{max-width:none}
-.ui2-hero-copy h2{font-size:26px;margin-bottom:6px}
-.ui2-hero-brand{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:2px}
-.ui2-hero-copy p{margin-bottom:14px;font-size:13px}
-.ui2-hero-copy .clean-actions{gap:10px}
-.ui2-hero-side{display:flex;align-items:center;gap:16px;position:relative;z-index:1}
+.ui2-hero-copy h2{font-size:21px;margin-bottom:4px}
+.ui2-hero-brand{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:2px}
+.ui2-hero-copy p{margin-bottom:10px;font-size:12px}
+.ui2-hero-copy .clean-actions{gap:8px}
+.ui2-hero-copy .btn{padding:8px 14px;font-size:12.5px}
 .ui2-hero-time{
-  background:rgba(255,255,255,.85);border-radius:18px;padding:16px 20px;
+  align-self:stretch;display:flex;flex-direction:column;justify-content:center;
+  background:rgba(255,255,255,.85);border-radius:16px;padding:12px 18px;
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.8),0 14px 34px rgba(37,55,88,.10);
-  min-width:190px;
+  min-width:168px;position:relative;z-index:1;
 }
-.ui2-hero-date{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);text-transform:capitalize}
-.ui2-hero-clock{font-size:22px;font-weight:800;color:var(--text-bright);font-family:var(--font-mono);margin:4px 0 10px}
+.ui2-hero-date{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);text-transform:capitalize}
+.ui2-hero-clock{font-size:19px;font-weight:800;color:var(--text-bright);font-family:var(--font-mono);margin:3px 0 8px}
 .ui2-hero-status{display:flex;align-items:center;gap:8px}
 .ui2-hero-status .live-dot{width:9px;height:9px;background:var(--success);border-radius:50%;box-shadow:0 0 8px var(--success-glow);animation:pulse 1.2s infinite;flex:0 0 auto}
 .ui2-hero-status strong{display:block;font-size:12px;color:var(--text-bright)}
@@ -1477,34 +1497,81 @@ body.role-agent .admin-only{ display:none !important; }
 .clean-hero.danger .ui2-hero-status small,.clean-hero.danger .ui2-hero-status #cleanStatusText{color:var(--danger)}
 .clean-hero.analyzing .ui2-hero-status .live-dot{background:var(--warning);box-shadow:0 0 8px var(--warning-glow)}
 .ui2-hero-sos{
-  width:104px;height:104px;font-size:12px;flex:0 0 auto;
+  width:88px;height:88px;font-size:11px;flex:0 0 auto;align-self:center;position:relative;z-index:1;
   box-shadow:0 0 0 6px rgba(255,95,109,.12),0 14px 30px rgba(255,95,109,.28);
 }
-.ui2-hero-sos .sos-label small{display:block;font-size:8px;font-weight:500;opacity:.85;text-transform:none;letter-spacing:0}
+.ui2-hero-sos .sos-label small{display:block;font-size:7.5px;font-weight:500;opacity:.85;text-transform:none;letter-spacing:0}
+.ui2-hero-sos-icon{display:block;font-size:18px;margin-bottom:2px;filter:grayscale(1) brightness(4)}
+@media(max-width:1180px){
+  .ui2-hero{grid-template-columns:1fr 1fr;grid-template-areas:"copy copy" "photo photo" "time sos";text-align:center}
+  .ui2-hero-copy{grid-area:copy}
+  .ui2-hero-photo{grid-area:photo;min-height:100px;justify-content:center;align-items:center}
+  .ui2-hero-time{grid-area:time}
+  .ui2-hero-sos{grid-area:sos;margin-inline:auto}
+}
 @media(max-width:980px){
-  .ui2-hero{grid-template-columns:1fr;text-align:center}
-  .ui2-hero-photo{width:100%;height:120px;justify-content:center;align-items:center}
-  .ui2-hero-side{flex-direction:column;margin:auto}
+  .ui2-hero{grid-template-columns:1fr;grid-template-areas:"copy" "photo" "time" "sos"}
+  .ui2-hero-copy,.ui2-hero-photo,.ui2-hero-time,.ui2-hero-sos{grid-area:auto}
+  .ui2-hero-photo{width:100%;min-height:110px}
+  .ui2-hero-time{margin:auto}
+  .ui2-hero-sos{margin:auto}
 }
 
 /* --- Cartes KPI (icône + tendance), rangée ajoutée au-dessus des KPI existants --- */
 .ui2-kpi{display:flex;padding:18px 20px;gap:14px;align-items:center;justify-content:flex-start}
 .ui2-kpi-icon{
-  width:44px;height:44px;border-radius:14px;flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;font-size:20px;
+  width:42px;height:42px;border-radius:12px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+  filter:grayscale(1) brightness(4); /* émoji -> rendu proche du blanc, pastille en couleur pleine */
 }
-.ui2-kpi.danger .ui2-kpi-icon{background:rgba(255,95,109,.14)}
-.ui2-kpi.warning .ui2-kpi-icon{background:rgba(247,169,40,.16)}
-.ui2-kpi.info .ui2-kpi-icon{background:rgba(91,140,255,.14)}
-.ui2-kpi.success .ui2-kpi-icon{background:rgba(35,196,131,.14)}
+.ui2-kpi.danger .ui2-kpi-icon{background:var(--danger)}
+.ui2-kpi.warning .ui2-kpi-icon{background:var(--warning)}
+.ui2-kpi.info .ui2-kpi-icon{background:var(--info)}
+.ui2-kpi.success .ui2-kpi-icon{background:var(--success)}
 .ui2-kpi-body{min-width:0}
 .ui2-kpi .kpi-value{font-size:26px;margin-top:0}
 .ui2-kpi .kpi-label{font-size:11.5px;font-weight:700;color:var(--text-bright);text-transform:none;letter-spacing:0;margin-top:2px}
 .ui2-kpi .kpi-trend{margin-top:4px}
 
 /* --- Rangées à 3 colonnes du tableau de bord --- */
-.ui2-grid-3{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:18px;margin-bottom:20px}
+.ui2-grid-3{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:14px;margin-bottom:14px}
 @media(max-width:1180px){.ui2-grid-3{grid-template-columns:1fr}}
+
+/* --- Densité réduite : header + hero + 4 KPI + 2 rangées de 3 panneaux
+   tiennent sur un écran 16:9 sans défilement lourd. N'affecte que
+   l'espacement/la taille du dashboard, aucune donnée ni fonction. --- */
+.content:has(> #page-dashboard.active){padding:18px 24px}
+.ui2-kpi-grid{margin-bottom:14px}
+.ui2-grid-3 .card-header{padding:10px 14px}
+.ui2-grid-3 .card-body{padding:12px 14px}
+.ui2-grid-3 .card-header h3,.ui2-grid-3 .card-header .card-title{font-size:13px}
+#dashMapCanvas{aspect-ratio:400/190}
+.ui2-live-feed{aspect-ratio:16/7}
+.ui2-incident-row{padding:6px 0}
+#dashAssistantAnswer{max-height:90px}
+#dashAssistantHelp p{margin-bottom:4px}
+#dashAssistantHelp ul{margin-top:4px}
+#dashAssistantHelp li{margin-bottom:2px}
+.ui2-assistant-form{margin-top:8px}
+.ui2-chart-box{position:relative;height:130px}
+.ui2-chart-box-donut{height:100px}
+
+/* --- Teinte bleutée plus présente (fond + cartes), rendu moins blanc/pastel --- */
+body{
+  background:
+    radial-gradient(circle at 50% -10%,rgba(79,140,255,.26),transparent 36%),
+    radial-gradient(circle at 84% 18%,rgba(66,220,181,.20),transparent 30%),
+    linear-gradient(180deg,#eef5ff 0%,#e4eef9 52%,#dde9f4 100%);
+}
+.card,.kpi-card,.ui2-hero-time{
+  background:rgba(233,241,253,.86);
+}
+.clean-hero{
+  background:
+    radial-gradient(circle at 18% 50%,rgba(37,117,252,.22),transparent 32%),
+    radial-gradient(circle at 78% 28%,rgba(33,199,168,.20),transparent 32%),
+    rgba(226,237,252,.82);
+}
 
 /* Mini-carte du tableau de bord : même rendu relatif que la page Carte
    (frontend/js/map.js#MapMarkers, réutilisé, jamais dupliqué), un id de

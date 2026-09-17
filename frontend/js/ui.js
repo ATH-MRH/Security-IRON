@@ -112,6 +112,8 @@ const I18N_AR = {
   'Majeur': 'كبير',
   'Mineur': 'بسيط',
   'Critiques': 'حرجة',
+  'Moyennes': 'متوسطة',
+  'Faibles': 'ضعيفة',
   'Majeurs': 'كبيرة',
   'Mineurs': 'بسيطة',
   'Résolus': 'محلولة',
@@ -493,6 +495,10 @@ const I18N_AR = {
   "Système opérationnel": "النظام يعمل بشكل طبيعي",
   "· tous les services sont actifs": "· جميع الخدمات نشطة",
   "Alerte immédiate": "تنبيه فوري",
+  "Des sites plus sûrs": "مواقع أكثر أماناً",
+  "Un monde plus serein": "عالم أكثر أماناً وهدوءاً",
+  "site": "موقع",
+  "sites": "مواقع",
   "Alertes critiques": "التنبيهات الحرجة",
   "Incidents en cours": "الحوادث الجارية",
   "En traitement": "قيد المعالجة",
@@ -551,8 +557,16 @@ function translateText(text, lang){
 let i18nApplying = false;
 let i18nObserverReady = false;
 
-function applyLanguage(lang = localStorage.getItem(I18N_KEY) || 'fr-ar'){
+// Une seule langue affichée à la fois — jamais FR+AR simultanément dans la
+// même interface. Le mode bilingue ('fr-ar') existait par défaut avant ce
+// correctif ; le sélecteur ne l'expose plus (frontend/index.html), mais
+// translateText() le gère encore si jamais explicitement demandé ailleurs.
+function applyLanguage(lang = localStorage.getItem(I18N_KEY) || 'fr'){
   if(i18nApplying) return;
+  // Migration silencieuse : un navigateur ayant déjà visité le site avant ce
+  // correctif peut avoir 'fr-ar' persisté depuis l'ancien réglage par défaut
+  // — jamais réaffiché, même pour une session déjà existante.
+  if(lang === 'fr-ar') lang = 'fr';
   i18nApplying = true;
   localStorage.setItem(I18N_KEY, lang);
   document.documentElement.lang = lang === 'ar' ? 'ar' : 'fr';

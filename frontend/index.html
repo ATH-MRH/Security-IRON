@@ -18,7 +18,6 @@
 <div class="login-overlay" id="loginOverlay">
   <div class="login-box">
     <select class="lang-select" id="langSelectLogin" onchange="setLanguage(this.value)" title="Langue" style="position:absolute;top:14px;inset-inline-end:14px;padding:6px 9px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:10px;font-family:var(--font-mono);text-transform:uppercase">
-      <option value="fr-ar">FR / AR</option>
       <option value="fr">Français</option>
       <option value="ar">العربية</option>
     </select>
@@ -103,7 +102,6 @@
         <span class="sos-label">SOS</span>
       </button>
       <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
-        <option value="fr-ar">FR / AR</option>
         <option value="fr">Français</option>
         <option value="ar">العربية</option>
       </select>
@@ -166,7 +164,6 @@
         <div class="clean-orb-ring"></div>
         <img src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
       </div>
-      <div class="ui2-hero-photo" aria-hidden="true"></div>
       <div class="clean-hero-copy ui2-hero-copy">
         <div class="clean-eyebrow">Centre de contrôle sécurité</div>
         <h2>Bonjour, <span id="heroUsername">—</span> <span aria-hidden="true">👋</span></h2>
@@ -177,20 +174,21 @@
           <button class="btn btn-outline" onclick="navTo('rapports')">Voir les rapports</button>
         </div>
       </div>
-      <div class="ui2-hero-side">
-        <div class="ui2-hero-time">
-          <div class="ui2-hero-date"><span aria-hidden="true">📅</span><span id="heroDate">—</span></div>
-          <div class="ui2-hero-clock" id="heroClock">--:--:--</div>
-          <div class="ui2-hero-status">
-            <span class="live-dot"></span>
-            <div><strong>Système opérationnel</strong><small><span id="cleanStatusText">OK</span> · tous les services sont actifs</small></div>
-          </div>
-        </div>
-        <button class="sos-button sos-trigger ui2-hero-sos" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
-          <span class="sos-fill"></span>
-          <span class="sos-label">SOS<br><small>Alerte immédiate</small></span>
-        </button>
+      <div class="ui2-hero-photo" aria-hidden="true">
+        <div class="ui2-hero-photo-caption">Des sites plus sûrs<br>Un monde plus serein</div>
       </div>
+      <div class="ui2-hero-time">
+        <div class="ui2-hero-date"><span aria-hidden="true">📅</span><span id="heroDate">—</span></div>
+        <div class="ui2-hero-clock" id="heroClock">--:--:--</div>
+        <div class="ui2-hero-status">
+          <span class="live-dot"></span>
+          <div><strong>Système opérationnel</strong><small><span id="cleanStatusText">OK</span> · tous les services sont actifs</small></div>
+        </div>
+      </div>
+      <button class="sos-button sos-trigger ui2-hero-sos" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
+        <span class="sos-fill"></span>
+        <span class="sos-label"><span class="ui2-hero-sos-icon" aria-hidden="true">🔔</span>SOS<br><small>Alerte immédiate</small></span>
+      </button>
     </div>
     <div class="kpi-grid ui2-kpi-grid">
       <div class="kpi-card danger ui2-kpi"><div class="ui2-kpi-icon">🔔</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-alertes-critiques">0</div><div class="kpi-label">Alertes critiques</div><div class="kpi-trend">À traiter</div></div></div>
@@ -198,13 +196,6 @@
       <div class="kpi-card info ui2-kpi"><div class="ui2-kpi-icon">👥</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-agents-service">0</div><div class="kpi-label">Agents en service</div><div class="kpi-trend">8 dernières heures</div></div></div>
       <div class="kpi-card success ui2-kpi"><div class="ui2-kpi-icon">🏢</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-sites-actifs">0</div><div class="kpi-label">Site actif</div><div class="kpi-trend" id="kpi-sites-total">/ 0 site</div></div></div>
     </div>
-    <div class="kpi-grid" style="margin-top:-8px">
-      <div class="kpi-card success"><div class="kpi-label">Présents sur site</div><div class="kpi-value" id="kpi-presents">0</div><div class="kpi-trend">Actualisation temps réel</div></div>
-      <div class="kpi-card info"><div class="kpi-label">Visiteurs aujourd'hui</div><div class="kpi-value" id="kpi-visiteurs">0</div><div class="kpi-trend">En attente / validés</div></div>
-      <div class="kpi-card warning"><div class="kpi-label">Véhicules entrés</div><div class="kpi-value" id="kpi-vehicules">0</div><div class="kpi-trend">24 dernières heures</div></div>
-      <div class="kpi-card danger"><div class="kpi-label">Incidents ouverts</div><div class="kpi-value" id="kpi-incidents">0</div><div class="kpi-trend down">À traiter</div></div>
-    </div>
-
     <div class="ui2-grid-3">
       <div class="card">
         <div class="card-header"><div class="card-title">📍 Carte des sites</div><button class="btn btn-sm btn-outline" onclick="navTo('carte')">Voir tous les sites →</button></div>
@@ -226,11 +217,11 @@
     <div class="ui2-grid-3">
       <div class="card">
         <div class="card-header"><div class="card-title">📊 Activité par heure</div></div>
-        <div class="card-body"><canvas id="chartHourly" height="180"></canvas></div>
+        <div class="card-body"><div class="ui2-chart-box"><canvas id="chartHourly"></canvas></div></div>
       </div>
       <div class="card">
         <div class="card-header"><div class="card-title">Répartition des alertes</div></div>
-        <div class="card-body"><canvas id="chartAlertsDonut" height="150"></canvas><div id="dashAlertsLegend" class="ui2-donut-legend"></div></div>
+        <div class="card-body"><div class="ui2-chart-box ui2-chart-box-donut"><canvas id="chartAlertsDonut"></canvas></div><div id="dashAlertsLegend" class="ui2-donut-legend"></div></div>
       </div>
       <div class="card ui2-assistant-card">
         <div class="card-header"><div class="card-title">🤖 Assistant SOC</div><span class="badge info">IA</span></div>
@@ -253,6 +244,12 @@
       </div>
     </div>
 
+    <div class="kpi-grid">
+      <div class="kpi-card success"><div class="kpi-label">Présents sur site</div><div class="kpi-value" id="kpi-presents">0</div><div class="kpi-trend">Actualisation temps réel</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Visiteurs aujourd'hui</div><div class="kpi-value" id="kpi-visiteurs">0</div><div class="kpi-trend">En attente / validés</div></div>
+      <div class="kpi-card warning"><div class="kpi-label">Véhicules entrés</div><div class="kpi-value" id="kpi-vehicules">0</div><div class="kpi-trend">24 dernières heures</div></div>
+      <div class="kpi-card danger"><div class="kpi-label">Incidents ouverts</div><div class="kpi-value" id="kpi-incidents">0</div><div class="kpi-trend down">À traiter</div></div>
+    </div>
     <div class="grid-2">
       <div class="card"><div class="card-header"><div class="card-title">📊 Flux d'accès — 7 derniers jours</div></div><div class="card-body"><canvas id="chartFlux" height="180"></canvas></div></div>
       <div class="card"><div class="card-header"><div class="card-title">🥧 Répartition des accès</div></div><div class="card-body"><canvas id="chartRepartition" height="180"></canvas></div></div>
