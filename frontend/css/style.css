@@ -1320,3 +1320,269 @@ body.role-agent .admin-only{ display:none !important; }
   .login-box{padding:28px 22px}
   .login-brand h2{font-size:22px;letter-spacing:2px}
 }
+
+/* =====================================================================
+   SécuriSite UI 2.0 — modèle visuel validé (refonte visuelle uniquement)
+   =====================================================================
+   Mêmes pages, mêmes données (API existantes), même comportement SOS/
+   alertes/temps réel/RLS — rien de tout cela ne change ici, uniquement la
+   présentation. Placé en toute fin de feuille pour l'emporter sur les
+   thèmes précédents (certains posaient déjà des !important sur la sidebar
+   et la topbar) sans les supprimer. `!important` utilisé uniquement là où
+   nécessaire pour les battre. */
+:root{
+  --sidebar-bg:#0f1b3d;
+  --sidebar-bg-2:#0c1730;
+  --sidebar-text:#c7d2e8;
+  --sidebar-text-dim:#7887ab;
+  --sidebar-active:#2f6feb;
+  --sidebar-active-glow:rgba(47,111,235,.35);
+  --sidebar-border:rgba(255,255,255,.08);
+}
+
+/* --- Sidebar --- */
+.sidebar{
+  background:var(--sidebar-bg)!important;
+  border-inline-end:1px solid var(--sidebar-border)!important;
+  box-shadow:none!important;
+  display:flex;flex-direction:column;
+}
+.sidebar::before{display:none}
+.sidebar .nav-section:last-of-type{margin-top:auto}
+.brand{border-bottom:1px solid var(--sidebar-border)!important}
+.brand h1{color:#fff!important}
+.brand p{color:var(--sidebar-text-dim)!important}
+.nav-title{color:var(--sidebar-text-dim)!important;opacity:.75;font-size:9px}
+.nav-title::before{color:var(--sidebar-active)}
+.nav-item{
+  color:var(--sidebar-text)!important;background:transparent!important;
+  border-inline-start:0!important;border-radius:10px;
+  margin:2px 10px;padding:10px 12px;
+}
+.nav-item:hover{background:rgba(255,255,255,.06)!important;color:#fff!important}
+.nav-item.active{
+  background:var(--sidebar-active)!important;color:#fff!important;
+  box-shadow:0 8px 20px var(--sidebar-active-glow);font-weight:600;
+}
+.nav-item.active::after{display:none}
+.nav-item:hover .nav-icon,.nav-item.active .nav-icon{color:inherit!important;filter:none!important}
+
+/* Pied de sidebar : image de marque, cohérent avec le bloc .brand du haut
+   (même logo) — purement décoratif, aucune nouvelle donnée/fonction. */
+.sidebar-footer{
+  padding:16px 20px;border-top:1px solid var(--sidebar-border);
+  display:flex;align-items:center;gap:10px;
+}
+.sidebar-footer img{width:28px;height:28px;border-radius:50%;flex:0 0 auto}
+.sidebar-footer div{font-size:10px;color:var(--sidebar-text-dim);line-height:1.4}
+.sidebar-footer strong{display:block;color:var(--sidebar-text);font-size:11px}
+
+/* Réduction desktop de la sidebar (icônes seules) — bouton dans le pied ;
+   distinct du tiroir mobile existant (.sidebar.open, <860px). */
+.sidebar-collapse{
+  background:transparent;border:0;color:var(--sidebar-text-dim);
+  font-size:11px;cursor:pointer;padding:14px 20px;text-align:start;
+  display:flex;align-items:center;gap:8px;
+}
+.sidebar-collapse:hover{color:#fff}
+.sidebar.collapsed{width:76px}
+.sidebar.collapsed .brand p,.sidebar.collapsed .nav-title,
+.sidebar.collapsed .nav-item span:last-child,.sidebar.collapsed .sidebar-collapse span:last-child,
+.sidebar.collapsed .sidebar-footer div{display:none}
+.sidebar.collapsed .nav-item,.sidebar.collapsed .sidebar-collapse{justify-content:center}
+.sidebar.collapsed ~ .main{margin-inline-start:76px}
+@media(max-width:860px){
+  .sidebar.collapsed{width:260px}
+  .sidebar.collapsed .brand p,.sidebar.collapsed .nav-title,
+  .sidebar.collapsed .nav-item span:last-child,.sidebar.collapsed .sidebar-collapse span:last-child,
+  .sidebar.collapsed .sidebar-footer div{display:initial}
+  .sidebar.collapsed ~ .main{margin-inline-start:0}
+}
+
+/* --- Topbar --- */
+.topbar{background:#fff!important;border-bottom:1px solid var(--border)!important;box-shadow:0 1px 0 rgba(15,27,61,.04)}
+.topbar::after{display:none}
+.topbar .live-indicator{display:none} /* décoratif, jamais relié à un état réel — voir topbar-search ci-dessous */
+.topbar .page-title{font-size:13px;color:var(--text-muted);font-weight:600;max-width:160px}
+.topbar .page-title::before{display:none}
+.topbar-search{
+  flex:1;max-width:520px;position:relative;margin-inline-start:8px;
+}
+.topbar-search input{
+  width:100%;padding:9px 44px;border:1px solid var(--border);border-radius:10px;
+  background:var(--bg-2);color:var(--text);font-size:12px;font-family:var(--font-body);
+}
+.topbar-search input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow)}
+.topbar-search::before{
+  content:"⌕";position:absolute;inset-inline-start:14px;top:50%;transform:translateY(-50%);
+  color:var(--text-muted);font-size:15px;font-weight:bold;pointer-events:none;
+}
+.topbar-search kbd{
+  position:absolute;inset-inline-end:10px;top:50%;transform:translateY(-50%);
+  font-family:var(--font-mono);font-size:10px;color:var(--text-muted);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:2px 6px;
+  pointer-events:none;
+}
+.topbar-search-results{
+  position:absolute;top:calc(100% + 6px);inset-inline-start:0;right:0;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow-lg);z-index:60;overflow:hidden;
+}
+.topbar-search-results button{
+  display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;
+  background:none;border:0;color:var(--text);font-size:12px;text-align:start;cursor:pointer;
+}
+.topbar-search-results button:hover{background:var(--bg-2)}
+.topbar .btn-icon{background:var(--bg-2)!important;border-color:var(--border)!important;color:var(--text-muted)!important;border-radius:10px}
+.topbar .btn-icon:hover{color:var(--primary)!important;border-color:var(--primary)!important;background:var(--surface)!important}
+.topbar .user-chip{background:transparent!important;border:0!important;box-shadow:none!important}
+.topbar .avatar{background:var(--primary)!important;color:#fff!important}
+.topbar .btn-logout{background:var(--bg-2)!important;border-color:var(--border)!important;color:var(--text-muted)!important;border-radius:10px}
+.topbar .btn-logout:hover{color:var(--danger)!important;border-color:var(--danger)!important;background:transparent!important}
+.topbar-right select.lang-select{border-radius:10px!important}
+
+/* --- Hero du tableau de bord --- */
+/* .clean-orb masqué en ligne dans le HTML (aucune donnée perdue :
+   updateCleanHeroStatus()/runDashboardAnalysis() ne le référencent jamais,
+   seulement #cleanHeroStatus et #cleanStatusText, tous deux conservés). */
+.ui2-hero{grid-template-columns:auto 1fr auto;gap:26px;padding:26px 30px;min-height:0}
+.ui2-hero-photo{
+  width:190px;align-self:stretch;border-radius:22px;position:relative;z-index:1;
+  background:
+    linear-gradient(0deg,rgba(10,18,38,.55),rgba(10,18,38,.15)),
+    linear-gradient(135deg,#25406e,#0f1b3d);
+  display:flex;align-items:flex-end;padding:14px;
+}
+.ui2-hero-photo::after{
+  content:"🛡️";font-size:34px;opacity:.35;position:absolute;inset-inline-end:14px;top:14px;
+}
+.ui2-hero-copy{max-width:none}
+.ui2-hero-copy h2{font-size:26px;margin-bottom:6px}
+.ui2-hero-brand{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:2px}
+.ui2-hero-copy p{margin-bottom:14px;font-size:13px}
+.ui2-hero-copy .clean-actions{gap:10px}
+.ui2-hero-side{display:flex;align-items:center;gap:16px;position:relative;z-index:1}
+.ui2-hero-time{
+  background:rgba(255,255,255,.85);border-radius:18px;padding:16px 20px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.8),0 14px 34px rgba(37,55,88,.10);
+  min-width:190px;
+}
+.ui2-hero-date{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);text-transform:capitalize}
+.ui2-hero-clock{font-size:22px;font-weight:800;color:var(--text-bright);font-family:var(--font-mono);margin:4px 0 10px}
+.ui2-hero-status{display:flex;align-items:center;gap:8px}
+.ui2-hero-status .live-dot{width:9px;height:9px;background:var(--success);border-radius:50%;box-shadow:0 0 8px var(--success-glow);animation:pulse 1.2s infinite;flex:0 0 auto}
+.ui2-hero-status strong{display:block;font-size:12px;color:var(--text-bright)}
+.ui2-hero-status small{color:var(--text-muted);font-size:10.5px}
+.clean-hero.danger .ui2-hero-status .live-dot{background:var(--danger);box-shadow:0 0 8px var(--danger-glow)}
+.clean-hero.danger .ui2-hero-status small,.clean-hero.danger .ui2-hero-status #cleanStatusText{color:var(--danger)}
+.clean-hero.analyzing .ui2-hero-status .live-dot{background:var(--warning);box-shadow:0 0 8px var(--warning-glow)}
+.ui2-hero-sos{
+  width:104px;height:104px;font-size:12px;flex:0 0 auto;
+  box-shadow:0 0 0 6px rgba(255,95,109,.12),0 14px 30px rgba(255,95,109,.28);
+}
+.ui2-hero-sos .sos-label small{display:block;font-size:8px;font-weight:500;opacity:.85;text-transform:none;letter-spacing:0}
+@media(max-width:980px){
+  .ui2-hero{grid-template-columns:1fr;text-align:center}
+  .ui2-hero-photo{width:100%;height:120px;justify-content:center;align-items:center}
+  .ui2-hero-side{flex-direction:column;margin:auto}
+}
+
+/* --- Cartes KPI (icône + tendance), rangée ajoutée au-dessus des KPI existants --- */
+.ui2-kpi{display:flex;padding:18px 20px;gap:14px;align-items:center;justify-content:flex-start}
+.ui2-kpi-icon{
+  width:44px;height:44px;border-radius:14px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+}
+.ui2-kpi.danger .ui2-kpi-icon{background:rgba(255,95,109,.14)}
+.ui2-kpi.warning .ui2-kpi-icon{background:rgba(247,169,40,.16)}
+.ui2-kpi.info .ui2-kpi-icon{background:rgba(91,140,255,.14)}
+.ui2-kpi.success .ui2-kpi-icon{background:rgba(35,196,131,.14)}
+.ui2-kpi-body{min-width:0}
+.ui2-kpi .kpi-value{font-size:26px;margin-top:0}
+.ui2-kpi .kpi-label{font-size:11.5px;font-weight:700;color:var(--text-bright);text-transform:none;letter-spacing:0;margin-top:2px}
+.ui2-kpi .kpi-trend{margin-top:4px}
+
+/* --- Rangées à 3 colonnes du tableau de bord --- */
+.ui2-grid-3{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:18px;margin-bottom:20px}
+@media(max-width:1180px){.ui2-grid-3{grid-template-columns:1fr}}
+
+/* Mini-carte du tableau de bord : même rendu relatif que la page Carte
+   (frontend/js/map.js#MapMarkers, réutilisé, jamais dupliqué), un id de
+   canevas différent pour ne jamais entrer en conflit avec #carte-canvas. */
+#dashMapCanvas{width:100%;aspect-ratio:400/260;background:var(--bg-2);display:block}
+#dashMapCanvas .carte-marker rect{fill:var(--primary);stroke:var(--bg);stroke-width:1.5}
+#dashMapCanvas .carte-marker.carte-sos circle{animation:pulse 1.2s infinite}
+#dashMapEmpty{padding:30px 10px;text-align:center}
+
+.ui2-incident-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.ui2-incident-row:last-child{border-bottom:0}
+.ui2-incident-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+.ui2-incident-row.critique .ui2-incident-icon{background:rgba(255,95,109,.14)}
+.ui2-incident-row.majeur .ui2-incident-icon{background:rgba(247,169,40,.16)}
+.ui2-incident-row.mineur .ui2-incident-icon{background:rgba(91,140,255,.14)}
+.ui2-incident-body{flex:1;min-width:0}
+.ui2-incident-body strong{display:block;font-size:12.5px;color:var(--text-bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ui2-incident-meta{display:flex;align-items:center;gap:8px;margin-top:2px;font-size:11px;color:var(--text-muted)}
+.ui2-incident-chevron{color:var(--text-dim);flex:0 0 auto}
+
+.ui2-live-feed{position:relative;border-radius:14px;overflow:hidden;background:#0d1220;aspect-ratio:16/10}
+.ui2-live-feed img{width:100%;height:100%;object-fit:cover;display:block}
+.ui2-live-feed-badge{position:absolute;top:10px;inset-inline-start:10px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:5px}
+.ui2-live-feed-caption{position:absolute;bottom:0;inset-inline-start:0;inset-inline-end:0;background:linear-gradient(0deg,rgba(0,0,0,.75),transparent);color:#fff;padding:20px 12px 8px;font-size:11.5px}
+.ui2-live-feed-caption small{display:block;opacity:.75;font-size:10px}
+.ui2-live-feed-prev,.ui2-live-feed-next{
+  position:absolute;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;
+  border:0;background:rgba(0,0,0,.45);color:#fff;font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.ui2-live-feed-prev{inset-inline-start:8px}
+.ui2-live-feed-next{inset-inline-end:8px}
+.ui2-live-feed-dots{display:flex;gap:5px;justify-content:center;margin-top:10px}
+.ui2-live-feed-dots span{width:6px;height:6px;border-radius:50%;background:var(--border-bright)}
+.ui2-live-feed-dots span.active{background:var(--primary)}
+
+.ui2-donut-legend{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.ui2-donut-legend div{display:flex;align-items:center;gap:8px;font-size:12px}
+.ui2-donut-legend span.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.ui2-donut-legend strong{margin-inline-start:auto}
+.ui2-donut-legend small{color:var(--text-muted);min-width:32px;text-align:end}
+
+.ui2-assistant-card{display:flex;flex-direction:column}
+.ui2-assistant-card .card-body{display:flex;flex-direction:column;flex:1}
+#dashAssistantHelp{font-size:12px;color:var(--text-muted);margin-bottom:auto}
+#dashAssistantHelp ul{margin:8px 0 0;padding-inline-start:18px}
+#dashAssistantHelp li{margin-bottom:4px}
+#dashAssistantAnswer{font-size:12.5px;margin-bottom:10px;max-height:160px;overflow-y:auto}
+.ui2-assistant-form{display:flex;gap:8px;margin-top:12px}
+.ui2-assistant-form input{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-2);color:var(--text);font-size:12px}
+.ui2-assistant-form button{border-radius:10px;padding:9px 14px}
+
+/* --- Console d'administration : harmonisée avec le thème clair UI 2.0 ---
+   Gardait ses fonds sombres (#0d1220-ish) d'avant la refonte, seule zone
+   encore visuellement incohérente avec le reste du tableau de bord — les
+   couleurs d'accent (var(--success)/--info/--warning/--danger) et toutes
+   les données/actions restent identiques, seuls les fonds et la casse du
+   texte changent ici. */
+.admin-console-card{
+  background:var(--surface);border-color:var(--border);
+}
+.admin-console-head{
+  background:linear-gradient(90deg,rgba(37,117,252,.06),transparent 60%);
+}
+.admin-console-kicker{font-family:var(--font-body);letter-spacing:1px}
+.admin-console-title{
+  font-family:var(--font-body);text-transform:none;letter-spacing:0;font-size:22px;
+}
+.admin-status-main,.admin-meta-card,.admin-action-tile,.admin-panel,.admin-kpi{
+  background:var(--bg-2);
+}
+.admin-status-orb{border-color:rgba(35,196,131,.35)}
+.admin-status-label,.admin-meta-card span,.admin-kpi span{
+  font-family:var(--font-body);text-transform:none;letter-spacing:0;font-weight:600;font-size:11px;
+}
+.admin-status-value{font-family:var(--font-body);text-transform:none;font-size:18px}
+.admin-status-meta,.admin-meta-card strong,.admin-kpi small,.admin-panel-head p{font-family:var(--font-body)}
+.admin-kpi strong{font-family:var(--font-body)}
+.admin-panel-head{background:rgba(37,117,252,.05)}
+.admin-panel-head h3{font-family:var(--font-body);text-transform:none;letter-spacing:0}
+.admin-action-tile strong{font-family:var(--font-body);text-transform:none;letter-spacing:0}

@@ -481,7 +481,40 @@ const I18N_AR = {
   "📷 Module LAPI prêt. Cliquez « Activer la caméra » puis le bouton": "وحدة قراءة اللوحات جاهزة. انقر على « تفعيل الكاميرا » ثم الزر",
   "Locale": "محلية",
   "Ronde": "دورية",
-  "Ouvrir le menu": "فتح القائمة"
+  "Ouvrir le menu": "فتح القائمة",
+
+  // UI 2.0 (modèle visuel validé) : bannière d'accueil, KPI, recherche topbar, pied de sidebar.
+  "Réduire le menu": "طي القائمة",
+  "IRON Global Security": "IRON Global Security",
+  "Votre sécurité, notre engagement": "أمنكم، التزامنا",
+  "Bonjour,": "مرحباً،",
+  "Bienvenue sur SécuriSite": "مرحباً بكم في سيكوري سايت",
+  "Surveillance • Réactivité • Sécurité • En temps réel": "المراقبة • سرعة الاستجابة • الأمن • في الوقت الفعلي",
+  "Système opérationnel": "النظام يعمل بشكل طبيعي",
+  "· tous les services sont actifs": "· جميع الخدمات نشطة",
+  "Alerte immédiate": "تنبيه فوري",
+  "Alertes critiques": "التنبيهات الحرجة",
+  "Incidents en cours": "الحوادث الجارية",
+  "En traitement": "قيد المعالجة",
+  "8 dernières heures": "آخر 8 ساعات",
+  "Site actif": "موقع نشط",
+  "/ 0 site": "/ 0 موقع",
+  "Rechercher un site, un agent, un événement...": "ابحث عن موقع أو عون أو حدث...",
+  "Carte des sites": "خريطة المواقع",
+  "Voir tous les sites": "عرض كل المواقع",
+  "Flux en direct": "بث مباشر",
+  "Voir toutes les caméras": "عرض كل الكاميرات",
+  "Aucune caméra configurée": "لا توجد كاميرا مُعدّة",
+  "Activité par heure": "النشاط حسب الساعة",
+  "Répartition des alertes": "توزيع التنبيهات",
+  "IA": "ذكاء اصطناعي",
+  "Je peux vous aider à :": "يمكنني مساعدتك في:",
+  "Analyser les alertes": "تحليل التنبيهات",
+  "Rechercher un événement": "البحث عن حدث",
+  "Générer un rapport": "إنشاء تقرير",
+  "Vérifier l'état d'un site": "التحقق من حالة موقع",
+  "Posez votre question...": "اطرح سؤالك...",
+  "Envoyer": "إرسال"
 };
 
 // Many labels carry a leading/trailing icon or symbol (emoji, arrows, ✓, —)
@@ -540,9 +573,14 @@ function applyLanguage(lang = localStorage.getItem(I18N_KEY) || 'fr-ar'){
     ['placeholder','title','aria-label'].forEach(attr=>{
       const val = el.getAttribute?.(attr);
       if(!val) return;
-      const key = 'i18nOriginal'+attr;
-      if(!el.dataset[key]) el.dataset[key] = val;
-      const next = translateText(el.dataset[key], lang);
+      // Propriété JS directe, jamais el.dataset[...] : une clé contenant un
+      // tiret ("i18nOriginalaria-label") n'est pas un nom de propriété
+      // dataset valide — DOMStringMap la refuse (exception non rattrapée,
+      // qui interrompait tout le reste de la boucle de traduction dès le
+      // premier élément avec un aria-label, jamais détecté sans navigateur réel).
+      const key = '__i18nOriginal'+attr;
+      if(!el[key]) el[key] = val;
+      const next = translateText(el[key], lang);
       if(el.getAttribute(attr) !== next) el.setAttribute(attr, next);
     });
   });

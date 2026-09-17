@@ -45,30 +45,35 @@
   </div>
   <div class="nav-section">
     <div class="nav-title">Command Center</div>
-    <div class="nav-item" data-page="alertes"><span class="nav-icon">◉</span> Centre d’alertes</div>
-    <div class="nav-item" data-page="carte"><span class="nav-icon">🗺️</span> Carte</div>
-    <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Tableau de bord</div>
-    <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span> Main courante</div>
-    <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span> Journal d'incidents</div>
+    <div class="nav-item" data-page="alertes"><span class="nav-icon">◉</span><span>Centre d’alertes</span></div>
+    <div class="nav-item" data-page="carte"><span class="nav-icon">🗺️</span><span>Carte</span></div>
+    <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span>Tableau de bord</span></div>
+    <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span><span>Main courante</span></div>
+    <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span><span>Journal d'incidents</span></div>
   </div>
   <div class="nav-section">
     <div class="nav-title">Contrôle d'accès</div>
-    <div class="nav-item" data-page="vehicules"><span class="nav-icon">🚗</span> Accès véhicules</div>
-    <div class="nav-item" data-page="lapi"><span class="nav-icon">📷</span> Lecture plaque (LAPI)</div>
-    <div class="nav-item" data-page="pietons"><span class="nav-icon">🚶</span> Accès piétons</div>
-    <div class="nav-item" data-page="visiteurs"><span class="nav-icon">👥</span> Visiteurs</div>
-    <div class="nav-item" data-page="employes"><span class="nav-icon">👤</span> Employés</div>
+    <div class="nav-item" data-page="vehicules"><span class="nav-icon">🚗</span><span>Accès véhicules</span></div>
+    <div class="nav-item" data-page="lapi"><span class="nav-icon">📷</span><span>Lecture plaque (LAPI)</span></div>
+    <div class="nav-item" data-page="pietons"><span class="nav-icon">🚶</span><span>Accès piétons</span></div>
+    <div class="nav-item" data-page="visiteurs"><span class="nav-icon">👥</span><span>Visiteurs</span></div>
+    <div class="nav-item" data-page="employes"><span class="nav-icon">👤</span><span>Employés</span></div>
   </div>
   <div class="nav-section">
     <div class="nav-title">Infrastructure</div>
-    <div class="nav-item" data-page="parking"><span class="nav-icon">🅿️</span> Parking</div>
-    <div class="nav-item" data-page="badges"><span class="nav-icon">🪪</span> Badges & QR</div>
+    <div class="nav-item" data-page="parking"><span class="nav-icon">🅿️</span><span>Parking</span></div>
+    <div class="nav-item" data-page="badges"><span class="nav-icon">🪪</span><span>Badges & QR</span></div>
   </div>
   <div class="nav-section">
     <div class="nav-title">Analyse</div>
-    <div class="nav-item" data-page="rapports"><span class="nav-icon">📈</span> Rapports</div>
-    <div class="nav-item admin-only" data-page="utilisateurs"><span class="nav-icon">🛡️</span> Utilisateurs système</div>
-    <div class="nav-item admin-only" data-page="parametres"><span class="nav-icon">⚙️</span> Paramètres</div>
+    <div class="nav-item" data-page="rapports"><span class="nav-icon">📈</span><span>Rapports</span></div>
+    <div class="nav-item admin-only" data-page="utilisateurs"><span class="nav-icon">🛡️</span><span>Utilisateurs système</span></div>
+    <div class="nav-item admin-only" data-page="parametres"><span class="nav-icon">⚙️</span><span>Paramètres</span></div>
+  </div>
+  <button class="sidebar-collapse" type="button" onclick="toggleSidebarCollapse()" aria-label="Réduire le menu"><span class="nav-icon">«</span><span>Réduire le menu</span></button>
+  <div class="sidebar-footer">
+    <img src="assets/iron-global-securite-logo.png" alt="">
+    <div><strong>IRON Global Security</strong>Votre sécurité, notre engagement</div>
   </div>
 </aside>
 
@@ -80,12 +85,21 @@
       <div class="page-title" id="pageTitle">Tableau de bord</div>
       <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
     </div>
+    <div class="topbar-search">
+      <!-- Raccourci rapide vers les pages existantes (données déjà en mémoire
+           côté client, aucune API dédiée) — pas une recherche plein texte sur
+           sites/agents/événements, qui resterait à construire séparément. -->
+      <input type="text" id="topbarSearch" placeholder="Rechercher un site, un agent, un événement..." autocomplete="off"
+        oninput="filterTopbarSearch(this.value)" onkeydown="if(event.key==='Enter') runTopbarSearch(this.value)">
+      <kbd>⌘K</kbd>
+      <div class="topbar-search-results" id="topbarSearchResults" hidden></div>
+    </div>
     <div class="topbar-right">
       <!-- PG-15 : bouton de détresse, appui maintenu ~1,5 s. Dans la barre
            supérieure : toujours visible et actionnable quelle que soit la
            page affichée, sans flotter par-dessus la navigation. -->
-      <button class="sos-button" id="sosButton" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
-        <span class="sos-fill" id="sosFill"></span>
+      <button class="sos-button sos-trigger" id="sosButton" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
+        <span class="sos-fill"></span>
         <span class="sos-label">SOS</span>
       </button>
       <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
@@ -147,31 +161,98 @@
   </section>
   <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
-    <div class="clean-hero" id="cleanHeroStatus">
-      <div class="clean-orb">
+    <div class="clean-hero ui2-hero" id="cleanHeroStatus">
+      <div class="clean-orb" style="display:none">
         <div class="clean-orb-ring"></div>
         <img src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
       </div>
-      <div class="clean-hero-copy">
+      <div class="ui2-hero-photo" aria-hidden="true"></div>
+      <div class="clean-hero-copy ui2-hero-copy">
         <div class="clean-eyebrow">Centre de contrôle sécurité</div>
-        <h2>Votre site est sous surveillance active</h2>
-        <p>Suivez les accès, incidents, visiteurs et mouvements en temps réel depuis un tableau de bord clair.</p>
+        <h2>Bonjour, <span id="heroUsername">—</span> <span aria-hidden="true">👋</span></h2>
+        <p class="ui2-hero-brand">Bienvenue sur SécuriSite</p>
+        <p>Surveillance • Réactivité • Sécurité • En temps réel</p>
         <div class="clean-actions">
           <button class="btn btn-primary" onclick="runDashboardAnalysis()">Analyser maintenant</button>
           <button class="btn btn-outline" onclick="navTo('rapports')">Voir les rapports</button>
         </div>
       </div>
-      <div class="clean-score">
-        <span>État système</span>
-        <strong id="cleanStatusText">OK</strong>
+      <div class="ui2-hero-side">
+        <div class="ui2-hero-time">
+          <div class="ui2-hero-date"><span aria-hidden="true">📅</span><span id="heroDate">—</span></div>
+          <div class="ui2-hero-clock" id="heroClock">--:--:--</div>
+          <div class="ui2-hero-status">
+            <span class="live-dot"></span>
+            <div><strong>Système opérationnel</strong><small><span id="cleanStatusText">OK</span> · tous les services sont actifs</small></div>
+          </div>
+        </div>
+        <button class="sos-button sos-trigger ui2-hero-sos" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
+          <span class="sos-fill"></span>
+          <span class="sos-label">SOS<br><small>Alerte immédiate</small></span>
+        </button>
       </div>
     </div>
-    <div class="kpi-grid">
+    <div class="kpi-grid ui2-kpi-grid">
+      <div class="kpi-card danger ui2-kpi"><div class="ui2-kpi-icon">🔔</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-alertes-critiques">0</div><div class="kpi-label">Alertes critiques</div><div class="kpi-trend">À traiter</div></div></div>
+      <div class="kpi-card warning ui2-kpi"><div class="ui2-kpi-icon">⚠️</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-incidents-encours">0</div><div class="kpi-label">Incidents en cours</div><div class="kpi-trend">En traitement</div></div></div>
+      <div class="kpi-card info ui2-kpi"><div class="ui2-kpi-icon">👥</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-agents-service">0</div><div class="kpi-label">Agents en service</div><div class="kpi-trend">8 dernières heures</div></div></div>
+      <div class="kpi-card success ui2-kpi"><div class="ui2-kpi-icon">🏢</div><div class="ui2-kpi-body"><div class="kpi-value" id="kpi-sites-actifs">0</div><div class="kpi-label">Site actif</div><div class="kpi-trend" id="kpi-sites-total">/ 0 site</div></div></div>
+    </div>
+    <div class="kpi-grid" style="margin-top:-8px">
       <div class="kpi-card success"><div class="kpi-label">Présents sur site</div><div class="kpi-value" id="kpi-presents">0</div><div class="kpi-trend">Actualisation temps réel</div></div>
       <div class="kpi-card info"><div class="kpi-label">Visiteurs aujourd'hui</div><div class="kpi-value" id="kpi-visiteurs">0</div><div class="kpi-trend">En attente / validés</div></div>
       <div class="kpi-card warning"><div class="kpi-label">Véhicules entrés</div><div class="kpi-value" id="kpi-vehicules">0</div><div class="kpi-trend">24 dernières heures</div></div>
       <div class="kpi-card danger"><div class="kpi-label">Incidents ouverts</div><div class="kpi-value" id="kpi-incidents">0</div><div class="kpi-trend down">À traiter</div></div>
     </div>
+
+    <div class="ui2-grid-3">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📍 Carte des sites</div><button class="btn btn-sm btn-outline" onclick="navTo('carte')">Voir tous les sites →</button></div>
+        <div class="card-body">
+          <svg id="dashMapCanvas" viewBox="0 0 400 260" role="img" aria-label="Carte relative des sites et alertes géolocalisés"></svg>
+          <div class="empty-state" id="dashMapEmpty">Aucune coordonnée GPS disponible dans ce périmètre.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🛡️ Incidents récents</div><button class="btn btn-sm btn-outline" onclick="navTo('incidents')">Tout voir →</button></div>
+        <div class="card-body" id="dashIncidentsRecents"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📹 Flux en direct</div><button class="btn btn-sm btn-outline" onclick="navTo('lapi')">Voir toutes les caméras →</button></div>
+        <div class="card-body" id="dashLiveFeed"></div>
+      </div>
+    </div>
+
+    <div class="ui2-grid-3">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 Activité par heure</div></div>
+        <div class="card-body"><canvas id="chartHourly" height="180"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Répartition des alertes</div></div>
+        <div class="card-body"><canvas id="chartAlertsDonut" height="150"></canvas><div id="dashAlertsLegend" class="ui2-donut-legend"></div></div>
+      </div>
+      <div class="card ui2-assistant-card">
+        <div class="card-header"><div class="card-title">🤖 Assistant SOC</div><span class="badge info">IA</span></div>
+        <div class="card-body">
+          <div id="dashAssistantHelp">
+            <p>Je peux vous aider à :</p>
+            <ul>
+              <li>Analyser les alertes</li>
+              <li>Rechercher un événement</li>
+              <li>Générer un rapport</li>
+              <li>Vérifier l'état d'un site</li>
+            </ul>
+          </div>
+          <div id="dashAssistantAnswer" hidden></div>
+          <form class="ui2-assistant-form" onsubmit="return dashAssistantAsk()">
+            <input id="dashAssistantQuestion" aria-label="Question à l’assistant SOC" placeholder="Posez votre question..." maxlength="1000">
+            <button class="btn btn-primary" type="submit" aria-label="Envoyer">➤</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div class="grid-2">
       <div class="card"><div class="card-header"><div class="card-title">📊 Flux d'accès — 7 derniers jours</div></div><div class="card-body"><canvas id="chartFlux" height="180"></canvas></div></div>
       <div class="card"><div class="card-header"><div class="card-title">🥧 Répartition des accès</div></div><div class="card-body"><canvas id="chartRepartition" height="180"></canvas></div></div>

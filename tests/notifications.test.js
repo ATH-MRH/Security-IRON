@@ -87,7 +87,7 @@ function fixture(data = {}) {
     // additive for AlertCenter#assistantAsk()/confirmSuggestion().
     post:async(p,b)=>{state.posts.push({p,b});if(routes[p] instanceof Error)throw routes[p];if(typeof routes[p]==='function')return routes[p]();return structuredClone(routes[p]);},
     getUser:()=>({id:1})},
-    document: {activeElement:null,getElementById:element,querySelector:()=>dot,querySelectorAll:selector=>selector==='[data-action]'?element('ac-detail').querySelectorAll(selector):selector==='[data-bell-alert]'||selector==='[data-bell-notification]'?buttons.filter(b=>Object.hasOwn(b.dataset,selector==='[data-bell-alert]'?'bellAlert':'bellNotification')):[]},
+    document: {activeElement:null,getElementById:element,addEventListener(){},querySelector:()=>dot,querySelectorAll:selector=>selector==='[data-action]'?element('ac-detail').querySelectorAll(selector):selector==='[data-bell-alert]'||selector==='[data-bell-notification]'?buttons.filter(b=>Object.hasOwn(b.dataset,selector==='[data-bell-alert]'?'bellAlert':'bellNotification')):[]},
     showModal:(title,html)=>{state.html=html;buttons=[...html.matchAll(/<button[^>]*data-bell-(alert|notification)="([^"]+)"([^>]*)>/g)].map(m=>({dataset:{[m[1]==='alert'?'bellAlert':'bellNotification']:m[2],target:m[3].match(/data-target="([^"]+)"/)?.[1]}}));},
     closeModal:()=>{state.closed=true;},isAdmin:()=>true,lapiStream:null,notify:m=>state.errors.push(m),
     Realtime: realtimeStub,

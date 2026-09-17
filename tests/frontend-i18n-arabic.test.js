@@ -35,6 +35,68 @@ function loadUi() {
   };
 }
 
+// Minimal but faithful DOM stub for applyLanguage() itself — the one part of
+// ui.js's i18n machinery no other test here exercises for real (translateText
+// is pure; this walks the DOM). `dataset` enforces the exact restriction a
+// real browser's DOMStringMap does (rejects a computed property name that
+// contains a character outside [A-Za-z0-9]) — this is precisely what caught
+// a real, previously-undetected bug live in Playwright: applyLanguage() used
+// to write to `el.dataset['i18nOriginalaria-label']`, a key containing a
+// literal hyphen, which a real browser throws on ("is not a valid property
+// name") — uncaught, aborting the rest of the translation loop for the whole
+// page on the very first element with an aria-label. Never caught by the
+// pure translateText() tests above because none of them touch a DOM at all.
+function strictDataset(){
+  return new Proxy({}, {
+    set(target, prop, value){
+      if(typeof prop === 'string' && !/^[A-Za-z0-9]+$/.test(prop)){
+        throw new TypeError(`Failed to set a named property '${prop}' on 'DOMStringMap': '${prop}' is not a valid property name.`);
+      }
+      target[prop] = value; return true;
+    },
+    get(target, prop){ return target[prop]; },
+  });
+}
+function fakeElement({ tagName = 'DIV', text = '', attrs = {} } = {}){
+  const attributes = { ...attrs };
+  const classes = new Set();
+  return {
+    tagName,
+    dataset: strictDataset(),
+    classList: { add:c=>classes.add(c), remove:c=>classes.delete(c), contains:c=>classes.has(c) },
+    childNodes: text ? [{ nodeType: 3, nodeValue: text }] : [],
+    getAttribute: k => (k in attributes ? attributes[k] : null),
+    setAttribute: (k,v) => { attributes[k]=v; },
+    value: '',
+  };
+}
+function loadUiWithDom(elements){
+  const documentElement = { lang:'', dir:'' };
+  const store = {};
+  const localStorage = { getItem:k=>store[k]??null, setItem:(k,v)=>{store[k]=String(v);} };
+  const document = {
+    documentElement,
+    querySelectorAll: sel => sel === '.lang-select' ? [] : sel === 'body *' ? elements : [],
+  };
+  const context = vm.createContext({ document, localStorage, Node:{ TEXT_NODE:3 } });
+  new vm.Script(uiSource, { filename: 'ui.js' }).runInContext(context);
+  const run = expr => new vm.Script(expr).runInContext(context);
+  return { applyLanguage: lang => run(`applyLanguage(${JSON.stringify(lang)})`) };
+}
+
+test('applyLanguage() translates aria-label/title/placeholder attributes without throwing (regression: DOMStringMap key with a hyphen)', () => {
+  const elements = [
+    fakeElement({ tagName:'BUTTON', attrs:{ 'aria-label': 'Ouvrir le menu' } }),
+    fakeElement({ tagName:'INPUT', attrs:{ placeholder: 'Ex: 123456-114-16' } }),
+    fakeElement({ tagName:'DIV', text: 'Tableau de bord' }),
+  ];
+  const { applyLanguage } = loadUiWithDom(elements);
+  assert.doesNotThrow(() => applyLanguage('ar'));
+  assert.equal(elements[0].getAttribute('aria-label'), 'فتح القائمة');
+  assert.equal(elements[1].getAttribute('placeholder'), 'مثال: 123456-114-16');
+  assert.equal(elements[2].childNodes[0].nodeValue, 'لوحة التحكم');
+});
+
 test('the AR dictionary loads and is substantial (not emptied out)', () => {
   const { I18N_AR } = loadUi();
   assert.ok(Object.keys(I18N_AR).length > 400,
@@ -121,7 +183,7 @@ function stripSymbols(s) {
 // in Arabic UIs too, same as "PDF" or "URL"), and one example placeholder
 // person name (form sample data, not UI chrome).
 const ALLOWED_UNTRANSLATED = new Set([
-  'FR / AR', 'Français', 'SOS', 'OK',
+  'FR / AR', 'Français', 'SOS', 'OK', '⌘K',
   '📥 CSV', '24h', '7j', 'VL', 'PL', '2R', 'N1', 'N2', 'N3', 'N4',
   'Marie Dupont',
 ]);

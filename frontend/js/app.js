@@ -62,6 +62,60 @@ function toggleSidebar(){
   document.getElementById('sidebar')?.classList.contains('open') ? closeSidebar() : openSidebar();
 }
 
+// Réduction desktop (icônes seules) — distincte du tiroir mobile ci-dessus.
+// Préférence mémorisée par appareil uniquement (localStorage), jamais un
+// réglage serveur : purement une commodité d'affichage.
+const SIDEBAR_COLLAPSE_KEY = 'securisite_sidebar_collapsed';
+function toggleSidebarCollapse(){
+  const sidebar = document.getElementById('sidebar');
+  if(!sidebar) return;
+  const collapsed = sidebar.classList.toggle('collapsed');
+  try{ localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed ? '1' : '0'); }catch{}
+}
+(function restoreSidebarCollapse(){
+  try{
+    if(localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1') document.getElementById('sidebar')?.classList.add('collapsed');
+  }catch{}
+})();
+
+// Recherche rapide de la topbar : raccourci vers une page existante par son
+// intitulé de menu (données déjà en mémoire, aucune API dédiée) — pas une
+// recherche plein texte sur les sites/agents/événements eux-mêmes.
+function topbarSearchIndex(){
+  return [...document.querySelectorAll('.nav-item[data-page]')].map(el=>({
+    page: el.dataset.page,
+    label: el.querySelector('span:last-child')?.textContent.trim() || el.dataset.page,
+  }));
+}
+function filterTopbarSearch(query){
+  const results = document.getElementById('topbarSearchResults');
+  if(!results) return;
+  const q = query.trim().toLowerCase();
+  if(!q){ results.hidden = true; results.innerHTML=''; return; }
+  const matches = topbarSearchIndex().filter(e=>e.label.toLowerCase().includes(q)).slice(0,6);
+  if(!matches.length){ results.hidden = true; results.innerHTML=''; return; }
+  results.innerHTML = matches.map(m=>`<button type="button" onclick="runTopbarSearch('${escapeHtml(m.label)}')">${escapeHtml(m.label)}</button>`).join('');
+  results.hidden = false;
+}
+function runTopbarSearch(query){
+  const q = query.trim().toLowerCase();
+  const match = topbarSearchIndex().find(e=>e.label.toLowerCase().includes(q));
+  const input = document.getElementById('topbarSearch');
+  const results = document.getElementById('topbarSearchResults');
+  if(match) navTo(match.page);
+  if(input) input.value='';
+  if(results){ results.hidden = true; results.innerHTML=''; }
+}
+document.addEventListener('keydown', e=>{
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k'){
+    e.preventDefault();
+    document.getElementById('topbarSearch')?.focus();
+  }
+});
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.topbar-search')) document.getElementById('topbarSearchResults')?.setAttribute('hidden','');
+});
+
 function navTo(page){
   closeSidebar(); // un choix de page referme toujours le menu mobile
   if((page==='utilisateurs' || page==='parametres') && !isAdmin()) return navTo('dashboard');
@@ -98,18 +152,60 @@ function switchTab(el, target){
 }
 
 /* ===== DASHBOARD ===== */
-let chartFluxInst, chartRepInst;
+let chartFluxInst, chartRepInst, chartHourlyInst, chartAlertsDonutInst;
 async function loadDashboard(){
-  await Promise.all([refresh('vehicules'),refresh('visiteurs'),refresh('employes'),refresh('incidents'),refresh('pietons'),refresh('parking')]);
-  const stats = await API.get('/stats/dashboard');
+  await Promise.all([refresh('vehicules'),refresh('visiteurs'),refresh('employes'),refresh('incidents'),refresh('pietons'),refresh('parking'),refresh('maincourante')]);
+  const [stats, alertRows, siteRows] = await Promise.all([
+    API.get('/stats/dashboard'),
+    API.get('/alerts').catch(()=>[]),       // Centre d'alertes déjà autorisé (PG-8) ; dégradé silencieux si indisponible
+    API.get('/map/sites').catch(()=>[]),    // référentiel sites (PG-6), même route que la page Carte
+  ]);
   document.getElementById('kpi-presents').textContent = stats.employes_actifs + stats.visiteurs_present + stats.vehicules_sur_site;
   document.getElementById('kpi-visiteurs').textContent = stats.visiteurs_total;
   document.getElementById('kpi-vehicules').textContent = stats.vehicules_24h;
   document.getElementById('kpi-incidents').textContent = stats.incidents_ouverts;
+  document.getElementById('kpi-incidents-encours').textContent = stats.incidents_ouverts;
+  document.getElementById('kpi-alertes-critiques').textContent = SocKpis.compute(alertRows).critical;
+  document.getElementById('kpi-agents-service').textContent = agentsEnServiceCount();
+  document.getElementById('kpi-sites-actifs').textContent = siteRows.length;
+  document.getElementById('kpi-sites-total').textContent = `/ ${siteRows.length} site${siteRows.length>1?'s':''}`;
+  updateHeroGreeting();
   updateCleanHeroStatus(stats);
   drawChartFlux(); drawChartRepartition();
+  drawChartHourly(alertRows); drawChartAlertsDonut(alertRows);
+  renderDashboardMap(siteRows, alertRows);
+  renderDashboardIncidents();
+  renderDashboardLiveFeed();
   renderActivite(); renderAlertes(); renderParkingQuick();
   if(API.getUser()?.role === 'admin') await loadAdminDashboard();
+}
+
+// Même définition que la carte "Agents en service" de Main courante
+// (frontend/js/app.js#renderMainCourante) : agents distincts ayant
+// enregistré une entrée dans les 8 dernières heures — aucune notion de
+// planning/effectif prévu n'existe dans ce code base, jamais simulée ici.
+function agentsEnServiceCount(){
+  const limite = Date.now()-8*3600*1000;
+  const agents = new Set();
+  (cache.mainCourante||[]).filter(e=>new Date(e.datetime).getTime()>limite).forEach(e=>agents.add(e.agent+'|'+e.poste));
+  return agents.size;
+}
+
+let heroClockTimer;
+function updateHeroGreeting(){
+  const user = API.getUser();
+  const nameEl = document.getElementById('heroUsername');
+  if(nameEl) nameEl.textContent = user?.nom_complet || user?.username || '—';
+  tickHeroClock();
+  clearInterval(heroClockTimer);
+  heroClockTimer = setInterval(tickHeroClock, 1000);
+}
+function tickHeroClock(){
+  const now = new Date();
+  const dateEl = document.getElementById('heroDate');
+  const clockEl = document.getElementById('heroClock');
+  if(dateEl) dateEl.textContent = now.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  if(clockEl) clockEl.textContent = now.toLocaleTimeString('fr-FR');
 }
 
 function updateCleanHeroStatus(stats){
@@ -157,6 +253,149 @@ function renderParkingQuick(){
     const cls = taux>85?'danger':(taux>60?'warning':'success');
     return `<div class="kpi-card ${cls}"><div class="kpi-label">${escapeHtml(z.nom)}</div><div class="kpi-value">${occupe}/${z.total}</div><div class="kpi-trend">${taux}% occupé</div></div>`;
   }).join('');
+}
+
+/* ===== Tableau de bord — panneaux du modèle UI 2.0 =====
+   Réutilisent des routes/fonctions déjà existantes ailleurs dans
+   l'application (MapMarkers/MapGeometry de la page Carte, SocKpis du
+   Centre d'alertes, /alerts/assistant) — aucune nouvelle route, aucune
+   donnée simulée. */
+
+// Même projection relative que la page Carte (frontend/js/map.js),
+// rendue dans un <svg> distinct (#dashMapCanvas) pour ne jamais entrer en
+// conflit avec #carte-canvas si les deux sont dans le DOM à la fois.
+function renderDashboardMap(siteRows, alertRows){
+  const svg = document.getElementById('dashMapCanvas');
+  const empty = document.getElementById('dashMapEmpty');
+  if(!svg || !empty) return;
+  const { box, markers } = MapMarkers.compute(siteRows, alertRows, { width:400, height:260, padding:24 });
+  empty.hidden = !!box;
+  svg.style.display = box ? 'block' : 'none';
+  if(!box){ svg.innerHTML=''; return; }
+  svg.innerHTML = markers.map(m=>{
+    if(m.kind==='site') return `<g class="carte-marker carte-site" transform="translate(${m.x},${m.y})" role="img" aria-label="Site ${escapeHtml(m.label)}"><rect x="-5" y="-5" width="10" height="10" rx="2"></rect><title>${escapeHtml(m.label)}</title></g>`;
+    const sos = m.kind==='sos';
+    const color = m.level===4?'var(--danger)':m.level===3?'#e0793c':m.level===2?'var(--warning)':'var(--text-muted)';
+    return `<g class="carte-marker carte-alert${sos?' carte-sos':''}" transform="translate(${m.x},${m.y})" role="img" aria-label="${sos?'SOS':'Alerte'} ${escapeHtml(m.label)}"><circle r="${sos?7:5}" style="fill:${color}"></circle><title>${escapeHtml(m.label)}</title></g>`;
+  }).join('');
+}
+
+function renderDashboardIncidents(){
+  const c = document.getElementById('dashIncidentsRecents');
+  if(!c) return;
+  const recents = [...cache.incidents].sort((a,b)=>new Date(b.datetime)-new Date(a.datetime)).slice(0,4);
+  if(!recents.length){ c.innerHTML = '<div class="empty-state">Aucun incident récent</div>'; return; }
+  const icon = g => g==='critique'?'🚨':g==='majeur'?'⚠️':'ℹ️';
+  c.innerHTML = recents.map(i=>`
+    <div class="ui2-incident-row ${i.gravite}" onclick="navTo('incidents')" style="cursor:pointer">
+      <div class="ui2-incident-icon">${icon(i.gravite)}</div>
+      <div class="ui2-incident-body">
+        <strong>${escapeHtml(i.type)}</strong>
+        <div class="ui2-incident-meta">
+          <span class="badge ${i.gravite==='critique'?'danger':(i.gravite==='majeur'?'warning':'info')}">${escapeHtml(i.gravite)}</span>
+          <span>${escapeHtml(i.lieu||'')}</span>
+        </div>
+        <div class="ui2-incident-meta"><span>${fmtDateTime(i.datetime)}</span><span>${escapeHtml(i.ref||'')}</span></div>
+      </div>
+      <div class="ui2-incident-chevron">›</div>
+    </div>`).join('');
+}
+
+// Aucun fournisseur push/caméra "toujours actif" simulé : liste réelle
+// (GET /camera/list, PG-30), registre vide par défaut => état vide honnête,
+// jamais une image inventée. Un aperçu (ticket + snapshot via /camera/proxy),
+// pas un flux vidéo persistant sur le tableau de bord.
+let dashLiveFeedCameras = [], dashLiveFeedIndex = 0;
+async function renderDashboardLiveFeed(){
+  const c = document.getElementById('dashLiveFeed');
+  if(!c) return;
+  try{
+    dashLiveFeedCameras = await API.get('/camera/list');
+  }catch{ dashLiveFeedCameras = []; }
+  if(!dashLiveFeedCameras.length){
+    c.innerHTML = '<div class="empty-state">Aucune caméra configurée</div>';
+    return;
+  }
+  dashLiveFeedIndex = 0;
+  await paintDashLiveFeed();
+}
+async function paintDashLiveFeed(){
+  const c = document.getElementById('dashLiveFeed');
+  const cam = dashLiveFeedCameras[dashLiveFeedIndex];
+  if(!c || !cam) return;
+  let src = '';
+  try{
+    const { ticket } = await API.post('/camera/ticket', { camera_id: cam.id });
+    src = `/api/camera/proxy?camera_id=${encodeURIComponent(cam.id)}&ticket=${encodeURIComponent(ticket)}`;
+  }catch{ /* caméra momentanément indisponible : cadre visible, pas d'image */ }
+  const dots = dashLiveFeedCameras.map((_,i)=>`<span class="${i===dashLiveFeedIndex?'active':''}"></span>`).join('');
+  const multi = dashLiveFeedCameras.length>1;
+  c.innerHTML = `
+    <div class="ui2-live-feed">
+      ${src?`<img src="${src}" alt="${escapeHtml(cam.name)}" onerror="this.remove()">`:''}
+      <div class="ui2-live-feed-badge"><span class="live-dot"></span>${fmtTime(new Date())}</div>
+      <div class="ui2-live-feed-caption"><strong>${escapeHtml(cam.name)}</strong><small>${escapeHtml(cam.type||'')}</small></div>
+      ${multi?'<button type="button" class="ui2-live-feed-prev" onclick="dashLiveFeedNav(-1)" aria-label="Caméra précédente">‹</button><button type="button" class="ui2-live-feed-next" onclick="dashLiveFeedNav(1)" aria-label="Caméra suivante">›</button>':''}
+    </div>
+    ${multi?`<div class="ui2-live-feed-dots">${dots}</div>`:''}`;
+}
+function dashLiveFeedNav(delta){
+  if(!dashLiveFeedCameras.length) return;
+  dashLiveFeedIndex = (dashLiveFeedIndex + delta + dashLiveFeedCameras.length) % dashLiveFeedCameras.length;
+  paintDashLiveFeed();
+}
+
+// Même agrégation que le Centre d'alertes (SocKpis), rendue en barres/heure
+// et en anneau — jamais un second calcul divergent des mêmes données.
+function drawChartHourly(alertRows){
+  const canvas = document.getElementById('chartHourly');
+  if(!canvas || typeof Chart==='undefined') return;
+  const hours = Array.from({length:24},(_,h)=>h);
+  const counts = hours.map(()=>0);
+  alertRows.forEach(a=>{ const h = new Date(a.created_at).getHours(); if(h>=0 && h<24) counts[h]++; });
+  if(chartHourlyInst) chartHourlyInst.destroy();
+  chartHourlyInst = new Chart(canvas, { type:'bar', data:{
+    labels: hours.map(h=>String(h).padStart(2,'0')+'h'),
+    datasets:[{ data:counts, backgroundColor:'rgba(37,117,252,.65)', borderRadius:4, maxBarThickness:14 }],
+  }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } } });
+}
+function drawChartAlertsDonut(alertRows){
+  const canvas = document.getElementById('chartAlertsDonut');
+  const legend = document.getElementById('dashAlertsLegend');
+  if(!canvas || typeof Chart==='undefined') return;
+  const active = alertRows.filter(a=>!['CLOTUREE','FAUSSE_ALERTE','ANNULEE','RESOLUE'].includes(a.status));
+  const groups = [
+    { label:'Critiques', color:'#ff5f6d', count: active.filter(a=>a.level>=3).length },
+    { label:'Moyennes', color:'#f7a928', count: active.filter(a=>a.level===2).length },
+    { label:'Faibles', color:'#2575fc', count: active.filter(a=>a.level<=1).length },
+  ];
+  const total = groups.reduce((s,g)=>s+g.count,0);
+  if(chartAlertsDonutInst) chartAlertsDonutInst.destroy();
+  chartAlertsDonutInst = new Chart(canvas, { type:'doughnut', data:{
+    labels: groups.map(g=>g.label),
+    datasets:[{ data: groups.map(g=>g.count), backgroundColor: groups.map(g=>g.color), borderWidth:0 }],
+  }, options:{ cutout:'70%', plugins:{legend:{display:false}} } });
+  if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span>${g.label}<strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
+}
+
+// Même route que AlertCenter.assistantAsk() (/alerts/assistant) — un second
+// point d'accès sur le tableau de bord, jamais un second moteur.
+async function dashAssistantAsk(){
+  const input = document.getElementById('dashAssistantQuestion');
+  const help = document.getElementById('dashAssistantHelp');
+  const panel = document.getElementById('dashAssistantAnswer');
+  const question = input?.value.trim();
+  if(!question || !panel) return false;
+  if(help) help.hidden = true;
+  panel.hidden = false;
+  panel.innerHTML = '<p role="status">Réflexion…</p>';
+  try{
+    const r = await API.post('/alerts/assistant', { question });
+    panel.innerHTML = `<div class="ac-ai-badge">✨ Généré par IA — à vérifier, jamais une décision automatique</div><p>${escapeHtml(r.text)}</p>`;
+  }catch(err){
+    panel.innerHTML = `<p role="alert">Assistant indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+  return false;
 }
 
 async function loadAdminDashboard(){
