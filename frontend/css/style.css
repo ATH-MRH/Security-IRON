@@ -1369,6 +1369,11 @@ body.role-agent .admin-only{ display:none !important; }
 }
 .nav-item.active::after{display:none}
 .nav-item:hover .nav-icon,.nav-item.active .nav-icon{color:inherit!important;filter:none!important}
+.nav-badge{
+  margin-inline-start:auto;background:var(--danger);color:#fff;font-size:10px;font-weight:700;
+  border-radius:999px;padding:1px 7px;min-width:18px;text-align:center;line-height:1.5;flex:0 0 auto;
+}
+.nav-item.active .nav-badge{background:rgba(255,255,255,.9);color:var(--sidebar-active)}
 
 /* Pied de sidebar : image de marque, cohérent avec le bloc .brand du haut
    (même logo) — purement décoratif, aucune nouvelle donnée/fonction. */
@@ -1454,7 +1459,17 @@ body.role-agent .admin-only{ display:none !important; }
 .topbar .avatar{background:var(--primary)!important;color:#fff!important}
 .topbar .btn-logout{background:var(--bg-2)!important;border-color:var(--border)!important;color:var(--text-muted)!important;border-radius:10px}
 .topbar .btn-logout:hover{color:var(--danger)!important;border-color:var(--danger)!important;background:transparent!important}
-.topbar-right select.lang-select{border-radius:10px!important}
+.topbar-right select.lang-select{border-radius:999px!important;font-weight:700!important;background:var(--bg-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23657287' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center!important;appearance:none!important;-webkit-appearance:none!important;padding-inline-end:26px!important}
+[dir="rtl"] .topbar-right select.lang-select{background-position:left 10px center!important}
+/* Pastille numérique du bell : même compteur réel que NotificationBell
+   (alertes non acquittées + incidents ouverts + visiteurs attendus) —
+   un simple point avant ce correctif, jamais de nombre inventé. */
+.topbar .btn-icon .notif-dot{
+  top:-4px;inset-inline-end:-4px;width:auto;height:auto;min-width:16px;
+  padding:1px 4px;border-radius:999px;background:var(--danger)!important;
+  color:#fff;font-size:9px;font-weight:800;line-height:1.4;box-shadow:0 2px 6px rgba(255,95,109,.5)!important;
+  animation:none;
+}
 
 /* --- Hero du tableau de bord --- */
 /* .clean-orb masqué en ligne dans le HTML (aucune donnée perdue :

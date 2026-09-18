@@ -279,6 +279,8 @@ const I18N_AR = {
   "Command Center": "مركز القيادة",
   "Centre d’alertes": "مركز التنبيهات",
   "Carte": "الخريطة",
+  "Carte & sites": "الخريطة والمواقع",
+  "Véhicules": "المركبات",
   "Carte relative des sites et alertes géolocalisés": "خريطة نسبية للمواقع والتنبيهات المحددة الموقع",
   "Sites, zones et événements géolocalisés — vue relative, sans fond de carte réel.": "المواقع والمناطق والأحداث المحددة الموقع — عرض نسبي، دون خلفية خريطة حقيقية.",
   "Aucune coordonnée GPS disponible dans ce périmètre.": "لا تتوفر إحداثيات GPS في هذا النطاق.",

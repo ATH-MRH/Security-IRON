@@ -24,8 +24,16 @@ const NotificationBell = (() => {
     if (!dot) return;
     const total = model.pending.length + model.incidentCount + model.visitorCount;
     dot.style.display = total || model.errors.length ? '' : 'none';
+    dot.textContent = total > 0 ? (total > 99 ? '99+' : String(total)) : '';
     dot.parentElement.title = `${model.pending.length} alerte(s) non acquittée(s), ${model.visitorCount} visiteur(s) attendu(s), ${model.incidentCount} incident(s) ouvert(s)` + (model.errors.length ? ' — données partielles' : '');
     dot.parentElement.setAttribute('aria-label', dot.parentElement.title);
+    // Rangée SOC dans la sidebar : même compteur d'alertes non acquittées
+    // que celui déjà calculé ci-dessus, jamais un second calcul divergent.
+    const navBadge = document.getElementById('navAlertesBadge');
+    if (navBadge) {
+      navBadge.hidden = model.pending.length === 0;
+      navBadge.textContent = model.pending.length > 99 ? '99+' : String(model.pending.length);
+    }
   }
   function refresh() {
     if (!refreshing) refreshing = read().then(badge).finally(() => { refreshing = null; });
