@@ -176,6 +176,25 @@ test('an expired subscription (provider reports expired) is removed automaticall
   } finally { push.setProvider(fakeProvider); }
 });
 
+test('PCS01 (Lot B): GET /push/public-key returns null when no real VAPID key is configured (the honest, current production state)', async () => {
+  delete process.env.SECURISITE_VAPID_PUBLIC_KEY;
+  const r = await request('GET', '/push/public-key', undefined, ownToken);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { publicKey: null });
+});
+
+test('PCS01 (Lot B): GET /push/public-key reflects a configured key verbatim, never invented', async t => {
+  process.env.SECURISITE_VAPID_PUBLIC_KEY = 'a-test-public-key-value';
+  t.after(() => { delete process.env.SECURISITE_VAPID_PUBLIC_KEY; });
+  const r = await request('GET', '/push/public-key', undefined, ownToken);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { publicKey: 'a-test-public-key-value' });
+});
+
+test('PCS01 (Lot B): GET /push/public-key requires the same authentication/scope as the rest of /push (never a special-cased public route)', async () => {
+  assert.equal((await request('GET', '/push/public-key', undefined, null)).status, 401);
+});
+
 test('readiness requires push_subscriptions to exist (no append-only guard, no RLS: a device state table)', async () => {
   assert.deepEqual(PUSH, ['push_subscriptions']);
   assert.equal(PRIVILEGES.push_subscriptions, 'SELECT,INSERT,UPDATE,DELETE');

@@ -49,7 +49,7 @@ function loadApp() {
     addEventListener() {},
     documentElement: { setAttribute() {}, getAttribute: () => null },
   };
-  const context = vm.createContext({ document, window: { addEventListener() {} }, console });
+  const context = vm.createContext({ document, window: { addEventListener() {} }, console, navigator: {} });
   new vm.Script(appSource, { filename: 'app.js' }).runInContext(context);
   const get = expr => new vm.Script(expr).runInContext(context);
   return {

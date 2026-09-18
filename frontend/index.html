@@ -681,6 +681,10 @@
         <button class="btn btn-primary admin-only" onclick="sauverParametres()">Enregistrer</button>
       </div></div>
       <div class="card"><div class="card-header"><div class="card-title">🔐 Niveaux d'accès</div></div><div class="card-body"><table><thead><tr><th>Code</th><th>Libellé</th><th>Zones</th></tr></thead><tbody><tr><td><span class="badge muted">N1</span></td><td>Accueil</td><td>Hall, accueil</td></tr><tr><td><span class="badge info">N2</span></td><td>Bureaux</td><td>Hall, bureaux</td></tr><tr><td><span class="badge warning">N3</span></td><td>Production</td><td>+ ateliers</td></tr><tr><td><span class="badge danger">N4</span></td><td>Zone sensible</td><td>Toutes zones</td></tr></tbody></table></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🔔 Notifications push</div></div><div class="card-body">
+        <p id="pushStatusText">Vérification…</p>
+        <button class="btn btn-primary" id="pushEnableBtn" onclick="togglePush()" hidden>Activer les notifications critiques</button>
+      </div></div>
     </div>
   </div>
 
@@ -700,6 +704,7 @@
 <script src="js/alerts.js"></script>
 <script src="js/sos.js"></script>
 <script src="js/critical-alert.js"></script>
+<script src="js/push.js"></script>
 <script src="js/app.js"></script>
 <script>SOS.init();</script>
 <script>

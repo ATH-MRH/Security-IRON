@@ -1834,3 +1834,14 @@ body{
 :root[data-theme="dark"] .critical-alert-meta dd{color:var(--text-bright)}
 :root[data-theme="dark"] .critical-alert-hint{color:var(--text-dim)}
 .admin-action-tile strong{font-family:var(--font-body);text-transform:none;letter-spacing:0}
+
+/* Correctif systémique (PCS01, trouvé en vérification live sur le bouton
+   "Activer les notifications critiques") : de très nombreuses classes de ce
+   fichier posent `display` sans condition (.btn, .critical-alert-overlay,
+   etc.) — une spécificité de classe (auteur) l'emporte toujours sur
+   `[hidden]{display:none}` (attribut, feuille de style du navigateur), donc
+   .hidden=true en JS ne masquait JAMAIS réellement un élément portant l'une
+   de ces classes. Règle globale, en toute fin de feuille, avec !important
+   pour ne plus jamais dépendre de l'ordre/la spécificité d'une classe
+   quelconque ajoutée ailleurs — présente ou future. */
+[hidden]{display:none!important}

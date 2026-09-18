@@ -26,6 +26,15 @@ const cssSource = fs.readFileSync(path.resolve(__dirname, '../frontend/css/style
 test('the overlay has an explicit [hidden] CSS rule (author-stylesheet display:flex would otherwise always win)', () => {
   assert.match(cssSource, /\.critical-alert-overlay\[hidden\]\{display:none\}/);
 });
+
+// Regression, broader than the overlay alone: found live on the Lot B push
+// button (class="btn" hidden — .btn{display:inline-flex} beat [hidden]
+// exactly the same way). A GLOBAL, !important rule is the only fix that
+// protects every current AND future element carrying `hidden` next to a
+// class that also sets display — not just the two spots found by hand.
+test('a global [hidden]{display:none!important} rule exists — protects every hidden-attributed element app-wide, not just the ones found by hand', () => {
+  assert.match(cssSource, /^\[hidden\]\{display:none!important\}$/m);
+});
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDateTime = iso => (iso ? new Date(iso).toISOString() : '—');
 
