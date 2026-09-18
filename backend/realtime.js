@@ -43,7 +43,22 @@ function emit(type, payload) {
  * @returns () => void  désabonnement
  */
 function subscribe(matches, onEvent) {
-  const listener = event => { if (matches(event)) onEvent(event); };
+  // Audit SOS bout-en-bout : EventEmitter#emit() appelle chaque abonné de
+  // façon SYNCHRONE et DANS L'ORDRE — un abonné qui lève (ex. un flux SSE
+  // dont le socket vient de se fermer, backend/realtime-routes.js) arrêtait
+  // net la diffusion aux abonnés suivants ET remontait jusqu'à l'appelant de
+  // emit(), c.-à-d. jusqu'à la requête qui vient de créer l'alerte
+  // (alert-core/service.js#create, après le COMMIT). Un SOS déjà enregistré
+  // avec succès recevait alors une réponse 500 — un faux « échec » causé par
+  // un abonné SANS RAPPORT avec l'émetteur. Isolé ici, au point d'entrée
+  // unique de tous les abonnés (présents et futurs), plutôt que dans chaque
+  // implémentation d'onEvent : aucun abonné cassé ne doit jamais empêcher ni
+  // la diffusion aux autres, ni la réussite de l'action qui a émis l'événement.
+  const listener = event => {
+    if (!matches(event)) return;
+    try { onEvent(event); }
+    catch (err) { console.error('[realtime] abonné en échec, ignoré :', err?.message || err); }
+  };
   bus.on('event', listener);
   return () => bus.off('event', listener);
 }

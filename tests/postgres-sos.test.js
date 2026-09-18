@@ -134,3 +134,81 @@ test('service.sos is exported and the architecture contract still holds (no new 
   const service = require('../backend/alert-core/service');
   assert.equal(typeof service.sos, 'function');
 });
+
+// ============================================================
+// Audit SOS end-to-end : lacunes comblées (401 sans jeton, jeton invalide,
+// double soumission indépendante, erreur PostgreSQL mappée) — chaque
+// scénario ci-dessous exerce /alerts/sos précisément, jamais une autre
+// route Alert Core dont le comportement, bien que partagé via create(),
+// n'avait encore jamais été prouvé pour ce point d'entrée précis.
+// ============================================================
+
+test('POST /api/alerts/sos with no Authorization header is refused, never silently accepted', async () => {
+  const r = await request('POST', '/alerts/sos', {}, null);
+  assert.equal(r.status, 401);
+  assert.deepEqual(r.body, { error: 'Token manquant' });
+});
+
+test('POST /api/alerts/sos with a garbage/invalid token is refused', async () => {
+  const r = await request('POST', '/alerts/sos', {}, 'not-a-real-jwt');
+  assert.equal(r.status, 401);
+  assert.deepEqual(r.body, { error: 'Token invalide ou expiré' });
+});
+
+test('POST /api/alerts/sos with a token signed under a different secret is refused (never trusts an unverified claim)', async () => {
+  const jwt = require('jsonwebtoken');
+  const forged = jwt.sign({ id: ownId, username: 'sos-own', role: 'agent' }, 'wrong-secret-entirely', { expiresIn: '1h' });
+  const r = await request('POST', '/alerts/sos', {}, forged);
+  assert.equal(r.status, 401);
+  assert.deepEqual(r.body, { error: 'Token invalide ou expiré' });
+});
+
+test('POST /api/alerts/sos with a token for a since-deleted account is refused as a revoked session, distinct from a mere no-membership 403', async () => {
+  // No membership seeded on purpose: public.memberships references users
+  // ON DELETE RESTRICT (a membership-bearing account cannot be deleted —
+  // see tests/postgres-alert-core-http.test.js's own "ghost-alert" test),
+  // so only a membership-less account can validly disappear mid-session.
+  const ghostId = (await pool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('sos-ghost',$1,'agent') RETURNING id", [await bcrypt.hash('x', 10)])).id;
+  const ghostToken = (await request('POST', '/auth/login', { username: 'sos-ghost', password: 'x' }, null)).body.token;
+  assert.equal((await request('POST', '/alerts/sos', {}, ghostToken)).status, 403); // valid session, no membership
+  await pool.query('DELETE FROM public.users WHERE id=$1', [ghostId]);
+  const r = await request('POST', '/alerts/sos', {}, ghostToken);
+  assert.equal(r.status, 401); // session now revoked — a distinct failure mode from the 403 above
+  assert.deepEqual(r.body, { error: 'Session révoquée' });
+});
+
+test('two independent SOS submissions from the same account (simulating two tabs/devices) each create a distinct alert — no silent server-side dedup ever suppresses a real second signal', async () => {
+  const [a, b] = await Promise.all([
+    request('POST', '/alerts/sos', {}, ownToken),
+    request('POST', '/alerts/sos', {}, ownToken),
+  ]);
+  assert.equal(a.status, 201); assert.equal(b.status, 201);
+  assert.notEqual(a.body.id, b.body.id, 'two genuinely concurrent presses must never collapse into one alert');
+  assert.equal(a.body.level, 4); assert.equal(b.body.level, 4);
+});
+
+test('a PostgreSQL-layer failure on the SOS path is mapped to a generic, non-leaking error — never a false "SOS envoyé"', async () => {
+  await pool.query("UPDATE public.alert_rules SET config='not json' WHERE id=1");
+  try {
+    const r = await request('POST', '/alerts/sos', {}, ownToken);
+    assert.equal(r.status, 500);
+    assert.deepEqual(r.body, { error: 'Erreur serveur' });
+    assert.doesNotMatch(JSON.stringify(r.body), /json|JSON|token|position|SELECT|config/);
+  } finally {
+    await pool.query('UPDATE public.alert_rules SET config=$1 WHERE id=1',
+      [JSON.stringify({ escalation: [30, 60, 120], incidentCritical: true, badgeThreshold: 3, badgeWindowSeconds: 120 })]);
+  }
+});
+
+test('security_alerts carries no site/zone-level scoping column: SOS access is a tenant-wide own/scope decision, not a site one (documented limit, not an oversight)', () => {
+  const schemaSource = fs.readFileSync(
+    path.resolve(__dirname, '../backend/db/postgresql/migrations/002_alert_core.sql'), 'utf8');
+  assert.match(schemaSource, /CREATE TABLE public\.security_alerts/);
+  // site/zone exist as free-text descriptive columns (what the alert is
+  // about), never as a foreign key into public.sites/zones — cross-site
+  // narrowing of /alerts/sos itself is therefore structurally inapplicable
+  // today; see backend/alerts.js's own PG-8 comment on this exact point.
+  const table = schemaSource.slice(schemaSource.indexOf('CREATE TABLE public.security_alerts'), schemaSource.indexOf('CREATE TABLE public.alert_audit'));
+  assert.doesNotMatch(table, /REFERENCES public\.sites|REFERENCES public\.zones/);
+});

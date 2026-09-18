@@ -48,7 +48,21 @@ router.get('/stream', wrap(async (req, res, next) => {
   const matches = event => (alertAccess === 'scope'
     ? event.payload.tenantId === tenantId
     : event.payload.createdBy === userId);
-  const send = event => res.write(`event: ${event.type}\ndata: ${JSON.stringify({ id: event.payload.id, at: event.at })}\n\n`);
+  // Audit SOS bout-en-bout : bus.emit() (realtime.js) appelle chaque
+  // abonné de façon SYNCHRONE — un res.write() qui lève (connexion d'un
+  // AUTRE client déjà fermée/détruite, entre la fermeture réelle du socket
+  // et le nettoyage asynchrone via req.on('close')) remontait jusqu'à
+  // l'appelant de emit(), c.-à-d. jusqu'à la requête qui vient de créer
+  // l'alerte (service.js#create, après le COMMIT). Un SOS déjà enregistré
+  // avec succès en base recevait alors une réponse 500 — un faux « échec »
+  // pour un abonné SANS RAPPORT avec l'émetteur. Ce flux n'est qu'un
+  // rechargement best-effort (le client ne fait jamais confiance au
+  // contenu, voir realtime.js) : une écriture ratée ne doit jamais faire
+  // échouer autre chose que ce seul flux, jamais la mutation qui l'a émis.
+  const send = event => {
+    try { res.write(`event: ${event.type}\ndata: ${JSON.stringify({ id: event.payload.id, at: event.at })}\n\n`); }
+    catch { cleanup(); }
+  };
   const unsubscribe = realtime.subscribe(matches, send);
   const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 15000);
   heartbeat.unref();
