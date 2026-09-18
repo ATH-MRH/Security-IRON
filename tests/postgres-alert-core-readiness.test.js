@@ -51,7 +51,8 @@ test('assertReady resolves on a freshly migrated database and is read-only', asy
   const pool = db.createDatabase(env);
   try {
     const rows = await pool.all('SELECT version FROM securisite_meta.schema_migrations ORDER BY version');
-    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    // PCS01 (Lot E) ajoute la migration 12 (RLS sur security_alerts).
+    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   } finally { await pool.close(); }
 });
 
