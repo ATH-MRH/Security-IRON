@@ -44,6 +44,7 @@ const Realtime = (() => {
     const onEvent = type => e => { connected = true; stopFallback(); let data = null; try { data = JSON.parse(e.data); } catch { /* charge utile inattendue : ignorée, jamais fatale */ } emit(type, data); };
     es.addEventListener('alert:created', onEvent('alert:created'));
     es.addEventListener('alert:updated', onEvent('alert:updated'));
+    es.addEventListener('alert:broadcast', onEvent('alert:broadcast')); // PCS01 (Lot C)
     es.onopen = () => { connected = true; stopFallback(); };
     es.onerror = () => {
       connected = false;

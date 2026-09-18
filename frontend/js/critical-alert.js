@@ -1,28 +1,30 @@
 /**
- * PCS01 (Lot A) — alerte plein écran, impossible à manquer, quelle que soit
- * la page consultée. Isolé du reste de l'app comme sos.js : un flux de
- * sûreté critique ne doit dépendre d'aucun autre état applicatif.
+ * PCS01 (Lot A + Lot C) — alerte plein écran, impossible à manquer, quelle
+ * que soit la page consultée. Isolé du reste de l'app comme sos.js : un
+ * flux de sûreté critique ne doit dépendre d'aucun autre état applicatif.
  *
- * Aucune nouvelle donnée : consomme GET /alerts (déjà own/scope-filtré côté
- * serveur, backend/scope.js) — jamais le contenu poussé par SSE lui-même
- * (realtime.js n'envoie jamais que {id, at}), toujours un rechargement via
- * l'API déjà autorisée. Une alerte qu'on ne voit pas dans GET /alerts ne
- * peut jamais déclencher cet overlay pour ce compte — le filtrage own/scope
- * existant est la seule autorité, jamais recalculé ici.
+ * Aucune nouvelle donnée : consomme GET /alerts (déjà own/scope/destinataire
+ * filtré côté serveur, backend/scope.js + backend/alert-core/recipients.js)
+ * — jamais le contenu poussé par SSE lui-même (realtime.js n'envoie jamais
+ * que {id, at}), toujours un rechargement via l'API déjà autorisée. Une
+ * alerte qu'on ne voit pas dans GET /alerts ne peut jamais déclencher cet
+ * overlay pour ce compte — le filtrage serveur est la seule autorité,
+ * jamais recalculé ici.
  *
- * Portée volontaire de ce lot : l'accusé de réception reste celui déjà
- * existant côté serveur (POST /alerts/:id/actions, action=ACQUITTEE) —
- * un état PAR ALERTE, pas encore PAR DESTINATAIRE (ça, c'est le lot C,
- * non construit). Réservé au SOC (service.js#act), comme déjà le cas pour
- * toute la Console d'alertes : un compte "own" qui voit son propre SOS
- * peut seulement le consulter (Voir l'alerte), jamais l'acquitter à sa
- * place — jamais un accusé fabriqué côté client.
+ * Accusé de réception : le SOC continue d'utiliser POST /alerts/:id/actions
+ * (statut PAR ALERTE, inchangé depuis le lot A) ; un destinataire non-SOC
+ * ciblé par une diffusion (lot C) utilise désormais POST /alerts/:id/receipt
+ * (statut PAR DESTINATAIRE, backend/alert-core/recipients.js) — jamais un
+ * accusé fabriqué côté client dans les deux cas, le serveur revérifie
+ * systématiquement l'appartenance avant d'enregistrer quoi que ce soit.
  */
 const CriticalAlert = (() => {
   const CHECK_DEBOUNCE_MS = 400;
   let queue = [];
   const shownIds = new Set();
+  const deliveredIds = new Set();
   let current = null;
+  let currentIsRecipient = false;
   let overlayEl = null;
   let checkTimer = null;
   let started = false;
@@ -82,8 +84,19 @@ const CriticalAlert = (() => {
     if (!current) { el.hidden = true; el.innerHTML = ''; return; }
     const a = current;
     const label = levelLabel(a);
-    const canAck = typeof isAdmin === 'function' && isAdmin() && a.status === 'NOTIFIEE';
+    const soc = typeof isAdmin === 'function' && isAdmin();
+    const me = typeof API !== 'undefined' && API.getUser ? API.getUser() : null;
+    // PCS01 (Lot C) : un compte non-SOC ne voit jamais cette alerte à moins
+    // d'en être le créateur ou un destinataire explicite (service.js#list) —
+    // "pas le créateur" suffit donc à en déduire "destinataire", sans avoir
+    // à faire un aller-retour serveur supplémentaire juste pour l'affichage
+    // du bouton (le serveur revérifie de toute façon à l'accusé lui-même,
+    // recipients.js#markReceipt — jamais fait confiance ici).
+    const isRecipientGuess = !soc && me && a.created_by !== me.id;
+    currentIsRecipient = isRecipientGuess;
+    const canAck = (soc && a.status === 'NOTIFIEE') || isRecipientGuess;
     const queuedMore = queue.length;
+    if (isRecipientGuess && !deliveredIds.has(a.id)) { deliveredIds.add(a.id); markDeliveredBestEffort(a.id); }
     el.hidden = false;
     el.innerHTML = `
       <div class="critical-alert-panel critical-alert-${label === 'SOS' ? 'sos' : 'critique'}">
@@ -111,12 +124,22 @@ const CriticalAlert = (() => {
     document.getElementById('criticalAlertView').onclick = viewInAlertCenter;
   }
 
+  // Best-effort, jamais bloquant pour l'affichage : un échec ici (réseau,
+  // alerte déjà retirée de la file côté serveur, etc.) ne doit jamais
+  // empêcher l'opérateur de voir/accuser l'alerte elle-même.
+  async function markDeliveredBestEffort(alertId) {
+    try { await API.post(`/alerts/${encodeURIComponent(alertId)}/receipt`, { status: 'delivered' }); }
+    catch { /* jamais fatal — l'accusé explicite (bouton) reste l'action qui compte */ }
+  }
+
   async function acknowledge() {
     if (!current) return;
     const btn = document.getElementById('criticalAlertAck');
     if (btn) { btn.disabled = true; btn.textContent = 'Envoi…'; }
+    const alertId = current.id, isRecipient = currentIsRecipient;
     try {
-      await API.post(`/alerts/${encodeURIComponent(current.id)}/actions`, { action: 'ACQUITTEE' });
+      if (isRecipient) await API.post(`/alerts/${encodeURIComponent(alertId)}/receipt`, { status: 'acknowledged' });
+      else await API.post(`/alerts/${encodeURIComponent(alertId)}/actions`, { action: 'ACQUITTEE' });
       notify('Alerte accusée — SOC notifié', 'success');
     } catch (e) {
       // 409 (déjà traitée par un autre opérateur) ou toute autre erreur :

@@ -139,3 +139,47 @@ test('a real mutation (alert creation) succeeds under RLS — its fail-closed se
   assert.equal(r.status, 201, 'the alert is genuinely created, including its fail-closed security_audit event');
   assert.ok(r.body.id);
 });
+
+// PCS01 (Lot C) — régression du même type que PG-28 ci-dessus, trouvée en
+// vérification live sur ce lot précisément : backend/alert-core/
+// recipients.js interrogeait memberships/sites/zones (RLS, migration 005)
+// SANS jamais poser securisite.actor_user_id — sous le rôle réel, chaque
+// résolution de destinataire (site/zone/user/tenant_wide) revenait
+// silencieusement VIDE (pas une erreur), déclenchant à tort "Aucun
+// destinataire actif ne correspond à cette cible" (404) pour une cible
+// pourtant valide. La suite dédiée (tests/postgres-alert-recipients.
+// test.js) ne l'avait pas révélé, pour la même raison que PG-28 : connectée
+// en superutilisateur. Corrigé par scope.withActorContext(...), même
+// remède que PG-28 — verrouillé ici, sous le rôle réel, comme le reste de
+// ce fichier.
+test('PCS01: GET /alerts/recipients/candidates returns real members under the real app role (RLS enforced) — not silently empty', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const soc = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_soc',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await seedMembership(setupPool, soc.id, 'admin');
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_pcs01_soc', password: 'x' }, null);
+  assert.equal(login.status, 200);
+  const r = await request('GET', '/alerts/recipients/candidates', undefined, login.body.token);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.length >= 2, 'must see both the SOC account itself and the already-seeded agent — not an empty array');
+  assert.ok(r.body.some(u => u.username === 'rls_scope_agent'));
+});
+
+test('PCS01: a tenant_wide broadcast resolves real recipients under the real app role (RLS enforced) — not a false "no recipient" 404', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const soc = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_broadcaster',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await seedMembership(setupPool, soc.id, 'admin');
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_pcs01_broadcaster', password: 'x' }, null);
+  const token = login.body.token;
+  const alert = (await request('POST', '/alerts', { site: 'RLS Site', type: 'RLS Broadcast', level: 3 }, token)).body;
+  const r = await request('POST', '/alerts/' + alert.id + '/broadcast', { recipientType: 'tenant_wide' }, token);
+  assert.equal(r.status, 201, 'a real, resolvable tenant_wide target must never come back as "no recipient found" under real RLS');
+  assert.ok(r.body.recipientCount >= 1);
+});

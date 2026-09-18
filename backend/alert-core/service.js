@@ -1,5 +1,6 @@
 const { randomUUID } = require('crypto');
 const repository = require('./repository');
+const recipients = require('./recipients');
 const db = require('../database');
 const securityAudit = require('../security-audit');
 const realtime = require('../realtime');
@@ -41,9 +42,16 @@ async function notify(alert, message, client = db) {
 // PG-16 : tenant_id (migration 009) vérifié inconditionnellement, même pour
 // une alerte propre à l'appelant — jamais de fuite intertenant, même pour
 // « own » (voir tests/postgres-soc.test.js).
+// PCS01 (Lot C) : un destinataire explicite (alert_recipients, migration
+// 011) voit CETTE alerte précise même sous own/scope='own' — jamais une
+// ouverture plus large que l'alerte réellement ciblée ; le créateur et le
+// SOC gardent exactement l'accès qu'ils avaient déjà (rien retiré).
 async function get(id, user, client = db) {
   const a = await repository.findAlert(id, client);
-  if (!a || a.tenant_id !== user.tenantId || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable', 404);
+  if (!a || a.tenant_id !== user.tenantId) fail('Alerte introuvable', 404);
+  if (user.alertAccess !== 'scope' && a.created_by !== user.id) {
+    if (!(await recipients.isRecipient(id, user.id, client))) fail('Alerte introuvable', 404);
+  }
   return a;
 }
 async function create(input, user, origin = 'COMMAND', transactionClient = null) {
@@ -137,8 +145,21 @@ async function readNotification(id, user, transactionClient = null) {
   }, transactionClient); return {ok:true};
 }
 async function list(user, client = db) {
-  const rows = user.alertAccess==='scope' ? await repository.allAlerts(user.tenantId,client) : await repository.alertsByCreator(user.id,user.tenantId,client);
-  return rows;
+  if (user.alertAccess === 'scope') return repository.allAlerts(user.tenantId, client);
+  // own : ses propres alertes + celles où il est destinataire explicite
+  // (PCS01, Lot C) — jamais toutes les alertes du tenant, uniquement
+  // celles-ci deux sources précises.
+  // Deux appels successifs, jamais combinés en parallèle : PG32A
+  // (tests/postgres-alert-core-service.test.js) interdit toute primitive
+  // de concurrence nouvelle dans ce fichier — ce sont deux SELECT
+  // indépendants sans aucun enjeu de verrouillage, un gain négligeable au
+  // prix d'un écart architectural (verrous/concurrence restent l'affaire
+  // de repository.js).
+  const mine = await repository.alertsByCreator(user.id, user.tenantId, client);
+  const targeted = await recipients.alertsForRecipient(user.id, user.tenantId, client);
+  const byId = new Map(mine.map(a => [a.id, a]));
+  for (const a of targeted) if (!byId.has(a.id)) byId.set(a.id, a);
+  return [...byId.values()].sort((a, b) => b.level - a.level || (a.created_at < b.created_at ? 1 : -1));
 }
 async function detail(id, user, client = db) {
   const a = await get(id,user,client);
@@ -147,7 +168,10 @@ async function detail(id, user, client = db) {
 async function act(id, input, user, transactionClient = null) {
   const result = await atomic(async client=>{
     const a = await repository.findAlertForUpdate(id,client);
-    if (!a || a.tenant_id !== user.tenantId || (user.alertAccess !== 'scope' && a.created_by !== user.id)) fail('Alerte introuvable',404);
+    if (!a || a.tenant_id !== user.tenantId) fail('Alerte introuvable',404);
+    if (user.alertAccess !== 'scope' && a.created_by !== user.id) {
+      if (!(await recipients.isRecipient(id, user.id, client))) fail('Alerte introuvable',404);
+    }
     const action=input.action, comment=text(input.comment,4000);
     if (terminal.includes(a.status)) fail('Cette alerte est clôturée',409);
     if (action==='COMMENTAIRE') {
@@ -179,6 +203,42 @@ async function act(id, input, user, transactionClient = null) {
   realtime.emit('alert:updated', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by });
   return result;
 }
+// PCS01 (Lot C) : diffuser une alerte déjà créée vers des destinataires
+// explicites. Réservé au SOC — même porte que toute action SOC dans act()
+// ci-dessus ; `tenant_wide` n'a aujourd'hui aucune permission plus fine
+// (voir recipients.js). L'alerte doit déjà être visible par l'opérateur
+// (get() applique own/scope/recipient normalement) avant toute diffusion.
+async function broadcastAlert(id, input, user, transactionClient = null) {
+  if (!user.isSoc) fail('Action réservée au SOC', 403);
+  const a = await get(id, user, transactionClient ?? db);
+  const result = await recipients.broadcast(a, user, input, transactionClient);
+  await securityAudit.record({
+    ...auditContext(user), origin: 'http',
+    eventType: 'alert.broadcast', resourceType: 'alert', resourceId: id, action: 'broadcast', outcome: 'success',
+    detail: { recipient_type: input && input.recipientType, recipient_count: result.recipientCount },
+  }, transactionClient ?? db);
+  // Jamais le contenu de l'alerte — même contrat que alert:created/updated
+  // (realtime.js). recipientUserIds : la SEULE information nouvelle dont
+  // backend/realtime-routes.js a besoin pour livrer aussi aux destinataires
+  // "own" qui ne verraient sinon jamais cet événement (own filtre sur
+  // createdBy, jamais sur une cible de diffusion).
+  realtime.emit('alert:broadcast', { id, tenantId: user.tenantId ?? null, recipientUserIds: result.recipientUserIds });
+  return result;
+}
+// L'appelant doit être le destinataire lui-même (userId depuis le JWT du
+// routeur, jamais depuis le corps de la requête — voir backend/alerts.js).
+async function receiptAlert(id, userId, status, transactionClient = null) {
+  return recipients.markReceipt(id, userId, status, transactionClient);
+}
+async function alertReceipts(id, user, client = db) {
+  if (!user.isSoc) fail('Action réservée au SOC', 403);
+  await get(id, user, client); // 404 cohérent si l'alerte n'est pas dans le périmètre, avant de lister quoi que ce soit
+  return recipients.listReceipts(id, client);
+}
+async function recipientCandidates(user) {
+  if (!user.isSoc) fail('Action réservée au SOC', 403);
+  return recipients.userCandidates(user.id, user.tenantId);
+}
 async function fromIncident(i,user,transactionClient = null) {
   if((await config(transactionClient ?? db)).incidentCritical && ['critique','majeur'].includes(i.gravite)) await create({site:i.lieu||'Site non renseigné',zone:i.lieu,type:i.type||'Incident grave',level:3,comment:`Incident ${i.ref} : ${i.description||''}`},user,'INCIDENT',transactionClient);
 }
@@ -197,5 +257,6 @@ module.exports = {
   init: repository.init, create, sos, escalateDue, fromIncident, fromBadge,
   currentUser: repository.findUser, config, updateRules,
   configAudit: repository.configAudit, notifications: repository.notifications,
-  readNotification, list, detail, act
+  readNotification, list, detail, act,
+  broadcastAlert, receiptAlert, alertReceipts, recipientCandidates,
 };
