@@ -1756,6 +1756,7 @@ async function sauverParametres(){
 /* ===== INIT ===== */
 function initApp(){
   AlertCenter.start();
+  CriticalAlert.start();
   navTo('alertes');
   initI18nObserver();
   setInterval(()=>{
