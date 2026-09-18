@@ -49,7 +49,7 @@
     <div class="nav-item" data-page="incidents"><span class="nav-icon">🚨</span><span>Incidents</span></div>
     <div class="nav-item" data-page="maincourante"><span class="nav-icon">📓</span><span>Main courante</span></div>
     <div class="nav-item" data-page="visiteurs"><span class="nav-icon">👥</span><span>Visiteurs</span></div>
-    <div class="nav-item" data-page="employes"><span class="nav-icon">👤</span><span>Employés</span></div>
+    <div class="nav-item" data-page="employes"><span class="nav-icon">👤</span><span>Agents</span></div>
     <div class="nav-item" data-page="vehicules"><span class="nav-icon">🚗</span><span>Véhicules</span></div>
   </div>
   <div class="nav-section">
@@ -78,8 +78,15 @@
   <div class="topbar">
     <div class="topbar-left">
       <button class="menu-toggle" id="menuToggle" type="button" onclick="toggleSidebar()" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="sidebar">☰</button>
-      <img class="app-logo app-logo-topbar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
-      <div class="page-title" id="pageTitle">Tableau de bord</div>
+      <div class="topbar-brand">
+        <img class="app-logo app-logo-topbar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
+        <div class="topbar-brand-text">
+          <strong>SécuriSite</strong>
+          <span>SOC</span>
+          <small>Centre de Sécurité</small>
+        </div>
+      </div>
+      <div class="page-title" id="pageTitle" hidden>Tableau de bord</div>
       <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
     </div>
     <div class="topbar-search">
@@ -92,6 +99,42 @@
       <div class="topbar-search-results" id="topbarSearchResults" hidden></div>
     </div>
     <div class="topbar-right">
+      <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
+      <!-- Sélecteur réel (fonctionnel, synchronisé par applyLanguage() comme
+           tout .lang-select) conservé mais masqué visuellement : le bouton
+           "FR / AR" ci-dessous est l'habillage visuel exact du modèle de
+           référence, jamais un second mécanisme — il appelle la même
+           setLanguage() et reste synchronisé avec ce select cachée. -->
+      <select class="lang-select lang-select-hidden" id="langSelect" onchange="setLanguage(this.value)" title="Langue" tabindex="-1" aria-hidden="true">
+        <option value="fr">Français</option>
+        <option value="ar">العربية</option>
+      </select>
+      <div class="lang-menu">
+        <button class="lang-menu-btn" id="langMenuButton" type="button" onclick="toggleLangMenu()" aria-haspopup="true" aria-expanded="false" aria-controls="langMenuDropdown" title="Langue">
+          <span>FR / AR</span>
+          <span class="lang-menu-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="lang-menu-dropdown" id="langMenuDropdown" hidden>
+          <button type="button" onclick="setLanguage('fr');closeLangMenu();">Français</button>
+          <button type="button" onclick="setLanguage('ar');closeLangMenu();">العربية</button>
+        </div>
+      </div>
+      <span class="topbar-sep" aria-hidden="true"></span>
+      <!-- Thème clair/sombre réel (pas décoratif) : bascule data-theme sur
+           <html>, persisté en localStorage, jamais de contenu ni de logique
+           métier affectés — uniquement les jetons CSS déjà en place partout. -->
+      <button class="btn-icon topbar-theme" id="themeToggle" type="button" title="Thème clair/sombre" onclick="toggleTheme()">☀️</button>
+      <span class="topbar-sep" aria-hidden="true"></span>
+      <div class="user-menu">
+        <button class="user-chip user-chip-btn" id="userMenuButton" type="button" onclick="toggleUserMenu()" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuDropdown">
+          <div class="avatar" id="userAvatar">A</div>
+          <div class="user-info"><strong id="userName">admin</strong><span id="userRoleLabel">Administrateur</span></div>
+          <span class="user-chip-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="user-menu-dropdown" id="userMenuDropdown" hidden>
+          <button type="button" onclick="doLogout()">🚪 <span>Déconnexion</span></button>
+        </div>
+      </div>
       <!-- PG-15 : bouton de détresse, appui maintenu ~1,5 s. Dans la barre
            supérieure : toujours visible et actionnable quelle que soit la
            page affichée, sans flotter par-dessus la navigation. -->
@@ -99,16 +142,6 @@
         <span class="sos-fill"></span>
         <span class="sos-label">SOS</span>
       </button>
-      <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)" title="Langue" style="padding:7px 10px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:11px;font-family:var(--font-mono);text-transform:uppercase">
-        <option value="fr">Français</option>
-        <option value="ar">العربية</option>
-      </select>
-      <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
-      <div class="user-chip">
-        <div class="avatar" id="userAvatar">A</div>
-        <div class="user-info"><strong id="userName">Administrateur</strong><span>Agent de sûreté</span></div>
-      </div>
-      <button class="btn btn-outline btn-logout" title="Déconnexion" onclick="doLogout()">🚪 <span class="btn-logout-text">Déconnexion</span></button>
     </div>
   </div>
 

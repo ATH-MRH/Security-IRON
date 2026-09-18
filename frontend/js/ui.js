@@ -13,6 +13,8 @@ const I18N_AR = {
   'Mot de passe': 'كلمة المرور',
   'Connexion': 'دخول',
   'SOC // Centre de Sûreté': 'مركز الأمن والحراسة',
+  'Centre de Sécurité': 'مركز الأمن',
+  'Thème clair/sombre': 'الوضع الفاتح/الداكن',
   'Pilotage': 'القيادة',
   'Tableau de bord': 'لوحة التحكم',
   'Main courante': 'السجل اليومي',

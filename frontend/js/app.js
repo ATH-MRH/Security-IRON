@@ -33,7 +33,7 @@ function showApp(user){
   document.getElementById('app').style.display='flex';
   document.getElementById('userName').textContent = user.nom_complet || user.username;
   document.getElementById('userAvatar').textContent = (user.username||'A').charAt(0).toUpperCase();
-  document.querySelector('.user-info span').textContent = user.role === 'admin' ? '' : 'Agent de sûreté';
+  document.getElementById('userRoleLabel').textContent = user.role === 'admin' ? 'Administrateur' : 'Agent de sûreté';
   // Marque le corps → le CSS masque les actions réservées à l'admin pour les agents
   document.body.classList.toggle('role-agent', user.role !== 'admin');
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display = user.role === 'admin' ? '' : 'none');
@@ -76,6 +76,63 @@ function toggleSidebarCollapse(){
   try{
     if(localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === '1') document.getElementById('sidebar')?.classList.add('collapsed');
   }catch{}
+})();
+
+// Menu profil (topbar) : la Déconnexion, retirée de la barre elle-même
+// (fidélité visuelle à la référence), reste accessible ici — même fonction
+// doLogout(), aucun changement de comportement.
+function openLangMenu(){
+  document.getElementById('langMenuDropdown')?.removeAttribute('hidden');
+  document.getElementById('langMenuButton')?.setAttribute('aria-expanded','true');
+}
+function closeLangMenu(){
+  document.getElementById('langMenuDropdown')?.setAttribute('hidden','');
+  document.getElementById('langMenuButton')?.setAttribute('aria-expanded','false');
+}
+function toggleLangMenu(){
+  document.getElementById('langMenuDropdown')?.hasAttribute('hidden') ? openLangMenu() : closeLangMenu();
+}
+document.addEventListener('click', e=>{
+  const menu = document.getElementById('langMenuButton')?.closest('.lang-menu');
+  if(menu && !menu.contains(e.target)) closeLangMenu();
+});
+
+function openUserMenu(){
+  document.getElementById('userMenuDropdown')?.removeAttribute('hidden');
+  document.getElementById('userMenuButton')?.setAttribute('aria-expanded','true');
+}
+function closeUserMenu(){
+  document.getElementById('userMenuDropdown')?.setAttribute('hidden','');
+  document.getElementById('userMenuButton')?.setAttribute('aria-expanded','false');
+}
+function toggleUserMenu(){
+  document.getElementById('userMenuDropdown')?.hasAttribute('hidden') ? openUserMenu() : closeUserMenu();
+}
+document.addEventListener('click', e=>{
+  const menu = document.getElementById('userMenuButton')?.closest('.user-menu');
+  if(menu && !menu.contains(e.target)) closeUserMenu();
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeUserMenu(); });
+
+// Thème clair/sombre réel : bascule data-theme sur <html>, persisté par
+// appareil (comme SIDEBAR_COLLAPSE_KEY ci-dessus) — jamais un réglage
+// serveur, aucune donnée ni logique métier affectée, uniquement les jetons
+// CSS (var(--bg)/--surface/--text/... déjà utilisés partout dans style.css).
+const THEME_KEY = 'securisite_theme';
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+  const btn = document.getElementById('themeToggle');
+  if(btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
+}
+function toggleTheme(){
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  try{ localStorage.setItem(THEME_KEY, next); }catch{}
+  applyTheme(next);
+}
+(function restoreTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem(THEME_KEY); }catch{}
+  applyTheme(saved === 'dark' ? 'dark' : 'light');
 })();
 
 // Recherche rapide de la topbar : raccourci vers une page existante par son
@@ -122,7 +179,7 @@ function navTo(page){
   if(page!=='lapi' && lapiStream){ try{ arreterCamera(); }catch{} }
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===page));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+page));
-  const titles = {alertes:'Centre d’alertes',carte:'Carte & sites',dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:'Incidents',vehicules:'Véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Employés',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres'};
+  const titles = {alertes:'Centre d’alertes',carte:'Carte & sites',dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:'Incidents',vehicules:'Véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Agents',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres'};
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if(page==='alertes') AlertCenter.load();
   if(page==='carte') SiteMap.load();

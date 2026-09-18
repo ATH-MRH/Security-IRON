@@ -47,6 +47,7 @@ function loadApp() {
     querySelectorAll: () => [],
     getElementById: id => el(id),
     addEventListener() {},
+    documentElement: { setAttribute() {}, getAttribute: () => null },
   };
   const context = vm.createContext({ document, window: { addEventListener() {} }, console });
   new vm.Script(appSource, { filename: 'app.js' }).runInContext(context);
