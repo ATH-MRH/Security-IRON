@@ -197,7 +197,7 @@ function displayed(f,id) {
   const html=f.element('ac-detail').innerHTML;
   assert.ok(html.includes('<h2>Titre '+id+'</h2>'), 'Expected displayed title '+id);
   assert.ok(html.includes('<small>'+id+'</small>'), 'Expected displayed id '+id);
-  assert.ok(f.element('ac-list').innerHTML.includes('selected\" data-alert=\"'+id+'\"'), 'Expected selected row '+id);
+  assert.ok(f.element('ac-list-body').innerHTML.includes('selected\" data-alert=\"'+id+'\"'), 'Expected selected row '+id);
   // Also check the production closure bound to the actual action button.
   return f.element('ac-detail').querySelectorAll('[data-action]').find(b=>b.dataset.action==='ACQUITTEE');
 }
@@ -368,7 +368,7 @@ for(const fails of [false,true])test('post-action refresh '+(fails?'error':'resp
 /*  réel côté client, absence de régression de contrat.          */
 /* ============================================================ */
 
-test('PG-16/PG-21: AlertCenter keeps its exact original public contract, plus only the deliberate PG-21 addition', () => {
+test('PG-16/PG-21: AlertCenter keeps its exact original public contract, plus only the deliberate PG-21/table additions', () => {
   const f = fixture();
   assert.deepEqual(
     Object.keys(f.center).sort(),
@@ -376,7 +376,12 @@ test('PG-16/PG-21: AlertCenter keeps its exact original public contract, plus on
     // onsubmit="AlertCenter.assistantAsk()" in frontend/index.html, unlike
     // aiSummary()/confirmSuggestion() which stay internal (wired
     // programmatically via .onclick, never referenced from markup).
-    ['load','renderList','createForm','rules','notifications','openAlert','captureSelection','start','assistantAsk'].sort(),
+    // Table des alertes (référence visuelle) : renderListFiltered() doit
+    // elle aussi être publique — wired depuis les oninput/onchange de la
+    // barre d'outils (recherche/niveau/état), pour remettre listPage à 1
+    // avant de re-filtrer (jamais depuis la pagination elle-même, qui
+    // continue d'appeler renderList() directement).
+    ['load','renderList','renderListFiltered','createForm','rules','notifications','openAlert','captureSelection','start','assistantAsk'].sort(),
   );
 });
 
@@ -424,7 +429,7 @@ test('PG-16: incidents récents are fetched separately and never block or break 
   await assert.doesNotReject(f.center.load());
   await settle();
   // The alerts screen itself still rendered correctly despite /incidents failing.
-  assert.match(f.element('ac-list').innerHTML, /Titre a/);
+  assert.match(f.element('ac-list-body').innerHTML, /Titre a/);
   assert.match(f.element('ac-recent-incidents').innerHTML, /empty-state/);
   assert.doesNotMatch(f.element('ac-message').textContent, /incidents indisponibles/);
 });

@@ -4,6 +4,12 @@ const AlertCenter = (() => {
   const levels = ['','Information','Vigilance','Critique','SOS / Urgence'];
   const next = {NOTIFIEE:['ACQUITTEE','Prendre en charge'],ACQUITTEE:['EN_INTERVENTION','Démarrer l’intervention'],EN_INTERVENTION:['SOUS_CONTROLE','Situation sous contrôle'],SOUS_CONTROLE:['RESOLUE','Résoudre'],RESOLUE:['CLOTUREE','Clôturer']};
   let rows = [], incidents = [], selected = null, busy = false, timer, detailRequest = 0, selectionPending = false;
+  // ALERTES TABLE (référence visuelle) : pagination client, rows est déjà
+  // le jeu de données réel complet (aucun second fetch).
+  let listPage = 1;
+  const LIST_PAGE_SIZE = 8;
+  const statusTone = a => a.status==='RESOLUE' ? 'success' : finished(a) ? 'muted' : (a.status==='NOTIFIEE'?'danger':'warning');
+  const levelTone = a => a.level>=3?'danger':a.level===2?'warning':'info';
   // User selection, detail requests and POST ownership have separate lifetimes.
   let selectionGeneration = 0, activeAction = null;
   function captureSelection() {
@@ -102,13 +108,47 @@ const AlertCenter = (() => {
     if (!items.length) { c.innerHTML='<div class="empty-state">Aucune activité récente</div>'; return; }
     c.innerHTML = `<ol class="ac-op-timeline">${items.map(x=>`<li><time>${date(x.at)}</time><span>${e(x.label)}${x.meta?' — '+e(x.meta):''}</span></li>`).join('')}</ol>`;
   }
+  function renderListFiltered() { listPage = 1; renderList(); }
   function renderList() {
     const query=document.getElementById('ac-search').value.toLowerCase();
     const level=document.getElementById('ac-level').value;
     const status=document.getElementById('ac-status').value;
     const filtered=rows.filter(a=>(!level||a.level===Number(level))&&(status!=='open'||(!finished(a)&&a.status!=='RESOLUE'))&&`${a.site} ${a.zone} ${a.type} ${a.username}`.toLowerCase().includes(query));
-    document.getElementById('ac-list').innerHTML=filtered.length?filtered.map(a=>`<button type="button" class="ac-alert ac-level-${a.level} ${selected===a.id?'selected':''}" data-alert="${a.id}"><span class="ac-alert-top"><b>${e(a.type)}</b><span class="badge ${a.level>=3?'danger':a.level===2?'warning':'info'}">N${a.level} · ${levels[a.level]}</span></span><span>${e(a.site)}${a.zone?' · '+e(a.zone):''}</span><small>${e(a.username)} · ${date(a.created_at)}</small><span class="ac-alert-top"><span>${labels[a.status]}</span>${a.escalation_step?`<strong>Escalade ${a.escalation_step}</strong>`:''}${a.cancellation_requested?'<strong>Annulation demandée</strong>':''}</span></button>`).join(''):'<div class="empty-state">Aucune alerte pour ces filtres.</div>';
+    const totalPages = Math.max(1, Math.ceil(filtered.length/LIST_PAGE_SIZE));
+    if (listPage > totalPages) listPage = totalPages;
+    const pageRows = filtered.slice((listPage-1)*LIST_PAGE_SIZE, listPage*LIST_PAGE_SIZE);
+    const body = document.getElementById('ac-list-body');
+    if (!filtered.length) {
+      body.innerHTML = `<tr><td colspan="8"><div class="empty-state">Aucune alerte pour ces filtres.</div></td></tr>`;
+    } else {
+      body.innerHTML = pageRows.map(a=>`<tr class="ac-row ${selected===a.id?'selected':''}" data-alert="${a.id}">
+        <td><code>${e(a.id.slice(0,8))}</code></td>
+        <td>${date(a.created_at)}</td>
+        <td>${e(a.site)}${a.zone?' · '+e(a.zone):''}</td>
+        <td>${e(a.type)}</td>
+        <td><span class="badge ${statusTone(a)}">${labels[a.status]}</span></td>
+        <td><span class="badge ${levelTone(a)}">N${a.level} · ${levels[a.level]}</span></td>
+        <td>${e(a.username)}</td>
+        <td><button type="button" class="btn btn-sm btn-outline" data-alert="${a.id}" aria-label="Voir le détail">👁️</button></td>
+      </tr>`).join('');
+    }
+    const pager = document.getElementById('ac-list-pager');
+    // UI-ALERTES-TABLE : texte reconstruit à chaque page/filtre (compteurs
+    // dynamiques), donc jamais atteignable par le scan DOM de
+    // applyLanguage() — fragments traduits explicitement ici (même limite
+    // déjà rencontrée pour le badge "Temps réel" en UI-3D).
+    const pagerLang = localStorage.getItem(I18N_KEY)||'fr';
+    const pw = s => translateText(s, pagerLang);
+    pager.innerHTML = `<span>${pw('Affichage de')} ${pageRows.length} ${pw('sur')} ${filtered.length} ${pw(filtered.length>1?'alertes':'alerte')}</span>
+      <span class="ac-pager-controls">
+        <button type="button" class="btn btn-sm btn-outline" id="ac-page-prev" ${listPage<=1?'disabled':''} aria-label="Page précédente">‹</button>
+        <span class="ac-pager-current">${listPage}</span>
+        <button type="button" class="btn btn-sm btn-outline" id="ac-page-next" ${listPage>=totalPages?'disabled':''} aria-label="Page suivante">›</button>
+      </span>`;
     document.querySelectorAll('[data-alert]').forEach(b=>b.onclick=()=>detail(b.dataset.alert));
+    const prev = document.getElementById('ac-page-prev'), next = document.getElementById('ac-page-next');
+    if (prev) prev.onclick = () => { listPage--; renderList(); };
+    if (next) next.onclick = () => { listPage++; renderList(); };
   }
   async function detail(id, redraw=true) {
     // An explicit selection owns the detail until it settles. Polling cannot supersede it.
@@ -330,5 +370,5 @@ const AlertCenter = (() => {
       button.textContent = 'Échec : '+err.message;
     }
   }
-  return {load,renderList,createForm,rules,notifications:NotificationBell.open,openAlert,captureSelection,start,assistantAsk};
+  return {load,renderList,renderListFiltered,createForm,rules,notifications:NotificationBell.open,openAlert,captureSelection,start,assistantAsk};
 })();

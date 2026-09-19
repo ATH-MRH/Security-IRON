@@ -165,9 +165,21 @@
         <div id="ac-assistant-answer" hidden></div>
       </div>
     </div>
-    <div class="ac-toolbar"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher un site, un agent, un événement…" oninput="AlertCenter.renderList()"><select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderList()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select><select id="ac-status" aria-label="État" onchange="AlertCenter.renderList()"><option value="open">En cours</option><option value="all">Tous les états</option></select><button class="btn btn-outline" onclick="AlertCenter.load()">Actualiser</button></div>
-    <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
-    <div class="ac-layout"><div id="ac-list"></div><section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section></div>
+    <div class="card ac-table-card">
+      <div class="card-header">
+        <div class="card-title">☰ Alertes récentes</div>
+        <div class="ac-toolbar">
+          <div class="search-box"><input id="ac-search" aria-label="Rechercher une alerte" placeholder="Rechercher une alerte…" oninput="AlertCenter.renderListFiltered()"></div>
+          <select id="ac-level" aria-label="Niveau" onchange="AlertCenter.renderListFiltered()"><option value="">Tous les niveaux</option><option value="1">Information</option><option value="2">Vigilance</option><option value="3">Critique</option><option value="4">SOS / Urgence</option></select>
+          <select id="ac-status" aria-label="État" onchange="AlertCenter.renderListFiltered()"><option value="open">En cours</option><option value="all">Tous les états</option></select>
+          <button class="btn btn-outline" onclick="AlertCenter.load()" aria-label="Actualiser">🔄</button>
+        </div>
+      </div>
+      <p id="ac-sync"></p><p id="ac-message" role="alert"></p>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>Date / Heure</th><th>Site</th><th>Type</th><th>Statut</th><th>Priorité</th><th>Assigné à</th><th>Actions</th></tr></thead><tbody id="ac-list-body"></tbody></table></div>
+      <div class="ac-list-pager" id="ac-list-pager"></div>
+    </div>
+    <section id="ac-detail" aria-label="Détail de l’alerte"><div class="empty-state">Sélectionnez une alerte pour afficher sa situation et sa chronologie.</div></section>
   </section>
   <!-- CARTE (PG-17) -->
   <section class="page" id="page-carte">
