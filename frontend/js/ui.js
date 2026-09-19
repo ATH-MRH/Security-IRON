@@ -496,7 +496,7 @@ const I18N_AR = {
   "Non détecté": "غير مكتشف",
   "Format non reconnu": "الصيغة غير معروفة",
   "Ex: 123456-114-16": "مثال: 123456-114-16",
-  "CONFIANCE OCR": "ثقة القراءة الضوئية (OCR)",
+  "Confiance OCR": "ثقة القراءة الضوئية (OCR)",
   "Livraison": "توصيل",
   "Autre": "آخر",
   "Action": "الإجراء",

@@ -326,6 +326,26 @@ body{
 .form-group input[type="datetime-local"],.form-group input[type="date"]{color-scheme:light}
 input[type="checkbox"]{accent-color:var(--primary)}
 
+/* UI-3A : sélecteur générique pour les <select> "libres" des barres
+   d'outils (filtres de liste, ex. #filtreIncidentStatut), hors
+   .form-group — jusqu'ici sans aucun style (rendu par défaut du
+   navigateur, carré, sans rapport avec le Design System) car seul
+   .form-group select était couvert par UI-FOUNDATION-2. Même langage
+   visuel que .form-group select mais largeur naturelle (pas 100%, pour
+   ne pas casser les .toolbar en flex). .lang-select / les <select>
+   avec style inline gardent une spécificité/priorité plus forte et ne
+   sont pas affectés. */
+select{
+  padding:9px 32px 9px 12px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);
+  font-size:12px;font-family:var(--font-sans);color:var(--color-text);
+  background:rgba(255,255,255,.9) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path fill='%232575fc' d='M0 2l5 6 5-6z'/></svg>") no-repeat right 12px center;
+  appearance:none;cursor:pointer;
+  transition:border-color var(--transition-base),box-shadow var(--transition-base),background var(--transition-base);
+}
+select:focus{outline:none;background-color:#fff;border-color:rgba(37,117,252,.55);box-shadow:0 0 0 4px rgba(37,117,252,.12)}
+select option{background:#fff;color:var(--color-text)}
+input[type="datetime-local"],input[type="date"]{color-scheme:light}
+
 /* =====================================================================
    UI-FOUNDATION-2 — Table shell (#9)
    =====================================================================
@@ -457,18 +477,24 @@ td strong{color:var(--text-bright)}
   content:"⌕";position:absolute;inset-inline-start:12px;top:50%;transform:translateY(-50%);
   font-size:16px;color:var(--color-primary);font-weight:bold;
 }
-.date-filter{display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--border);padding:6px 12px;font-size:12px}
-.date-filter label{color:var(--text-muted);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;font-family:var(--font-mono)}
-.date-filter input{border:none;font-size:12px;font-family:var(--font-mono);background:transparent;padding:4px 2px;outline:none;color:var(--text);color-scheme:dark}
-.date-filter .sep{color:var(--primary);font-size:11px;font-weight:bold}
-.date-presets{display:flex;gap:4px}
+/* UI-3A — Date filter, jamais migré par UI-FOUNDATION-2 (composant
+   partagé par Incidents/Véhicules/Piétons/Visiteurs/Employés/Parking via
+   applyPreset()) : fond/texte encore sombres (color-scheme:dark faisait
+   même rendre le sélecteur de date natif en thème sombre sur une page
+   claire — corrigé), mono/majuscules/halo néon aplatis, aligné sur les
+   jetons du Design System. */
+.date-filter{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.9);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:6px 12px;font-size:12px}
+.date-filter label{color:var(--color-text-secondary);font-size:10px;font-weight:700}
+.date-filter input{border:none;font-size:12px;font-family:var(--font-sans);background:transparent;padding:4px 2px;outline:none;color:var(--color-text);color-scheme:light}
+.date-filter .sep{color:var(--color-primary);font-size:11px;font-weight:bold}
+.date-presets{display:flex;gap:4px;flex-wrap:wrap}
 .date-preset{
-  padding:6px 12px;font-size:10px;background:var(--surface);border:1px solid var(--border);
-  cursor:pointer;color:var(--text-muted);font-weight:600;
-  text-transform:uppercase;letter-spacing:1px;font-family:var(--font-mono);transition:all .15s;
+  padding:6px 12px;font-size:11px;background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  cursor:pointer;color:var(--color-text-secondary);font-weight:600;font-family:var(--font-sans);
+  transition:background var(--transition-base),color var(--transition-base),border-color var(--transition-base);
 }
-.date-preset:hover{background:var(--surface-2);color:var(--primary);border-color:var(--primary)}
-.date-preset.active{background:var(--primary);color:var(--bg);border-color:var(--primary);box-shadow:0 0 8px var(--primary-glow)}
+.date-preset:hover{background:var(--bg-2);color:var(--color-primary);border-color:var(--color-primary)}
+.date-preset.active{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
 
 /* ===== Parking ===== */
 .parking-zones{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
@@ -519,8 +545,8 @@ td strong{color:var(--text-bright)}
 .alert-item.success{border-inline-start-color:var(--success);background:linear-gradient(90deg,rgba(0,255,157,0.08),var(--surface-2))}
 .alert-content{flex:1}
 .alert-title{font-weight:600;font-size:13px;margin-bottom:4px;color:var(--text-bright)}
-.alert-meta{font-size:11px;color:var(--text-muted);font-family:var(--font-mono)}
-.alert-time{font-size:11px;color:var(--text-muted);white-space:nowrap;font-family:var(--font-mono)}
+.alert-meta{font-size:11px;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.alert-time{font-size:11px;color:var(--color-text-secondary);white-space:nowrap;font-family:var(--font-sans)}
 
 /* UI-FOUNDATION-2 — Empty State (#13), source unique : idem, mono
    toujours réel ici (var(--font-mono) jamais redéfini), aplati. */
@@ -557,24 +583,30 @@ td strong{color:var(--text-bright)}
 /* ===== Main courante ===== */
 .mc-entry{display:grid;grid-template-columns:90px 1fr;gap:16px;padding:14px 0;border-bottom:1px solid var(--border);position:relative}
 .mc-entry:last-child{border-bottom:none}
-.mc-time{font-size:10px;color:var(--text-muted);text-align:end;font-variant-numeric:tabular-nums;line-height:1.4;font-family:var(--font-mono);letter-spacing:1px}
-.mc-time strong{display:block;color:var(--primary);font-size:16px;font-weight:700;font-family:var(--font-mono);text-shadow:0 0 6px var(--primary-glow)}
+/* UI-3A — Main courante : mono/glow jamais migrés (composant spécifique à
+   cet écran, hors des 17 primitives communes UI-FOUNDATION-2) aplatis ;
+   .mc-content garde son accent border-inline-start coloré (verrouillé
+   par un test RTL, cohérent avec .alert-item/.lapi-status-banner). */
+.mc-time{font-size:10px;color:var(--color-text-secondary);text-align:end;font-variant-numeric:tabular-nums;line-height:1.4;font-family:var(--font-sans)}
+.mc-time strong{display:block;color:var(--color-primary);font-size:16px;font-weight:700;font-family:var(--font-sans)}
 .mc-content{background:var(--surface-2);border:1px solid var(--border);border-inline-start:3px solid var(--primary);padding:14px 16px;position:relative}
 .mc-entry.priorite-importante .mc-content{border-inline-start-color:var(--warning);background:linear-gradient(90deg,rgba(255,184,0,0.08),var(--surface-2))}
 .mc-entry.priorite-critique .mc-content{border-inline-start-color:var(--danger);background:linear-gradient(90deg,rgba(255,56,96,0.1),var(--surface-2));box-shadow:0 0 16px rgba(255,56,96,0.1)}
 .mc-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .mc-tags{display:flex;gap:6px;flex-wrap:wrap}
-.mc-poste{display:inline-flex;align-items:center;gap:4px;background:var(--primary);color:var(--bg);padding:3px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;font-family:var(--font-mono);box-shadow:0 0 8px var(--primary-glow)}
-.mc-poste.rondier{background:var(--info);box-shadow:0 0 8px rgba(90,185,255,0.3)}
-.mc-poste.chef{background:var(--accent);box-shadow:0 0 8px var(--accent-glow);color:#fff}
+.mc-poste{display:inline-flex;align-items:center;gap:4px;background:var(--primary);color:var(--bg);padding:3px 10px;font-size:10px;font-weight:700;font-family:var(--font-sans)}
+.mc-poste.rondier{background:var(--info)}
+.mc-poste.chef{background:var(--accent);color:#fff}
 .mc-desc{font-size:13px;line-height:1.6;color:var(--text)}
-.mc-meta{font-size:10px;color:var(--text-muted);margin-top:8px;font-family:var(--font-mono);letter-spacing:.5px}
+.mc-meta{font-size:11px;color:var(--color-text-secondary);margin-top:8px;font-family:var(--font-sans)}
+.mc-day-header{margin:18px 0 8px;padding:8px 14px;background:var(--bg-2);border-radius:var(--radius-md);font-size:11px;font-weight:700;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.mc-day-count{float:inline-end}
 .agent-actif{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg-2);border:1px solid var(--border);margin-bottom:6px;font-size:12px}
 .agent-actif .avatar{width:28px;height:28px;font-size:11px}
 .agent-actif-info{flex:1}
-.agent-actif-info strong{display:block;font-size:12px;color:var(--text-bright);text-transform:uppercase;letter-spacing:1px}
-.agent-actif-info span{color:var(--text-muted);font-size:10px;font-family:var(--font-mono)}
-.agent-actif-count{background:var(--success);color:var(--bg);padding:3px 10px;font-size:10px;font-weight:700;font-family:var(--font-mono);box-shadow:0 0 6px var(--success-glow)}
+.agent-actif-info strong{display:block;font-size:12px;color:var(--text-bright)}
+.agent-actif-info span{color:var(--color-text-secondary);font-size:11px;font-family:var(--font-sans)}
+.agent-actif-count{background:var(--success);color:#fff;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;font-family:var(--font-sans)}
 
 /* ===== LAPI ===== */
 .lapi-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
@@ -584,12 +616,17 @@ td strong{color:var(--text-bright)}
 .camera-frame::after{content:"";position:absolute;bottom:8px;right:8px;width:20px;height:20px;border-bottom:2px solid var(--primary);border-right:2px solid var(--primary);z-index:5}
 .camera-frame video,.camera-frame canvas,.camera-frame img{width:100%;height:100%;object-fit:cover;display:block}
 .camera-overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
+/* UI-3A : .targeting-rect::before ("⊳ VISEUR LAPI / SCAN") retiré —
+   confirmé mort (déjà display:none plus bas dans le fichier, jamais
+   visible). Le réticule/ligne de scan restent : overlay fonctionnel
+   sur le flux caméra, pas un habillage de chrome générique. */
 .targeting-rect{width:70%;height:30%;border:2px solid var(--primary);position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,0.55),0 0 20px var(--primary-glow)}
-.targeting-rect::before{content:"⊳ VISEUR LAPI / SCAN";position:absolute;top:-28px;left:0;color:var(--primary);font-size:10px;letter-spacing:3px;font-weight:700;font-family:var(--font-mono);text-shadow:0 0 8px var(--primary-glow)}
 .targeting-rect::after{content:"";position:absolute;left:0;right:0;height:2px;background:var(--primary);box-shadow:0 0 12px var(--primary-glow);animation:scanLine 2s ease-in-out infinite}
 .camera-status{position:absolute;top:12px;right:12px;background:rgba(255,56,96,0.15);color:var(--danger);border:1px solid var(--danger);padding:4px 12px;font-size:10px;display:flex;align-items:center;gap:6px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:2px;font-weight:700;z-index:6}
 .camera-status.live::before{content:"";width:8px;height:8px;background:var(--danger);border-radius:50%;animation:pulse 1.2s infinite;box-shadow:0 0 8px var(--danger-glow)}
-.camera-placeholder{color:var(--text-muted);text-align:center;padding:40px;font-size:12px;font-family:var(--font-mono);letter-spacing:1px}
+/* UI-3A : mono/letter-spacing retirés (leftover jamais migré, comme
+   .empty-state/.tab en UI-FOUNDATION-2 — même traitement). */
+.camera-placeholder{color:var(--text-muted);text-align:center;padding:40px;font-size:12px;font-family:var(--font-sans)}
 .camera-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .btn-capture{
   background:linear-gradient(135deg,var(--danger),#cc2848);color:#fff;
@@ -616,16 +653,18 @@ td strong{color:var(--text-bright)}
   box-shadow:inset 0 0 20px rgba(0,212,255,0.06),0 0 12px var(--primary-glow);
 }
 .plate-display.empty{background:transparent;color:var(--text-dim);font-size:13px;letter-spacing:2px;font-weight:500;text-shadow:none;box-shadow:none}
+/* UI-3A : halos de survol retirés (var(--X-glow), encore actifs faute
+   d'override — même traitement que les boutons en UI-FOUNDATION-2). */
 .confidence-bar{height:6px;background:var(--bg-2);overflow:hidden;margin:4px 0;border:1px solid var(--border)}
-.confidence-fill{height:100%;background:linear-gradient(90deg,var(--success),#00cc7d);transition:width .3s;box-shadow:0 0 8px var(--success-glow)}
-.confidence-fill.medium{background:linear-gradient(90deg,var(--warning),#cc9300);box-shadow:0 0 8px var(--warning-glow)}
-.confidence-fill.low{background:linear-gradient(90deg,var(--danger),#cc2848);box-shadow:0 0 8px var(--danger-glow)}
+.confidence-fill{height:100%;background:linear-gradient(90deg,var(--success),#00cc7d);transition:width .3s}
+.confidence-fill.medium{background:linear-gradient(90deg,var(--warning),#cc9300)}
+.confidence-fill.low{background:linear-gradient(90deg,var(--danger),#cc2848)}
 .captured-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px}
 .captured-thumb{border:1px solid var(--border);overflow:hidden;cursor:pointer;background:#000;aspect-ratio:16/10;position:relative;transition:all .15s}
 .captured-thumb:hover{border-color:var(--primary);box-shadow:0 0 12px var(--primary-glow)}
 .captured-thumb img{width:100%;height:100%;object-fit:cover}
 .captured-thumb .plate-tag{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:var(--primary);font-size:10px;text-align:center;padding:4px;font-family:var(--font-mono);font-weight:700;letter-spacing:1px;border-top:1px solid var(--primary)}
-.lapi-status-banner{padding:12px 16px;font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-inline-start-width:3px;background:var(--surface-2);font-family:var(--font-mono);letter-spacing:.5px}
+.lapi-status-banner{padding:12px 16px;font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-inline-start-width:3px;background:var(--surface-2);font-family:var(--font-sans)}
 .lapi-status-banner.info{border-inline-start-color:var(--info);color:var(--info);background:linear-gradient(90deg,rgba(90,185,255,0.08),var(--surface-2))}
 .lapi-status-banner.success{border-inline-start-color:var(--success);color:var(--success);background:linear-gradient(90deg,rgba(0,255,157,0.08),var(--surface-2))}
 .lapi-status-banner.warning{border-inline-start-color:var(--warning);color:var(--warning);background:linear-gradient(90deg,rgba(255,184,0,0.08),var(--surface-2))}
@@ -780,7 +819,7 @@ td code,code{border-radius:9px;background:#eef5ff;color:#1d4ed8;border:0}
 .camera-frame,.plate-display{
   border-radius:22px;border-color:rgba(37,117,252,.25);box-shadow:var(--shadow);
 }
-.camera-frame::before,.camera-frame::after,.targeting-rect::before{display:none}
+.camera-frame::before,.camera-frame::after{display:none}
 .btn-capture{
   border-radius:18px;clip-path:none;background:linear-gradient(135deg,#2575fc,#21c7a8);
   border:0;letter-spacing:0;font-family:var(--font-body);box-shadow:0 14px 26px rgba(37,117,252,.24);
@@ -1212,7 +1251,7 @@ body.role-agent .admin-only{ display:none !important; }
    aucun changement pour le français. Seul le fond décoratif positionné en
    pixels du sélecteur (flèche du <select>) n'a pas d'équivalent logique
    fiable en background-position : corrigé explicitement ici. */
-[dir="rtl"] .form-group select{
+[dir="rtl"] select,[dir="rtl"] .form-group select{
   background-position:left 12px center;
   padding-inline:32px 12px;
 }
