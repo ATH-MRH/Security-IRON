@@ -1,9 +1,10 @@
 'use strict';
 // PG-13 — infrastructure push : abstraction de fournisseur (backend/push.js +
 // backend/push/fake-provider.js), câblée sur le même bus que le temps réel
-// (backend/realtime.js, PG-12). Aucun fournisseur réel, aucune clé : le fake
-// est le seul câblé dans cette passe (voir docs/push.md pour le HUMAN
-// CHECKPOINT sur l'activation d'un fournisseur réel).
+// (backend/realtime.js, PG-12). Le fake reste le fournisseur actif par
+// défaut ici (aucune clé VAPID dans cette suite) ; le fournisseur réel
+// (PCS01, Lot D) a sa propre suite, tests/push-web-push-provider.test.js —
+// voir docs/push.md pour le HUMAN CHECKPOINT sur son activation.
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomBytes } = require('node:crypto');

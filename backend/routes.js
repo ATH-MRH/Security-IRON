@@ -726,9 +726,10 @@ router.get('/stats/dashboard', async (req, res, next) => {
 // Requiert un périmètre actif (withScope, en tête de fichier) : sans
 // membership, aucun événement ne serait jamais poussé de toute façon.
 // PCS01 (Lot B) : clé publique VAPID, si un fournisseur réel a été activé
-// (docs/push.md — HUMAN CHECKPOINT, non fait à ce jour : la variable
-// d'environnement n'est jamais définie en production tant que ce choix
-// n'est pas pris). Une clé PUBLIQUE n'est pas un secret (c'est tout son
+// (docs/push.md — HUMAN CHECKPOINT ; le fournisseur réel existe depuis le
+// Lot D mais reste inactif tant que les trois variables SECURISITE_VAPID_*
+// ne sont pas explicitement fournies en production). Une clé PUBLIQUE
+// n'est pas un secret (c'est tout son
 // principe, Web Push standard) ; exposée derrière l'auth existante du
 // routeur par simple cohérence avec le reste de /push, jamais parce
 // qu'elle le nécessiterait. `null` tant qu'aucun fournisseur réel n'est
