@@ -497,27 +497,28 @@ td strong{color:var(--text-bright)}
 .date-preset.active{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
 
 /* ===== Parking ===== */
+/* UI-3B — Parking : composant jamais migré (contours décoratifs façon
+   HUD, mono, majuscules, halos de survol). Radius/typographie alignés
+   sur le Design System ; teinte métier conservée uniquement sur les
+   places (icône/statut), pas sur la carte de zone elle-même. */
 .parking-zones{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
-.parking-zone{background:var(--surface-2);border:1px solid var(--border);padding:16px;position:relative}
-.parking-zone::before{content:"";position:absolute;top:0;left:0;width:14px;height:14px;border-top:1px solid var(--primary);border-left:1px solid var(--primary)}
+.parking-zone{background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;position:relative}
 .zone-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.zone-name{font-family:var(--font-display);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-bright)}
-.zone-stats{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:1px}
-.zone-bar{height:4px;background:var(--bg-2);overflow:hidden;margin-bottom:14px}
-.zone-bar-fill{height:100%;background:linear-gradient(90deg,var(--success),#00cc7d);transition:width .3s;box-shadow:0 0 8px var(--success-glow)}
-.zone-bar-fill.warning{background:linear-gradient(90deg,var(--warning),#cc9300);box-shadow:0 0 8px var(--warning-glow)}
-.zone-bar-fill.danger{background:linear-gradient(90deg,var(--danger),#cc2848);box-shadow:0 0 8px var(--danger-glow)}
+.zone-name{font-family:var(--font-sans);font-weight:700;font-size:14px;color:var(--text-bright)}
+.zone-stats{font-size:11px;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.zone-bar{height:4px;background:var(--bg-2);overflow:hidden;margin-bottom:14px;border-radius:999px}
+.zone-bar-fill{height:100%;background:linear-gradient(90deg,var(--success),#00cc7d);transition:width .3s}
+.zone-bar-fill.warning{background:linear-gradient(90deg,var(--warning),#cc9300)}
+.zone-bar-fill.danger{background:linear-gradient(90deg,var(--danger),#cc2848)}
 .spots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:5px}
 .spot{
-  aspect-ratio:1;background:rgba(0,255,157,0.08);border:1px solid rgba(0,255,157,0.4);
+  aspect-ratio:1;background:rgba(0,255,157,0.08);border:1px solid rgba(0,255,157,0.4);border-radius:var(--radius-sm);
   display:flex;align-items:center;justify-content:center;
-  font-size:9px;font-weight:700;cursor:pointer;color:var(--success);transition:all .15s;font-family:var(--font-mono);
+  font-size:9px;font-weight:700;cursor:pointer;color:var(--success);transition:transform var(--transition-base);font-family:var(--font-sans);
 }
-.spot:hover{transform:scale(1.15);box-shadow:0 0 8px var(--success-glow);z-index:1}
+.spot:hover{transform:scale(1.15);z-index:1}
 .spot.occupied{background:rgba(255,56,96,0.12);border-color:rgba(255,56,96,0.5);color:var(--danger)}
-.spot.occupied:hover{box-shadow:0 0 8px var(--danger-glow)}
 .spot.reserved{background:rgba(255,184,0,0.1);border-color:rgba(255,184,0,0.5);color:var(--warning)}
-.spot.reserved:hover{box-shadow:0 0 8px var(--warning-glow)}
 .spot.handicap{background:rgba(90,185,255,0.1);border-color:rgba(90,185,255,0.5);color:var(--info)}
 
 /* UI-FOUNDATION-2 — Tabs (#14), source unique. Seul composant encore en
@@ -1743,10 +1744,15 @@ body{
 
 /* Mini-carte du tableau de bord : même rendu relatif que la page Carte
    (frontend/js/map.js#MapMarkers, réutilisé, jamais dupliqué), un id de
-   canevas différent pour ne jamais entrer en conflit avec #carte-canvas. */
+   canevas différent pour ne jamais entrer en conflit avec #carte-canvas.
+   UI-3B : le commentaire disait déjà "même rendu... réutilisé" mais le
+   sélecteur ne couvrait en réalité QUE #dashMapCanvas — sur la vraie page
+   Carte, les marqueurs de site (rect) n'avaient donc aucune couleur
+   (noir SVG par défaut) et les marqueurs SOS ne clignotaient pas.
+   Corrigé en étendant le sélecteur aux deux canevas. */
 #dashMapCanvas{width:100%;aspect-ratio:400/260;background:var(--bg-2);display:block}
-#dashMapCanvas .carte-marker rect{fill:var(--primary);stroke:var(--bg);stroke-width:1.5}
-#dashMapCanvas .carte-marker.carte-sos circle{animation:pulse 1.2s infinite}
+#dashMapCanvas .carte-marker rect,#carte-canvas .carte-marker rect{fill:var(--color-primary);stroke:var(--color-surface);stroke-width:1.5}
+#dashMapCanvas .carte-marker.carte-sos circle,#carte-canvas .carte-marker.carte-sos circle{animation:pulse 1.2s infinite}
 #dashMapEmpty{padding:30px 10px;text-align:center}
 
 .ui2-incident-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
