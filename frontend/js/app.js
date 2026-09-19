@@ -599,7 +599,7 @@ function editUser(id){
 }
 
 async function deleteUser(id){
-  if(!confirm('Supprimer cet utilisateur ?')) return;
+  if(!await confirmModal('Supprimer cet utilisateur ?')) return;
   await API.del('/admin/users/'+id);
   if(document.getElementById('page-utilisateurs')?.classList.contains('active')) await loadUsersModule();
   else await loadAdminDashboard();
@@ -778,7 +778,7 @@ function renderMainCourante(){
 }
 
 async function supprimerMC(id){
-  if(!confirm('Supprimer cette entrée ?')) return;
+  if(!await confirmModal('Supprimer cette entrée ?')) return;
   await API.del('/maincourante/'+id);
   await loadMaincourante();
 }
@@ -861,7 +861,7 @@ function editIncident(id){
 }
 
 async function deleteIncident(id){
-  if(!confirm('Supprimer cet incident ?')) return;
+  if(!await confirmModal('Supprimer cet incident ?')) return;
   await API.del('/incidents/'+id);
   await loadIncidents();
   notify('Incident supprimé');
@@ -912,7 +912,7 @@ async function sortirVehicule(id){
 }
 
 async function deleteVehicule(id){
-  if(!confirm('Supprimer ce mouvement véhicule ?')) return;
+  if(!await confirmModal('Supprimer ce mouvement véhicule ?')) return;
   await API.del('/vehicules/'+id);
   await loadVehicules();
   notify('Véhicule supprimé');
@@ -1369,7 +1369,7 @@ function renderLapiTable(){
 }
 
 async function clearLapiHistory(){
-  if(!confirm('Vider l\'historique LAPI ?')) return;
+  if(!await confirmModal('Vider l\'historique LAPI ?')) return;
   await API.del('/lapi'); await refresh('lapi');
   renderLapiHistory(); renderLapiTable();
 }
@@ -1435,7 +1435,7 @@ function openPietonModal(existing){
 function editPieton(id){ const p=(cache.pietons||[]).find(x=>x.id===id); if(!p) return; openPietonModal(p); }
 
 async function deletePieton(id){
-  if(!confirm('Supprimer ce passage ?')) return;
+  if(!await confirmModal('Supprimer ce passage ?')) return;
   await API.del('/pietons/'+id);
   await refreshPointagesViews();
   notify('Passage supprimé');
@@ -1471,7 +1471,7 @@ function openVisiteurModal(){
 async function checkInVis(id){ await API.put('/visiteurs/'+id+'/checkin'); await loadVisiteurs(); notify('Check-in effectué'); }
 async function checkOutVis(id){ await API.put('/visiteurs/'+id+'/checkout'); await loadVisiteurs(); notify('Check-out effectué'); }
 async function deleteVisiteur(id){
-  if(!confirm('Supprimer ce visiteur ?')) return;
+  if(!await confirmModal('Supprimer ce visiteur ?')) return;
   await API.del('/visiteurs/'+id);
   await loadVisiteurs();
   notify('Visiteur supprimé');
@@ -1587,7 +1587,7 @@ function editEmploye(id){
 }
 
 async function deleteEmploye(id){
-  if(!confirm('Supprimer cet employé ?')) return;
+  if(!await confirmModal('Supprimer cet employé ?')) return;
   await API.del('/employes/'+id);
   await loadEmployes();
   notify('Employé supprimé');
@@ -1634,7 +1634,7 @@ async function togglePlace(num){
     await API.put('/parking/places/'+num,{etat:'occupe',plaque});
     await loadParking(); notify('Entrée parking : '+num);
   } else if(place.etat==='occupe'){
-    if(!confirm('Libérer la place '+num+' ('+(place.plaque||'?')+') ?')) return;
+    if(!await confirmModal('Libérer la place '+num+' ('+(place.plaque||'?')+') ?')) return;
     await API.put('/parking/places/'+num,{etat:'libre',plaque:null});
     await loadParking(); notify('Place '+num+' libérée');
   }
@@ -1706,7 +1706,7 @@ async function desactiverBadge(ref){
 }
 
 async function deleteBadge(ref){
-  if(!confirm('Supprimer ce badge ?')) return;
+  if(!await confirmModal('Supprimer ce badge ?')) return;
   await API.del('/badges/'+encodeURIComponent(ref));
   await loadBadges();
   notify('Badge supprimé');

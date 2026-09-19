@@ -418,6 +418,16 @@ const I18N_AR = {
   "Repli (actualisation périodique)": "احتياطي (تحديث دوري)",
   "Confirmée": "مؤكَّدة",
   "Confirmer": "تأكيد",
+  "Confirmation": "تأكيد",
+  "Supprimer cet utilisateur ?": "هل تريد حذف هذا المستخدم؟",
+  "Supprimer cette entrée ?": "هل تريد حذف هذا التسجيل؟",
+  "Supprimer cet incident ?": "هل تريد حذف هذا الحادث؟",
+  "Supprimer ce mouvement véhicule ?": "هل تريد حذف حركة المركبة هذه؟",
+  "Vider l'historique LAPI ?": "هل تريد إفراغ سجل قراءة اللوحات؟",
+  "Supprimer ce passage ?": "هل تريد حذف هذا المرور؟",
+  "Supprimer ce visiteur ?": "هل تريد حذف هذا الزائر؟",
+  "Supprimer cet employé ?": "هل تريد حذف هذا الموظف؟",
+  "Supprimer ce badge ?": "هل تريد حذف هذه البطاقة؟",
   "Site *": "الموقع *",
   "Type *": "النوع *",
   "Commentaire": "تعليق",
@@ -773,6 +783,32 @@ function showModal(title, body, onConfirm, btnLabel='Enregistrer'){
   applyLanguage();
 }
 function closeModal(){ document.getElementById('modalBackdrop').classList.remove('show'); }
+
+// UI-3C : remplace window.confirm() (boîte de dialogue système, non
+// stylable, hors Design System) par une vraie modale — même structure
+// DOM que showModal(), aucun composant ajouté.
+function confirmModal(message, opts={}){
+  return new Promise(resolve => {
+    const c = document.getElementById('modalContent');
+    const danger = opts.danger !== false;
+    c.innerHTML = `
+      <div class="modal-header">
+        <div class="modal-title">${escapeHtml(opts.title || 'Confirmation')}</div>
+        <button class="modal-close" id="modalCancelX">×</button>
+      </div>
+      <div class="modal-body"><p style="margin:0">${escapeHtml(message)}</p></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="modalCancel">Annuler</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="modalConfirm">${escapeHtml(opts.confirmLabel || 'Confirmer')}</button>
+      </div>`;
+    const finish = (value) => { closeModal(); resolve(value); };
+    document.getElementById('modalConfirm').onclick = () => finish(true);
+    document.getElementById('modalCancel').onclick = () => finish(false);
+    document.getElementById('modalCancelX').onclick = () => finish(false);
+    document.getElementById('modalBackdrop').classList.add('show');
+    applyLanguage();
+  });
+}
 
 // ===== Notification =====
 function notify(msg, type='success'){

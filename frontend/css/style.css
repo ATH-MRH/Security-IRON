@@ -1029,14 +1029,12 @@ body.role-agent .admin-only{ display:none !important; }
   display:flex;
   align-items:center;
   justify-content:center;
-  box-shadow:0 0 18px rgba(0,255,157,.12);
 }
 .admin-status-orb span{
   width:18px;
   height:18px;
   border-radius:50%;
   background:var(--success);
-  box-shadow:0 0 16px var(--success-glow);
   animation:pulse 1.4s infinite;
 }
 .admin-status-label,.admin-meta-card span,.admin-kpi span{
@@ -1087,7 +1085,7 @@ body.role-agent .admin-only{ display:none !important; }
 }
 .admin-action-tile:hover{
   border-color:var(--primary);
-  background:rgba(0,212,255,.08);
+  background:rgba(37,117,252,.08);
   transform:translateY(-1px);
 }
 .admin-action-tile span{
@@ -1122,7 +1120,7 @@ body.role-agent .admin-only{ display:none !important; }
   content:"";
   position:absolute;
   top:0;
-  right:0;
+  inset-inline-end:0;
   width:80px;
   height:80px;
   opacity:.18;
