@@ -13,6 +13,13 @@ const appSource = fs.readFileSync(path.join(__dirname, '../frontend/js/app.js'),
 const navSource = appSource.slice(appSource.indexOf('function openSidebar('), appSource.indexOf('function switchTab('));
 const source = fs.readFileSync(path.join(__dirname, '../frontend/js/notifications.js'), 'utf8');
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// MISSION KPI: renderKpis() (frontend/js/alerts.js) now calls
+// frontend/js/ui.js#renderKpi2Card/#kpi2SparklineSvg — real source sliced in
+// here, exactly like navSource above does for app.js, so this sandbox
+// exercises the actual implementation rather than a hand-duplicated copy
+// that could silently drift out of sync.
+const uiSourceFull = fs.readFileSync(path.join(__dirname, '../frontend/js/ui.js'), 'utf8');
+const kpi2Source = uiSourceFull.slice(uiSourceFull.indexOf('function kpi2SparklineSvg'), uiSourceFull.indexOf('function renderKpi2Card') + uiSourceFull.slice(uiSourceFull.indexOf('function renderKpi2Card')).indexOf('\n}') + 2);
 function fixture(data = {}) {
   const routes = {'/alerts':[], '/incidents':[], '/visiteurs':[], '/alerts/notifications':[], ...data};
   const state = { html:'', requests:[], posts:[], errors:[] };
@@ -95,6 +102,7 @@ function fixture(data = {}) {
   });
   const bell=vm.runInContext(source+'\nNotificationBell;',context);
   vm.runInContext(socKpisSource, context);
+  vm.runInContext(kpi2Source, context);
   const center=vm.runInContext(alertsSource+'\nAlertCenter;',context);
   vm.runInContext(navSource,context);
   return {bell,center,routes,state,dot,element,buttons:()=>buttons,realtimeStub,emitRealtime};

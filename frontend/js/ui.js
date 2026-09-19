@@ -40,6 +40,26 @@ const I18N_AR = {
   'acquitté(s)': 'مؤكَّد(ة)',
   'reçu, en attente d’accusé': 'استُلم، بانتظار التأكيد',
   'pas encore reçu': 'لم يُستلم بعد',
+  // MISSION KPI — cartes compteur (Centre d'alertes + tableau de bord)
+  'vs hier': 'مقارنة بالأمس',
+  'Alertes actives': 'التنبيهات النشطة',
+  'Critiques en cours': 'الحرجة الجارية',
+  'SOS en cours': 'نداءات الاستغاثة الجارية',
+  'Non acquittées': 'غير المؤكَّدة',
+  'Escalades en cours': 'التصعيدات الجارية',
+  'Alertes aujourd’hui': 'تنبيهات اليوم',
+  'Prise en charge moyenne': 'متوسط زمن التكفل',
+  'Toutes urgences confondues': 'جميع حالات الطوارئ',
+  'Niveau critique ou SOS': 'مستوى حرج أو استغاثة',
+  'Alertes de détresse': 'تنبيهات استغاثة',
+  'En attente de prise en charge': 'بانتظار التكفل',
+  'Paliers automatiques franchis': 'مستويات تصعيد تلقائية مُجتازة',
+  'Tendance sur 7 jours': 'الاتجاه خلال 7 أيام',
+  'Délai moyen aujourd’hui': 'متوسط الزمن اليوم',
+  // Présents sur site / Visiteurs aujourd'hui / Véhicules entrés / Incidents
+  // ouverts / Actualisation temps réel / En attente / validés / 24 dernières
+  // heures / À traiter : déjà enregistrées plus bas (rangée KPI historique
+  // du tableau de bord) — jamais redéclarées ici, une seule clé par texte.
   'ALERTE': 'تنبيه',
   'URGENT': 'عاجل',
   'CRITIQUE': 'حرجة',
@@ -667,6 +687,57 @@ function fmtTime(iso){ if(!iso) return '—'; return new Date(iso).toLocaleTimeS
 function fmtDate(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString('fr-FR'); }
 function toDatetimeLocal(iso){ const d=new Date(iso); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/**
+ * MISSION KPI — mini-graphique RÉEL (jamais simulé) pour les cartes compteur
+ * (Centre d'alertes + tableau de bord). `values` doit être une série déjà
+ * agrégée depuis de vraies données (ex. frontend/js/soc-kpis.js#dailySeries)
+ * — cette fonction ne fait que la dessiner, jamais n'en invente le contenu.
+ * `var(--jeton)` fonctionne dans un attribut de présentation SVG (stroke) au
+ * même titre qu'une propriété CSS dans les navigateurs ciblés par cette
+ * application (déjà :has() ailleurs dans style.css) — jamais une couleur
+ * codée en dur qui décrocherait du thème clair/sombre.
+ */
+function kpi2SparklineSvg(values, colorVar){
+  if(!Array.isArray(values) || values.length<2) return null;
+  const w=100, h=30, pad=3;
+  const max=Math.max(...values), min=Math.min(...values), range=(max-min)||1;
+  const stepX=(w-pad*2)/(values.length-1);
+  const pts=values.map((v,i)=>`${(pad+i*stepX).toFixed(1)},${(h-pad-((v-min)/range)*(h-pad*2)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--${colorVar})" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/**
+ * MISSION KPI — carte compteur unique (Centre d'alertes + tableau de bord).
+ * @param tone   'info'|'success'|'warning'|'danger'|'purple'|'accent' — même
+ *               jeton que .kpi-card.<tone> déjà existant (couleur/icône/
+ *               bandeau) et que kpi2SparklineSvg (couleur de la courbe).
+ * @param trend  {direction:'up'|'down'|'flat', diff:number} pour une
+ *               évolution réelle, ou null si aucune comparaison réelle
+ *               n'existe pour cette carte précise (état neutre, jamais une
+ *               valeur inventée). "vs hier" est isolé dans son propre span
+ *               (texte fixe exact, traduisible par le même mécanisme FR/AR
+ *               que le reste de l'application, frontend/js/ui.js
+ *               #applyLanguage) — jamais concaténé avec le nombre, qui
+ *               varie et ne peut donc jamais être une clé I18N_AR figée.
+ * @param series tableau de nombres réels pour le mini-graphique, ou null/
+ *               undefined si aucune série réelle n'existe pour cette carte —
+ *               la géométrie de la carte reste alors identique (placeholder
+ *               neutre, jamais un graphique vide qui casse la mise en page).
+ */
+function renderKpi2Card({icon, tone, label, value, trend, series, footerIcon, footerText}){
+  const trendHtml = trend
+    ? `<span class="kpi2-trend ${trend.direction}">${trend.direction==='up'?'↑':trend.direction==='down'?'↓':'→'} ${trend.diff>0?'+':''}${trend.diff} <span class="kpi2-trend-label">vs hier</span></span>`
+    : `<span class="kpi2-trend neutral">—</span>`;
+  const svg = series ? kpi2SparklineSvg(series, tone) : null;
+  const sparkHtml = svg ? `<div class="kpi2-spark">${svg}</div>` : `<div class="kpi2-spark-empty" aria-hidden="true"></div>`;
+  return `<div class="kpi-card ${tone} kpi2-card">
+    <div class="kpi2-top"><div class="kpi2-icon" aria-hidden="true"><span class="kpi-icon-glyph">${icon}</span></div>${trendHtml}</div>
+    <div class="kpi2-body"><div class="kpi-value">${value}</div><div class="kpi-label">${escapeHtml(label)}</div></div>
+    ${sparkHtml}
+    <div class="kpi2-footer"><span aria-hidden="true">${footerIcon||''}</span><span>${escapeHtml(footerText)}</span></div>
+  </div>`;
+}
 function rand(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 // Format algérien (depuis 2009) : NNNNNN-CAA-WW — série (4 à 6 chiffres),

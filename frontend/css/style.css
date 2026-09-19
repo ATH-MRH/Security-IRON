@@ -581,6 +581,8 @@ td strong{color:var(--text-bright)}
   --danger:#ff5f6d;
   --danger-glow:rgba(255,95,109,0.18);
   --info:#5b8cff;
+  --purple:#8b5cf6;
+  --purple-glow:rgba(139,92,246,0.18);
   --text:#263244;
   --text-bright:#111827;
   --text-muted:#6f7d91;
@@ -1548,6 +1550,7 @@ body.role-agent .admin-only{ display:none !important; }
   --warning:#fbbf24;--warning-glow:rgba(251,191,36,.3);
   --danger:#ff6b7a;--danger-glow:rgba(255,107,122,.4);
   --info:#7aa2ff;
+  --purple:#a78bfa;--purple-glow:rgba(167,139,250,.35);
   --text:#dbe4f5;--text-bright:#ffffff;--text-muted:#8a97b3;--text-dim:#5c6786;
   --shadow:0 14px 34px rgba(0,0,0,.5);--shadow-lg:0 26px 70px rgba(0,0,0,.6);
 }
@@ -1636,8 +1639,14 @@ body.role-agent .admin-only{ display:none !important; }
 .ui2-kpi-icon{
   width:42px;height:42px;border-radius:12px;flex:0 0 auto;
   display:flex;align-items:center;justify-content:center;font-size:18px;
-  filter:grayscale(1) brightness(4); /* émoji -> rendu proche du blanc, pastille en couleur pleine */
 }
+/* MISSION KPI (correctif) : le filtre vivait sur .ui2-kpi-icon lui-même —
+   il blanchissait alors AUSSI le fond coloré posé juste en dessous
+   (.ui2-kpi.<tone> .ui2-kpi-icon{background:...}), rendant la pastille
+   quasi invisible au lieu d'un cercle plein coloré (trouvé en vérification
+   visuelle live). Isolé sur le glyphe seul (.kpi-icon-glyph, span interne)
+   : le fond reste plein, seul l'émoji devient quasi blanc dessus. */
+.kpi-icon-glyph{filter:grayscale(1) brightness(4);display:block}
 .ui2-kpi.danger .ui2-kpi-icon{background:var(--danger)}
 .ui2-kpi.warning .ui2-kpi-icon{background:var(--warning)}
 .ui2-kpi.info .ui2-kpi-icon{background:var(--info)}
@@ -1845,3 +1854,68 @@ body{
    pour ne plus jamais dépendre de l'ordre/la spécificité d'une classe
    quelconque ajoutée ailleurs — présente ou future. */
 [hidden]{display:none!important}
+
+/* =====================================================================
+   MISSION KPI — cartes compteurs (Centre d'alertes + tableau de bord)
+   =====================================================================
+   Anatomie fidèle au modèle validé : icône circulaire colorée, titre,
+   grande valeur, évolution RÉELLE si elle existe, mini-graphique RÉEL si
+   il existe, bandeau inférieur contextuel — jamais de donnée inventée
+   (voir frontend/js/soc-kpis.js et frontend/js/ui.js#renderKpi2Card).
+   `.kpi2-card` réutilise `.kpi-card`/`.kpi-card.<tone>` déjà existants pour
+   le fond/l'ombre/le radius (aucune duplication), et neutralise leur reliquat
+   décoratif (bordure/lueur de coin) : la couleur vit désormais DANS le
+   contenu (icône, bandeau), jamais en contour de carte. */
+.kpi2-card{
+  border-inline-start:0!important;padding:18px 20px;display:flex;flex-direction:column;gap:12px;
+}
+.kpi2-card::before,.kpi2-card::after{display:none!important}
+.kpi2-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.kpi2-icon{
+  width:40px;height:40px;border-radius:50%;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+  /* .kpi-icon-glyph (span interne, voir plus haut) porte le filtre —
+     jamais ce conteneur, qui doit garder son fond coloré plein. */
+}
+.kpi-card.info .kpi2-icon{background:var(--info)}
+.kpi-card.success .kpi2-icon{background:var(--success)}
+.kpi-card.warning .kpi2-icon{background:var(--warning)}
+.kpi-card.danger .kpi2-icon{background:var(--danger)}
+.kpi-card.purple .kpi2-icon{background:var(--purple)}
+.kpi-card.accent .kpi2-icon{background:var(--accent)}
+.kpi2-trend{font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;text-align:start;max-width:100%}
+.kpi2-trend-label{white-space:normal}
+.kpi2-trend.up{color:#0f8b63;background:rgba(35,196,131,.12)}
+.kpi2-trend.down{color:#c2414d;background:rgba(255,95,109,.12)}
+.kpi2-trend.flat{color:#6f7d91;background:rgba(111,125,145,.10)}
+.kpi2-trend.neutral{color:var(--text-dim);background:transparent;padding-inline:0}
+.kpi2-body .kpi-value{font-size:28px}
+.kpi2-body .kpi-label{margin-top:2px}
+.kpi2-spark{height:30px}
+.kpi2-spark svg{width:100%;height:100%;display:block}
+.kpi2-spark-empty{
+  height:30px;border-radius:6px;
+  background:repeating-linear-gradient(90deg,var(--border) 0 6px,transparent 6px 12px);
+  background-size:100% 1px;background-position:center;background-repeat:no-repeat;
+}
+.kpi2-footer{
+  display:flex;align-items:center;gap:6px;border-radius:10px;padding:7px 10px;
+  font-size:11.5px;font-weight:650;color:var(--text-muted);background:var(--bg-2);
+}
+.kpi-card.info .kpi2-footer{background:rgba(91,140,255,.10);color:#2f5fd0}
+.kpi-card.success .kpi2-footer{background:rgba(35,196,131,.10);color:#0f8b63}
+.kpi-card.warning .kpi2-footer{background:rgba(247,169,40,.12);color:#a56408}
+.kpi-card.danger .kpi2-footer{background:rgba(255,95,109,.10);color:#c2414d}
+.kpi-card.purple .kpi2-footer{background:rgba(139,92,246,.10);color:#6d3fd6}
+.kpi-card.accent .kpi2-footer{background:rgba(33,199,168,.10);color:#128a72}
+:root[data-theme="dark"] .kpi2-footer{background:rgba(255,255,255,.05);color:var(--text-muted)}
+:root[data-theme="dark"] .kpi-card.info .kpi2-footer{color:var(--info)}
+:root[data-theme="dark"] .kpi-card.success .kpi2-footer{color:var(--success)}
+:root[data-theme="dark"] .kpi-card.warning .kpi2-footer{color:var(--warning)}
+:root[data-theme="dark"] .kpi-card.danger .kpi2-footer{color:var(--danger)}
+:root[data-theme="dark"] .kpi-card.purple .kpi2-footer{color:var(--purple)}
+:root[data-theme="dark"] .kpi-card.accent .kpi2-footer{color:var(--accent)}
+.kpi2-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+@media(max-width:1400px){.kpi2-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.kpi2-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.kpi2-grid{grid-template-columns:1fr}}

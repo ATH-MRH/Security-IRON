@@ -48,14 +48,30 @@ const AlertCenter = (() => {
   }
   // PG-16 : agrégation pure (frontend/js/soc-kpis.js), aucun KPI simulé — tout
   // provient de GET /alerts, déjà filtré own/scope côté serveur (PG-8).
+  // MISSION KPI (Centre d'alertes) : les 6 compteurs demandés, plus "Prise en
+  // charge moyenne" conservée telle quelle (donnée réelle déjà existante,
+  // simplement jamais mentionnée dans les 6 — supprimer une mesure qui
+  // fonctionne n'est pas "modifier uniquement les cartes", c'est en perdre
+  // une) — même style de carte, en 7ᵉ position, jamais parmi les 6 exigées.
+  // active/critical/sos/unacknowledged/escalated/avgAckSeconds sont des
+  // états instantanés : aucune évolution/mini-graphique réels n'existe pour
+  // eux (voir soc-kpis.js) — état neutre, jamais une valeur inventée. Seule
+  // "Alertes aujourd'hui" (un compte d'événements horodatés) a une
+  // comparaison réelle (k.yesterday) et une vraie série (k.dailySeries).
   function renderKpis() {
     const k = SocKpis.compute(rows);
-    const avg = k.avgAckSeconds===null ? '—' : k.avgAckSeconds+' s';
-    document.getElementById('ac-kpis').innerHTML=[
-      ['Alertes actives',k.active],['Critiques en cours',k.critical],['SOS en cours',k.sos],
-      ['Non acquittées',k.unacknowledged],['Escalades en cours',k.escalated],
-      ['Alertes aujourd’hui',k.today],['Prise en charge moyenne',avg],
-    ].map(([label,value])=>`<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>`).join('');
+    const diff = k.today - k.yesterday;
+    const todayTrend = { direction: diff>0?'up':diff<0?'down':'flat', diff };
+    const series = k.dailySeries.map(p=>p.count);
+    document.getElementById('ac-kpis').innerHTML = `<div class="kpi-grid kpi2-grid">${[
+      renderKpi2Card({icon:'🔔',tone:'info',label:'Alertes actives',value:k.active,trend:null,series:null,footerIcon:'📡',footerText:'Toutes urgences confondues'}),
+      renderKpi2Card({icon:'🔥',tone:'warning',label:'Critiques en cours',value:k.critical,trend:null,series:null,footerIcon:'⚠️',footerText:'Niveau critique ou SOS'}),
+      renderKpi2Card({icon:'🆘',tone:'danger',label:'SOS en cours',value:k.sos,trend:null,series:null,footerIcon:'🚨',footerText:'Alertes de détresse'}),
+      renderKpi2Card({icon:'📭',tone:'success',label:'Non acquittées',value:k.unacknowledged,trend:null,series:null,footerIcon:'⏳',footerText:'En attente de prise en charge'}),
+      renderKpi2Card({icon:'📈',tone:'purple',label:'Escalades en cours',value:k.escalated,trend:null,series:null,footerIcon:'⤴️',footerText:'Paliers automatiques franchis'}),
+      renderKpi2Card({icon:'📅',tone:'accent',label:'Alertes aujourd’hui',value:k.today,trend:todayTrend,series,footerIcon:'🗓️',footerText:'Tendance sur 7 jours'}),
+      renderKpi2Card({icon:'⏱️',tone:'info',label:'Prise en charge moyenne',value:k.avgAckSeconds===null?'—':k.avgAckSeconds+' s',trend:null,series:null,footerIcon:'📋',footerText:'Délai moyen aujourd’hui'}),
+    ].join('')}</div>`;
   }
   function renderBySite() {
     const c = document.getElementById('ac-by-site');

@@ -48,6 +48,26 @@ const SocKpis = (() => {
       .map(([site, count]) => ({ site, count }))
       .sort((a, b) => b.count - a.count || a.site.localeCompare(b.site));
 
+    // MISSION KPI (Centre d'alertes) : évolution/mini-graphique réels —
+    // uniquement possibles pour "Alertes aujourd'hui" (un compte d'événements
+    // horodatés, comparable jour à jour). active/critical/sos/unacknowledged/
+    // escalated sont des états instantanés (combien le sont MAINTENANT) —
+    // aucun relevé historique de ces états n'existe (rien n'enregistre "combien
+    // étaient actives hier à cette heure") : leur donner une tendance/un
+    // graphique reviendrait à inventer une donnée, explicitement interdit.
+    // yesterday : même définition que `today`, décalée d'un jour — jamais une
+    // approximation (24h glissantes), un vrai jour calendaire comme `today`.
+    const yesterdayRef = new Date(now); yesterdayRef.setDate(yesterdayRef.getDate() - 1);
+    const yesterday = list.filter(a => sameDay(a.created_at, yesterdayRef)).length;
+    // dailySeries : 7 derniers jours (aujourd'hui inclus), un vrai point par
+    // jour calendaire — la seule série temporelle que ces données permettent
+    // de construire sans supposition.
+    const dailySeries = [];
+    for (let i = 6; i >= 0; i--) {
+      const ref = new Date(now); ref.setDate(ref.getDate() - i);
+      dailySeries.push({ date: ref.toDateString(), count: list.filter(a => sameDay(a.created_at, ref)).length });
+    }
+
     return {
       active: active.length,
       critical: critical.length,
@@ -55,6 +75,8 @@ const SocKpis = (() => {
       unacknowledged: unacknowledged.length,
       escalated: escalated.length,
       today: today.length,
+      yesterday,
+      dailySeries,
       avgAckSeconds,
       bySite,
     };

@@ -217,10 +217,7 @@ async function loadDashboard(){
     API.get('/alerts').catch(()=>[]),       // Centre d'alertes déjà autorisé (PG-8) ; dégradé silencieux si indisponible
     API.get('/map/sites').catch(()=>[]),    // référentiel sites (PG-6), même route que la page Carte
   ]);
-  document.getElementById('kpi-presents').textContent = stats.employes_actifs + stats.visiteurs_present + stats.vehicules_sur_site;
-  document.getElementById('kpi-visiteurs').textContent = stats.visiteurs_total;
-  document.getElementById('kpi-vehicules').textContent = stats.vehicules_24h;
-  document.getElementById('kpi-incidents').textContent = stats.incidents_ouverts;
+  renderDashboardKpiRow2(stats);
   document.getElementById('kpi-incidents-encours').textContent = stats.incidents_ouverts;
   document.getElementById('kpi-alertes-critiques').textContent = SocKpis.compute(alertRows).critical;
   document.getElementById('kpi-agents-service').textContent = agentsEnServiceCount();
@@ -236,6 +233,37 @@ async function loadDashboard(){
   renderDashboardLiveFeed();
   renderActivite(); renderAlertes(); renderParkingQuick();
   if(API.getUser()?.role === 'admin') await loadAdminDashboard();
+}
+
+// MISSION KPI (tableau de bord) : même principe que frontend/js/soc-kpis.js
+// (jamais dupliqué tel quel — cache.visiteurs/cache.vehicules sont des
+// tableaux de fiches, pas des alertes, un champ date différent par entité) —
+// 7 points réels (aujourd'hui inclus), un vrai jour calendaire chacun.
+function dailyCounts(records, dateField, now = new Date()){
+  const sameDay = (iso, ref) => iso && new Date(iso).toDateString() === ref.toDateString();
+  const series = [];
+  for(let i=6; i>=0; i--){ const ref = new Date(now); ref.setDate(ref.getDate()-i); series.push((records||[]).filter(r=>sameDay(r[dateField], ref)).length); }
+  return series;
+}
+// "Présents sur site" et "Incidents ouverts" sont des états instantanés
+// (combien MAINTENANT) : aucun relevé historique de ces états n'existe (rien
+// n'enregistre "combien étaient présents/ouverts hier à cette heure") —
+// état neutre pour ces deux cartes, jamais une évolution inventée. Visiteurs/
+// véhicules sont de vrais compteurs d'événements horodatés (arrivee/entree) :
+// une comparaison réelle jour à jour en est tirée, calculée ici côté client
+// à partir des mêmes données déjà chargées (aucune nouvelle requête).
+function renderDashboardKpiRow2(stats){
+  const now = new Date();
+  const visSeries = dailyCounts(cache.visiteurs, 'arrivee', now);
+  const visDiff = visSeries[6] - visSeries[5];
+  const vehSeries = dailyCounts(cache.vehicules, 'entree', now);
+  const vehDiff = vehSeries[6] - vehSeries[5];
+  document.getElementById('dashKpiRow2').innerHTML = [
+    renderKpi2Card({icon:'👥',tone:'success',label:'Présents sur site',value:stats.employes_actifs+stats.visiteurs_present+stats.vehicules_sur_site,trend:null,series:null,footerIcon:'🟢',footerText:'Actualisation temps réel'}),
+    renderKpi2Card({icon:'🎫',tone:'info',label:'Visiteurs aujourd\'hui',value:stats.visiteurs_total,trend:{direction:visDiff>0?'up':visDiff<0?'down':'flat',diff:visDiff},series:visSeries,footerIcon:'📋',footerText:'En attente / validés'}),
+    renderKpi2Card({icon:'🚗',tone:'warning',label:'Véhicules entrés',value:stats.vehicules_24h,trend:{direction:vehDiff>0?'up':vehDiff<0?'down':'flat',diff:vehDiff},series:vehSeries,footerIcon:'🕒',footerText:'24 dernières heures'}),
+    renderKpi2Card({icon:'⚠️',tone:'danger',label:'Incidents ouverts',value:stats.incidents_ouverts,trend:null,series:null,footerIcon:'📋',footerText:'À traiter'}),
+  ].join('');
 }
 
 // Même définition que la carte "Agents en service" de Main courante

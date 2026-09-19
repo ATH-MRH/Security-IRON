@@ -36,7 +36,50 @@ function alert(overrides = {}) {
 test('empty dashboard: every KPI is zero/null, never an error', () => {
   const { compute } = load();
   const r = compute([], NOW);
-  assert.deepEqual(r, { active: 0, critical: 0, sos: 0, unacknowledged: 0, escalated: 0, today: 0, avgAckSeconds: null, bySite: [] });
+  assert.deepEqual(r, {
+    active: 0, critical: 0, sos: 0, unacknowledged: 0, escalated: 0, today: 0, yesterday: 0,
+    dailySeries: [
+      { date: new Date('2026-06-09T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-10T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-11T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-12T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-13T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-14T12:00:00.000Z').toDateString(), count: 0 },
+      { date: new Date('2026-06-15T12:00:00.000Z').toDateString(), count: 0 },
+    ],
+    avgAckSeconds: null, bySite: [],
+  });
+});
+
+// MISSION KPI (Centre d'alertes) : "Alertes aujourd'hui" est la SEULE des 6
+// cartes pour laquelle une évolution/un mini-graphique réels existent — les
+// cinq autres sont des états instantanés, sans relevé historique (voir le
+// commentaire dans soc-kpis.js). yesterday/dailySeries sont ce que le
+// nouveau rendu (frontend/js/alerts.js) utilise pour cette carte précise.
+test('yesterday counts alerts created exactly one calendar day before `now`, never a 24h rolling window', () => {
+  const { compute } = load();
+  const rows = [
+    alert({ created_at: '2026-06-14T23:59:00.000Z' }), // yesterday, late
+    alert({ created_at: '2026-06-14T00:01:00.000Z' }), // yesterday, early
+    alert({ created_at: '2026-06-13T23:00:00.000Z' }), // two days ago: excluded
+    alert({ created_at: '2026-06-15T09:00:00.000Z' }), // today: excluded from yesterday
+  ];
+  assert.equal(compute(rows, NOW).yesterday, 2);
+});
+
+test('dailySeries has exactly 7 points (6 days ago through today), each a real per-day count', () => {
+  const { compute } = load();
+  const rows = [
+    alert({ created_at: '2026-06-15T08:00:00.000Z' }), // today
+    alert({ created_at: '2026-06-15T09:00:00.000Z' }), // today
+    alert({ created_at: '2026-06-13T08:00:00.000Z' }), // 2 days ago
+    alert({ created_at: '2026-05-01T08:00:00.000Z' }), // outside the 7-day window: excluded
+  ];
+  const series = compute(rows, NOW).dailySeries;
+  assert.equal(series.length, 7);
+  assert.equal(series[6].count, 2, 'last point is today');
+  assert.equal(series[4].count, 1, '2 days ago has exactly one point (index 6-2=4)');
+  assert.equal(series.reduce((s, p) => s + p.count, 0), 3, 'the alert from a month ago never leaks into this 7-day window');
 });
 
 test('compute() tolerates a non-array input (e.g. a transient error payload) without throwing', () => {
