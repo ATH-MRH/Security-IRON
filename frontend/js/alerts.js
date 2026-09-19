@@ -270,7 +270,11 @@ const AlertCenter = (() => {
   function updateLiveBadge(){
     const b=document.getElementById('ac-live-badge'); if(!b) return;
     const live=Realtime.isConnected();
-    b.textContent = live ? '● Temps réel' : '● Repli (actualisation périodique)';
+    // UI-3D : textContent posé en JS, hors de la portée du scan DOM de
+    // applyLanguage() — traduit ici explicitement (même idiome que la
+    // ligne 160 ci-dessus), sinon restait figé en français sous AR.
+    const lang = localStorage.getItem(I18N_KEY)||'fr';
+    b.textContent = '● ' + translateText(live ? 'Temps réel' : 'Repli (actualisation périodique)', lang);
     b.classList.toggle('live',live); b.classList.toggle('fallback',!live);
   }
   function start() {

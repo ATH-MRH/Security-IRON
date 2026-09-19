@@ -97,6 +97,12 @@ function fixture(data = {}) {
     document: {activeElement:null,documentElement:{setAttribute(){},getAttribute:()=>null},getElementById:element,addEventListener(){},querySelector:()=>dot,querySelectorAll:selector=>selector==='[data-action]'?element('ac-detail').querySelectorAll(selector):selector==='[data-bell-alert]'||selector==='[data-bell-notification]'?buttons.filter(b=>Object.hasOwn(b.dataset,selector==='[data-bell-alert]'?'bellAlert':'bellNotification')):[]},
     showModal:(title,html)=>{state.html=html;buttons=[...html.matchAll(/<button[^>]*data-bell-(alert|notification)="([^"]+)"([^>]*)>/g)].map(m=>({dataset:{[m[1]==='alert'?'bellAlert':'bellNotification']:m[2],target:m[3].match(/data-target="([^"]+)"/)?.[1]}}));},
     closeModal:()=>{state.closed=true;},isAdmin:()=>true,lapiStream:null,notify:m=>state.errors.push(m),
+    // UI-3D : updateLiveBadge() traduit désormais explicitement son texte
+    // (frontend/js/alerts.js) — ces 3 globales sont fournies par ui.js en
+    // conditions réelles, hors périmètre volontaire de ce contexte VM
+    // minimal ; stub passthrough, la traduction elle-même est testée
+    // ailleurs (tests/frontend-i18n-arabic.test.js).
+    localStorage:{getItem:()=>null}, I18N_KEY:'securisite_lang', translateText:s=>s,
     Realtime: realtimeStub,
     setInterval:()=>0, clearInterval:()=>{}, setTimeout:()=>0, clearTimeout:()=>{},
   });
