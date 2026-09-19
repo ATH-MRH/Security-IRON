@@ -62,7 +62,6 @@ body{
 @keyframes scan{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes slideInMC{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scanLine{0%,100%{top:0}50%{top:calc(100% - 2px)}}
 
 /* ===== Sidebar ===== */
@@ -95,14 +94,6 @@ body{
 .brand p{
   font-size:9px;color:var(--text-muted);margin-top:6px;
   text-transform:uppercase;letter-spacing:2px;font-family:var(--font-mono);
-}
-.logo-shield{
-  width:36px;height:36px;
-  background:linear-gradient(135deg,var(--primary),var(--primary-dark));
-  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;color:var(--bg);
-  box-shadow:0 0 12px var(--primary-glow);font-weight:bold;
 }
 .app-logo{
   display:block;object-fit:contain;border-radius:50%;
@@ -171,7 +162,6 @@ body{
   box-shadow:0 0 8px var(--success-glow);animation:pulse 1.2s infinite;
 }
 .topbar-right{display:flex;align-items:center;gap:10px}
-.btn-logout{padding:8px 12px;font-size:11px}
 .user-chip{
   display:flex;align-items:center;gap:10px;padding:6px 14px;
   background:var(--surface-2);border:1px solid var(--border);
@@ -287,9 +277,8 @@ body{
 
 /* ===== Forms ===== */
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.form-row.three{grid-template-columns:1fr 1fr 1fr}
 .form-row.full{grid-template-columns:1fr}
-@media(max-width:700px){.form-row,.form-row.three{grid-template-columns:1fr}}
+@media(max-width:700px){.form-row{grid-template-columns:1fr}}
 .form-group label{
   display:block;font-size:10px;color:var(--text-muted);
   margin-bottom:6px;font-weight:600;
@@ -471,7 +460,6 @@ td strong{color:var(--text-bright)}
 .login-box::before{content:"";position:absolute;top:-1px;left:-1px;width:30px;height:30px;border-top:2px solid var(--primary);border-left:2px solid var(--primary)}
 .login-box::after{content:"";position:absolute;bottom:-1px;right:-1px;width:30px;height:30px;border-bottom:2px solid var(--primary);border-right:2px solid var(--primary)}
 .login-brand{text-align:center;margin-bottom:30px}
-.login-brand .logo-shield{width:60px;height:60px;font-size:24px;margin:0 auto 14px}
 .login-brand h2{font-family:var(--font-display);font-size:28px;font-weight:700;text-transform:uppercase;letter-spacing:4px;color:var(--text-bright)}
 .login-brand p{font-size:10px;color:var(--text-muted);margin-top:8px;text-transform:uppercase;letter-spacing:3px;font-family:var(--font-mono)}
 .login-error{margin-top:12px;padding:8px 12px;background:rgba(255,56,96,0.1);border:1px solid var(--danger);color:var(--danger);font-size:11px;text-align:center;font-family:var(--font-mono);letter-spacing:1px}
@@ -484,7 +472,6 @@ td strong{color:var(--text-bright)}
 .mc-content{background:var(--surface-2);border:1px solid var(--border);border-inline-start:3px solid var(--primary);padding:14px 16px;position:relative}
 .mc-entry.priorite-importante .mc-content{border-inline-start-color:var(--warning);background:linear-gradient(90deg,rgba(255,184,0,0.08),var(--surface-2))}
 .mc-entry.priorite-critique .mc-content{border-inline-start-color:var(--danger);background:linear-gradient(90deg,rgba(255,56,96,0.1),var(--surface-2));box-shadow:0 0 16px rgba(255,56,96,0.1)}
-.mc-entry.new-entry{animation:slideInMC .4s ease-out}
 .mc-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .mc-tags{display:flex;gap:6px;flex-wrap:wrap}
 .mc-poste{display:inline-flex;align-items:center;gap:4px;background:var(--primary);color:var(--bg);padding:3px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;font-family:var(--font-mono);box-shadow:0 0 8px var(--primary-glow)}
@@ -806,23 +793,11 @@ body{
   content:"";position:absolute;inset:auto -8% -45% auto;width:360px;height:360px;border-radius:50%;
   background:linear-gradient(135deg,rgba(37,117,252,.18),rgba(33,199,168,.16));filter:blur(8px);
 }
-.clean-orb{
-  width:190px;height:190px;border-radius:50%;display:grid;place-items:center;position:relative;
-  background:conic-gradient(from 180deg,#2575fc,#21c7a8,#7dd3fc,#2575fc);
-  box-shadow:0 24px 60px rgba(37,117,252,.22),inset 0 0 0 12px rgba(255,255,255,.38);
-}
-.clean-orb::before{content:"";position:absolute;inset:16px;border-radius:50%;background:#fff;box-shadow:inset 0 0 32px rgba(37,117,252,.12)}
-.clean-orb-ring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(transparent 0 22%,rgba(255,255,255,.88) 22% 30%,transparent 30%);animation:spinClean 5s linear infinite}
-.clean-orb img{position:relative;z-index:1;width:118px;height:118px;border-radius:50%;object-fit:contain;box-shadow:0 10px 25px rgba(21,34,52,.16)}
-@keyframes spinClean{to{transform:rotate(360deg)}}
 .clean-hero-copy{position:relative;z-index:1;max-width:620px}
 .clean-eyebrow{font-size:12px;font-weight:800;color:#2370f4;margin-bottom:10px}
 .clean-hero h2{font-size:38px;line-height:1.08;color:#111827;margin-bottom:12px;letter-spacing:-.02em}
 .clean-hero p{font-size:15px;color:#657287;max-width:560px;margin-bottom:22px}
 .clean-actions{display:flex;gap:12px;flex-wrap:wrap}
-.clean-score{position:relative;z-index:1;min-width:130px;padding:20px;border-radius:24px;background:rgba(255,255,255,.74);box-shadow:inset 0 0 0 1px rgba(255,255,255,.8),0 14px 34px rgba(37,55,88,.10);text-align:center}
-.clean-score span{display:block;font-size:12px;color:#7b8798;font-weight:700;margin-bottom:8px}
-.clean-score strong{display:block;font-size:34px;color:#18a877;letter-spacing:-.04em}
 .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:20px}
 .kpi-card,.card{
   border-radius:28px;background:rgba(255,255,255,.82);border:1px solid rgba(255,255,255,.92);
@@ -838,123 +813,39 @@ body{
 .form-group input,.form-group select,.form-group textarea{border-radius:18px}
 .login-box{border-radius:34px}
 .modal{border-radius:30px}
-@media(max-width:980px){.clean-hero{grid-template-columns:1fr;text-align:center}.clean-orb{margin:auto}.clean-hero-copy{margin:auto}.clean-actions{justify-content:center}.clean-score{margin:auto}}
+@media(max-width:980px){.clean-hero{grid-template-columns:1fr;text-align:center}.clean-hero-copy{margin:auto}.clean-actions{justify-content:center}}
 
-/* ===== Sidebar noire + sélection jaune ===== */
-.sidebar{
-  background:#050505!important;
-  border-inline-end:1px solid rgba(255,255,255,.08)!important;
-  box-shadow:8px 0 26px rgba(0,0,0,.28)!important;
-}
-.brand{
-  border-bottom:1px solid rgba(255,255,255,.10)!important;
-}
-.brand h1,
-.brand p,
-.nav-title,
-.nav-item{
-  color:#fff!important;
-}
-.nav-title{
-  opacity:.72;
-}
-.nav-item{
-  background:transparent!important;
-  border-left:0!important;
-}
-.nav-item:hover{
-  color:#ffd400!important;
-  background:rgba(255,212,0,.10)!important;
-}
-.nav-item.active{
-  color:#ffd400!important;
-  background:rgba(255,212,0,.14)!important;
-  box-shadow:none!important;
-}
-.nav-item:hover .nav-icon,
-.nav-item.active .nav-icon{
-  color:#ffd400!important;
-  filter:none!important;
-}
-
-/* ===== Barre du haut noire + interactions jaunes ===== */
-.topbar{
-  background:#050505!important;
-  border-bottom:1px solid rgba(255,255,255,.08)!important;
-  box-shadow:0 8px 24px rgba(0,0,0,.22)!important;
-}
-.page-title,
-.user-info strong,
-.user-info span{
-  color:#fff!important;
-}
+/* LOT CSS-1 (consolidation) : les sections "Sidebar noire + sélection
+   jaune", "Barre du haut noire + interactions jaunes", "Rond d'état rouge"
+   et "Rond orange" (thème abandonné, jamais supprimé) vivaient ici — chaque
+   propriété vérifiée une à une (spécificité + !important, cascade réelle,
+   getComputedStyle avant/après) avant suppression :
+   - .clean-orb/.clean-orb-ring/.clean-score (+ leurs variantes .danger/
+     .analyzing/.ok, + @keyframes spinClean — définitions supprimées avec
+     le reste du hero abandonné, un peu plus haut dans cette même section) :
+     .clean-orb est masqué en ligne dans le HTML depuis la refonte UI 2.0
+     (déjà documenté plus bas, "Hero du tableau de bord") — mort avéré.
+   - .sidebar/.brand/.nav-title/.nav-item(:hover/.active)/.topbar/
+     .page-title/.user-info/.live-indicator/.live-dot/.notif-dot/
+     .btn-icon/.user-chip/.btn-logout/.avatar : chaque propriété a une
+     règle UI 2.0 plus loin dans ce fichier qui la réécrit avec une
+     spécificité/!important égale ou supérieure — mort avéré (vérifié par
+     capture + getComputedStyle, zéro différence après suppression).
+   Deux exceptions, réellement rendues et donc PRÉSERVÉES ci-dessous plutôt
+   que supprimées : le halo jaune du logo topbar (.app-logo-topbar) et le
+   survol jaune du bouton profil (.user-chip:hover) — aucune règle UI 2.0
+   ultérieure ne les réécrivait, ils étaient donc les SEULS déclarants
+   réels malgré leur emplacement dans cette section "abandonnée". Conservés
+   ici tels quels (comportement actuel inchangé) ; à trancher dans un lot
+   de design ultérieur, pas celui-ci (zéro changement visuel non demandé). */
 .app-logo-topbar{
   box-shadow:0 0 0 2px rgba(255,212,0,.18),0 8px 18px rgba(0,0,0,.25)!important;
 }
-.topbar .live-indicator{
-  background:rgba(255,212,0,.12)!important;
-  color:#ffd400!important;
-  border:1px solid rgba(255,212,0,.28)!important;
-}
-.topbar .live-dot,
-.notif-dot{
-  background:#ffd400!important;
-  box-shadow:0 0 10px rgba(255,212,0,.65)!important;
-}
-.topbar-right select,
-.topbar .btn-icon,
-.topbar .user-chip,
-.topbar .btn-logout{
-  background:rgba(255,255,255,.08)!important;
-  border-color:rgba(255,255,255,.14)!important;
-  color:#fff!important;
-}
-.topbar-right select:hover,
-.topbar .btn-icon:hover,
-.topbar .user-chip:hover,
-.topbar .btn-logout:hover{
+.topbar .user-chip:hover{
   color:#ffd400!important;
   border-color:rgba(255,212,0,.45)!important;
   background:rgba(255,212,0,.10)!important;
   box-shadow:none!important;
-}
-.topbar .avatar{
-  background:#ffd400!important;
-  color:#050505!important;
-}
-
-/* ===== Rond d'état rouge si tâches/incidents non conformes ===== */
-.clean-hero.danger .clean-orb{
-  background:conic-gradient(from 180deg,#ff2d55,#ff7a45,#ff2d55)!important;
-  box-shadow:0 24px 60px rgba(255,45,85,.30),inset 0 0 0 12px rgba(255,255,255,.38)!important;
-}
-.clean-hero.danger .clean-orb-ring{
-  background:conic-gradient(transparent 0 18%,rgba(255,45,85,.95) 18% 34%,transparent 34%)!important;
-}
-.clean-hero.danger .clean-score strong{
-  color:#ff2d55!important;
-}
-.clean-hero.danger .clean-score{
-  box-shadow:inset 0 0 0 1px rgba(255,45,85,.18),0 18px 42px rgba(255,45,85,.16)!important;
-}
-.clean-hero.ok .clean-score strong{
-  color:#18a877!important;
-}
-
-/* ===== Rond orange pendant analyse manuelle ===== */
-.clean-hero.analyzing .clean-orb{
-  background:conic-gradient(from 180deg,#ff9500,#ffd400,#ff9500)!important;
-  box-shadow:0 24px 60px rgba(255,149,0,.30),inset 0 0 0 12px rgba(255,255,255,.38)!important;
-}
-.clean-hero.analyzing .clean-orb-ring{
-  background:conic-gradient(transparent 0 18%,rgba(255,149,0,.95) 18% 34%,transparent 34%)!important;
-  animation-duration:1s!important;
-}
-.clean-hero.analyzing .clean-score strong{
-  color:#ff9500!important;
-}
-.clean-hero.analyzing .clean-score{
-  box-shadow:inset 0 0 0 1px rgba(255,149,0,.20),0 18px 42px rgba(255,149,0,.16)!important;
 }
 
 /* ===== Hauteur topbar constante sur toutes les pages ===== */
@@ -979,15 +870,11 @@ body{
 .topbar .user-chip,
 .topbar-right select,
 .topbar .btn-icon,
-.topbar .btn-logout,
 .topbar .sos-button{
   height:42px!important;
   flex:0 0 auto;
 }
 .topbar .sos-button{width:42px!important}
-.topbar .btn-logout{
-  white-space:nowrap;
-}
 
 /* Masquer la deuxième ligne vide du profil utilisateur */
 .user-info span:empty{display:none}
@@ -1317,7 +1204,7 @@ body.role-agent .admin-only{ display:none !important; }
   .sidebar{width:260px;inset-inline-start:-280px;transition:inset-inline-start .25s ease}
   .sidebar.open{inset-inline-start:0}
   .main{margin-inline-start:0}
-  .topbar .user-info,.btn-logout-text{display:none}
+  .topbar .user-info{display:none}
   .topbar-right{gap:6px}
 }
 
@@ -1337,12 +1224,66 @@ body.role-agent .admin-only{ display:none !important; }
    nécessaire pour les battre. */
 :root{
   --sidebar-bg:#0f1b3d;
-  --sidebar-bg-2:#0c1730;
   --sidebar-text:#c7d2e8;
   --sidebar-text-dim:#7887ab;
   --sidebar-active:#2f6feb;
-  --sidebar-active-glow:rgba(47,111,235,.35);
   --sidebar-border:rgba(255,255,255,.08);
+}
+
+/* =====================================================================
+   LOT CSS-1 — fondation de tokens (Design System, section 3 de la mission)
+   =====================================================================
+   ADDITIF uniquement : ces noms sont NOUVEAUX, pensés pour les futurs lots
+   de migration écran par écran (hors périmètre de ce lot-ci). Chacun
+   ALIASE la valeur ACTUELLEMENT gagnante (var(--bg), var(--primary), etc.,
+   déjà utilisés par les ~270 sélecteurs existants du fichier, inchangés) —
+   zéro changement visuel : ce bloc ne fait gagner aucune cascade, il donne
+   juste un second nom, stable et documenté, à ce qui gagne déjà. Les
+   futurs lots pourront migrer les sélecteurs vers ces noms progressivement,
+   sans dépendre de la cascade historique (--bg/--surface/--primary/...)
+   pour deviner quelle couche l'emporte. Radius/shadow/space/transition
+   sont une échelle NOUVELLE (rien d'existant ne l'utilise encore) : les
+   valeurs actuelles du fichier (12px/18px/22px/24px/28px/34px de radius,
+   par exemple) restent inchangées tant qu'un écran n'est pas migré vers
+   cette échelle explicitement. */
+:root{
+  --color-background:var(--bg);
+  --color-surface:var(--surface);
+  --color-surface-muted:var(--bg-2);
+  --color-text:var(--text);
+  --color-text-secondary:var(--text-muted);
+  --color-primary:var(--primary);
+  --color-success:var(--success);
+  --color-warning:var(--warning);
+  --color-danger:var(--danger);
+  --color-info:var(--info);
+  --border-subtle:var(--border);
+  --radius-sm:8px;
+  --radius-md:12px;
+  --radius-lg:16px;
+  --radius-xl:24px;
+  --shadow-sm:0 2px 8px rgba(37,55,88,.08);
+  --shadow-md:var(--shadow);
+  /* --shadow-lg existe déjà (défini dans les :root précédents) avec
+     exactement ce nom et cette sémantique — jamais réaliasé ici : une
+     redéclaration --shadow-lg:var(--shadow-lg) serait une référence
+     circulaire (valeur "invalide garantie" selon la spec CSS), qui aurait
+     cassé .modal/.login-box/tout ce qui l'utilise déjà. Trouvé et corrigé
+     avant tout commit — jamais rendu. */
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-8:32px;
+  --space-10:40px;
+  --font-sans:var(--font-body);
+  /* --font-mono et --font-display existent déjà avec exactement ce nom —
+     même remarque que --shadow-lg ci-dessus : jamais réaliasés ici. */
+  --transition-fast:.15s ease;
+  --transition-base:.2s ease;
+  --transition-slow:.3s ease;
 }
 
 /* --- Sidebar --- */
@@ -1367,7 +1308,12 @@ body.role-agent .admin-only{ display:none !important; }
 .nav-item:hover{background:rgba(255,255,255,.06)!important;color:#fff!important}
 .nav-item.active{
   background:var(--sidebar-active)!important;color:#fff!important;
-  box-shadow:0 8px 20px var(--sidebar-active-glow);font-weight:600;
+  /* LOT CSS-1 (consolidation) : box-shadow:none, avec !important — la
+     valeur RÉELLEMENT rendue avant ce lot (une règle dead code de la
+     section "Sidebar noire", supprimée dans ce même lot, portait
+     box-shadow:none!important et l'emportait sur le halo ci-dessous,
+     jamais effectivement rendu — vérifié par getComputedStyle avant/après). */
+  box-shadow:none!important;font-weight:600;
 }
 .nav-item.active::after{display:none}
 .nav-item:hover .nav-icon,.nav-item.active .nav-icon{color:inherit!important;filter:none!important}
@@ -1410,7 +1356,15 @@ body.role-agent .admin-only{ display:none !important; }
 }
 
 /* --- Topbar --- */
-.topbar{background:#fff!important;border-bottom:1px solid var(--border)!important;box-shadow:0 1px 0 rgba(15,27,61,.04)}
+/* LOT CSS-1 (consolidation) : box-shadow porte désormais !important et la
+   valeur RÉELLEMENT rendue avant ce lot (0 8px 24px rgba(0,0,0,.22)) —
+   jusqu'ici, une règle de la section "Sidebar/Barre du haut noire"
+   (supprimée dans ce même lot, dead code par ailleurs) la portait AUSSI en
+   !important et l'emportait en second (ordre source) sur cette valeur plus
+   discrète (0 1px 0 rgba(15,27,61,.04)), qui n'a donc jamais été
+   effectivement rendue — vérifié par capture d'écran + getComputedStyle
+   avant/après ce lot, rendu identique aux deux. */
+.topbar{background:#fff!important;border-bottom:1px solid var(--border)!important;box-shadow:0 8px 24px rgba(0,0,0,.22)!important}
 .topbar::after{display:none}
 .topbar .live-indicator{display:none} /* décoratif, jamais relié à un état réel — voir topbar-search ci-dessous */
 .topbar .page-title{font-size:13px;color:var(--text-muted);font-weight:600;max-width:160px}
