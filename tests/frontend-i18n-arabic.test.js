@@ -222,10 +222,17 @@ test('the sidebar and main content area use direction-aware (logical) positionin
 
 test('table headers and severity/accent bars (alerts, main courante, LAPI, admin console) mirror under RTL', () => {
   assert.match(cssSource, /^th\{\s*background:var\(--bg-2\);padding:12px 14px;text-align:start;/m);
-  for (const selector of ['.kpi-card', '.alert-item', '.mc-content', '.lapi-status-banner', '.admin-kpi']) {
+  // UI-FOUNDATION-2 : .kpi-card n'a plus de bordure colorée décorative du
+  // tout (retirée : "INTERDIT bordure gauche rouge/bleue/verte/orange
+  // décorative" — la tonalité vit désormais dans la valeur, voir
+  // style.css ".kpi-card.success:not(.kpi2-card) .kpi-value") — jamais un
+  // oubli de logical property, une suppression volontaire. Les autres
+  // (non migrés dans ce lot) gardent leur accent border-inline-start.
+  for (const selector of ['.alert-item', '.mc-content', '.lapi-status-banner', '.admin-kpi']) {
     const re = new RegExp(selector.replace('.', '\\.') + '\\{[^}]*border-inline-start');
     assert.match(cssSource, re, selector + ' should use a logical border-inline-start accent, not border-left');
   }
+  assert.doesNotMatch(cssSource, /\.kpi-card\.success\{border-inline-start-color/, '.kpi-card must not regain a decorative colored border');
 });
 
 test('the SOC Alert Center panel (alerts.css) mirrors its accent bars and text alignment under RTL', () => {

@@ -776,11 +776,9 @@ function closeModal(){ document.getElementById('modalBackdrop').classList.remove
 
 // ===== Notification =====
 function notify(msg, type='success'){
-  const colors = { success: ['var(--success)','var(--success-glow)'], warning: ['var(--warning)','var(--warning-glow)'], danger: ['var(--danger)','var(--danger-glow)'], info: ['var(--primary)','var(--primary-glow)'] };
-  const [color, glow] = colors[type] || colors.success;
   const n = document.createElement('div');
-  n.style.cssText = `position:fixed;bottom:24px;inset-inline-end:24px;background:var(--surface);border:1px solid ${color};color:${color};padding:12px 22px;box-shadow:0 0 20px ${glow},0 8px 24px rgba(0,0,0,0.5);z-index:2000;font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:2px;font-weight:700;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);transition:opacity .3s`;
-  n.textContent = '◉ ' + msg;
+  n.className = 'toast ' + type;
+  n.textContent = msg;
   document.body.appendChild(n);
   setTimeout(()=>{ n.style.opacity='0'; },2700);
   setTimeout(()=>n.remove(),3000);
