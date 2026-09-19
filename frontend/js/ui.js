@@ -419,6 +419,8 @@ const I18N_AR = {
   "Confirmée": "مؤكَّدة",
   "Confirmer": "تأكيد",
   "Confirmation": "تأكيد",
+  "Dernière synchronisation": "آخر مزامنة",
+  "Généré le": "أُنشئ في",
   "Supprimer cet utilisateur ?": "هل تريد حذف هذا المستخدم؟",
   "Supprimer cette entrée ?": "هل تريد حذف هذا التسجيل؟",
   "Supprimer cet incident ?": "هل تريد حذف هذا الحادث؟",
@@ -675,8 +677,31 @@ function applyLanguage(lang = localStorage.getItem(I18N_KEY) || 'fr'){
   i18nApplying = false;
 }
 
+// UI-4 : applyLanguage() traduit les libellés statiques déjà dans le DOM,
+// mais ne peut pas reformater une date déjà rendue (fmtDate/fmtTime/
+// fmtDateTime ne sont réévalués qu'au prochain rendu). Pour que les
+// dates/heures déjà affichées sur l'écran actif changent de locale sans
+// recharger la page, on ré-invoque ici sa fonction de rendu — jamais sa
+// fonction de chargement (pas de nouvel appel réseau, aucune donnée
+// reconstruite : uniquement une repeinte depuis le cache déjà en
+// mémoire, le même chemin que celui déjà déclenché par la recherche/les
+// filtres sur chacun de ces écrans). Volontairement restreint aux pages
+// dont le rendu est confirmé sans effet de bord (pas d'API.get) ; les
+// autres (dashboard, alertes, carte…) ont déjà leur propre minuteur de
+// rafraîchissement et se corrigent seules en quelques secondes.
+const UI4_SAFE_RERENDER = {
+  incidents: 'renderIncidents', maincourante: 'renderMainCourante',
+  visiteurs: 'renderVisiteurs', vehicules: 'renderVehicules',
+  pietons: 'renderPietons', employes: 'renderEmployes',
+  badges: 'renderBadges', lapi: 'renderLapiTable', parking: 'renderParking',
+};
 function setLanguage(lang){
   applyLanguage(lang);
+  const page = document.querySelector('.page.active')?.id?.replace('page-','');
+  const fn = page && UI4_SAFE_RERENDER[page];
+  if(fn && typeof window[fn] === 'function'){
+    try{ window[fn](); }catch{ /* re-render best-effort, jamais bloquant */ }
+  }
 }
 
 function initI18nObserver(){
@@ -692,9 +717,23 @@ function initI18nObserver(){
 }
 
 // ===== Format =====
-function fmtDateTime(iso){ if(!iso) return '—'; return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
-function fmtTime(iso){ if(!iso) return '—'; return new Date(iso).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
-function fmtDate(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString('fr-FR'); }
+// UI-4 : point central unique décidant la locale date/heure — FR reste
+// fr-FR, AR passe par ar-DZ (cohérent avec le contexte Algérie déjà
+// présent ailleurs dans l'appli — plaques LAPI par wilaya 01-58) plutôt
+// que 'ar' générique. Node/les navigateurs rendent déjà ar-DZ en
+// chiffres latins (vérifié), pas de chiffres arabes-indiens à corriger.
+// Toute fonction de formatage date/heure de l'appli doit passer par ici
+// plutôt que réécrire son propre choix de locale.
+function currentDateLocale(lang = localStorage.getItem(I18N_KEY) || 'fr'){
+  return lang === 'ar' ? 'ar-DZ' : 'fr-FR';
+}
+function fmtDateTime(iso){ if(!iso) return '—'; return new Date(iso).toLocaleString(currentDateLocale(),{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function fmtTime(iso){ if(!iso) return '—'; return new Date(iso).toLocaleTimeString(currentDateLocale(),{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString(currentDateLocale()); }
+// Motifs répétés ailleurs dans l'appli (jour long avec nom du jour,
+// jour/mois court) — centralisés ici plutôt que dupliqués par écran.
+function fmtDateLong(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString(currentDateLocale(),{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); }
+function fmtDayMonth(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString(currentDateLocale(),{day:'2-digit',month:'2-digit'}); }
 function toDatetimeLocal(iso){ const d=new Date(iso); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 

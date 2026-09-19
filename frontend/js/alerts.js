@@ -12,7 +12,7 @@ const AlertCenter = (() => {
   }
   const e = escapeHtml;
   const finished = a => ['CLOTUREE','FAUSSE_ALERTE','ANNULEE'].includes(a.status);
-  const date = s => new Date(s).toLocaleString('fr-FR');
+  const date = s => new Date(s).toLocaleString(currentDateLocale());
   function error(err) { document.getElementById('ac-message').textContent = err.message; }
   async function load(isCurrent = () => true) {
     if (busy || !isCurrent()) return;
@@ -22,7 +22,12 @@ const AlertCenter = (() => {
       if (!isCurrent()) return;
       rows = result;
       document.getElementById('ac-message').textContent='';
-      document.getElementById('ac-sync').textContent='Dernière synchronisation : '+new Date().toLocaleTimeString('fr-FR');
+      // UI-4 : chaîne posée en JS (textContent), hors de portée du scan DOM
+      // de applyLanguage() puisqu'elle change à chaque sondage — le préfixe
+      // est donc traduit explicitement ici (même limite déjà rencontrée
+      // pour le badge "Temps réel"/"Repli" en UI-3D).
+      const syncLang = localStorage.getItem(I18N_KEY)||'fr';
+      document.getElementById('ac-sync').textContent=translateText('Dernière synchronisation',syncLang)+' : '+new Date().toLocaleTimeString(currentDateLocale());
       renderKpis();
       renderBySite();
       renderRecentIncidents();

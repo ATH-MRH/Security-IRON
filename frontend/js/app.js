@@ -290,8 +290,8 @@ function tickHeroClock(){
   const now = new Date();
   const dateEl = document.getElementById('heroDate');
   const clockEl = document.getElementById('heroClock');
-  if(dateEl) dateEl.textContent = now.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
-  if(clockEl) clockEl.textContent = now.toLocaleTimeString('fr-FR');
+  if(dateEl) dateEl.textContent = fmtDateLong(now);
+  if(clockEl) clockEl.textContent = now.toLocaleTimeString(currentDateLocale());
 }
 
 function updateCleanHeroStatus(stats){
@@ -666,7 +666,7 @@ function drawChartFlux(){
   const labels=[],ent=[],sort=[];
   for(let i=6;i>=0;i--){
     const d = new Date(Date.now()-i*24*3600*1000);
-    labels.push(d.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit'}));
+    labels.push(d.toLocaleDateString(currentDateLocale(),{weekday:'short',day:'2-digit'}));
     ent.push(randInt(80,250)); sort.push(randInt(70,240));
   }
   chartFluxInst = new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Entrées',data:ent,borderColor:'#00ff9d',backgroundColor:'rgba(0,255,157,.12)',fill:true,tension:.3,borderWidth:2},{label:'Sorties',data:sort,borderColor:'#5ab9ff',backgroundColor:'rgba(90,185,255,.12)',fill:true,tension:.3,borderWidth:2}]},options:{responsive:true,plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true,grid:{color:'rgba(30,42,68,0.5)'}},x:{grid:{color:'rgba(30,42,68,0.3)'}}}}});
@@ -767,13 +767,13 @@ function renderMainCourante(){
   if(list.length===0){ tl.innerHTML='<div class="empty-state">Aucune entrée trouvée</div>'; return; }
   const groups = {};
   list.slice(0,300).forEach(e=>{
-    const k = new Date(e.datetime).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+    const k = fmtDateLong(e.datetime);
     (groups[k] = groups[k]||[]).push(e);
   });
   tl.innerHTML = Object.entries(groups).map(([day,entries])=>`<div class="mc-day-header">📅 ${day} <span class="mc-day-count">${entries.length} entrée${entries.length>1?'s':''}</span></div>${entries.map(e=>{
     const cls = e.poste.startsWith('Rondier')?'rondier':(e.poste.includes('Chef')?'chef':'');
     const icons = {Information:'📋',Ronde:'🚶',Communication:'📞',Anomalie:'⚠️',Incident:'🚨',Intervention:'🛠️',Contrôle:'🔍',Relève:'🔄',Visite:'👥',Autre:'📝'};
-    return `<div class="mc-entry priorite-${e.priorite}"><div class="mc-time"><strong>${fmtTime(e.datetime)}</strong>${new Date(e.datetime).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</div><div class="mc-content"><div class="mc-head"><div class="mc-tags"><span class="mc-poste ${cls}">📍 ${escapeHtml(e.poste)}</span><span class="badge muted">${icons[e.type]||'📝'} ${escapeHtml(e.type)}</span>${e.priorite!=='normale'?`<span class="badge ${e.priorite==='critique'?'danger':'warning'}">${e.priorite}</span>`:''}</div><button class="btn btn-sm btn-outline admin-only" onclick="supprimerMC('${e.id}')">🗑️</button></div><div class="mc-desc">${escapeHtml(e.description)}</div><div class="mc-meta">👤 ${escapeHtml(e.agent)} • 📍 ${escapeHtml(e.lieu)}</div></div></div>`;
+    return `<div class="mc-entry priorite-${e.priorite}"><div class="mc-time"><strong>${fmtTime(e.datetime)}</strong>${fmtDayMonth(e.datetime)}</div><div class="mc-content"><div class="mc-head"><div class="mc-tags"><span class="mc-poste ${cls}">📍 ${escapeHtml(e.poste)}</span><span class="badge muted">${icons[e.type]||'📝'} ${escapeHtml(e.type)}</span>${e.priorite!=='normale'?`<span class="badge ${e.priorite==='critique'?'danger':'warning'}">${e.priorite}</span>`:''}</div><button class="btn btn-sm btn-outline admin-only" onclick="supprimerMC('${e.id}')">🗑️</button></div><div class="mc-desc">${escapeHtml(e.description)}</div><div class="mc-meta">👤 ${escapeHtml(e.agent)} • 📍 ${escapeHtml(e.lieu)}</div></div></div>`;
   }).join('')}`).join('');
 }
 
@@ -1726,7 +1726,7 @@ async function renderRapports(){
   const labels=[],dE=[],dS=[],dV=[];
   for(let i=Math.min(periode-1,29);i>=0;i--){
     const d = new Date(Date.now()-i*24*3600*1000);
-    labels.push(d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}));
+    labels.push(fmtDayMonth(d));
     const ds = new Date(d).setHours(0,0,0,0), de = ds+24*3600*1000;
     dE.push(piet.filter(p=>{const t=new Date(p.datetime).getTime();return t>=ds&&t<de&&p.sens==='entree';}).length+randInt(50,150));
     dS.push(piet.filter(p=>{const t=new Date(p.datetime).getTime();return t>=ds&&t<de&&p.sens==='sortie';}).length+randInt(40,140));
@@ -1754,7 +1754,11 @@ async function renderRapports(){
 
   const crit = incs.filter(i=>i.gravite==='critique').length;
   const ref = piet.filter(p=>p.resultat==='refus').length;
-  document.getElementById('syntheseExec').innerHTML = `<p><strong>Période :</strong> ${periode} derniers jours</p><ul style="margin:14px 0 14px 22px;line-height:1.9"><li><strong>${piet.length}</strong> passages piétons, dont <strong>${ref}</strong> refus (${piet.length?Math.round(ref*100/piet.length):0}%).</li><li><strong>${veh.length}</strong> entrées véhicules dont ${veh.filter(v=>v.type==='PL').length} poids lourds.</li><li><strong>${incs.length}</strong> incidents — ${crit} critiques.</li><li>Taux résolution : <strong>${incs.length?Math.round(incs.filter(i=>i.statut==='resolu').length*100/incs.length):0}%</strong>.</li><li>Effectif actif : <strong>${data.employes_actifs}</strong>.</li></ul><p style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">Généré le ${new Date().toLocaleString('fr-FR')}</p>`;
+  // UI-4 : "Généré le" fusionné avec l'horodatage dans le même noeud
+  // texte, jamais atteignable par le scan DOM de applyLanguage() une fois
+  // l'heure interpolée — traduit ici explicitement.
+  const syntheseLang = localStorage.getItem(I18N_KEY)||'fr';
+  document.getElementById('syntheseExec').innerHTML = `<p><strong>Période :</strong> ${periode} derniers jours</p><ul style="margin:14px 0 14px 22px;line-height:1.9"><li><strong>${piet.length}</strong> passages piétons, dont <strong>${ref}</strong> refus (${piet.length?Math.round(ref*100/piet.length):0}%).</li><li><strong>${veh.length}</strong> entrées véhicules dont ${veh.filter(v=>v.type==='PL').length} poids lourds.</li><li><strong>${incs.length}</strong> incidents — ${crit} critiques.</li><li>Taux résolution : <strong>${incs.length?Math.round(incs.filter(i=>i.statut==='resolu').length*100/incs.length):0}%</strong>.</li><li>Effectif actif : <strong>${data.employes_actifs}</strong>.</li></ul><p style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">${translateText('Généré le',syntheseLang)} ${new Date().toLocaleString(currentDateLocale())}</p>`;
 }
 
 async function exportCSV(){

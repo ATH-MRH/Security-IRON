@@ -103,6 +103,12 @@ function fixture(data = {}) {
     // minimal ; stub passthrough, la traduction elle-même est testée
     // ailleurs (tests/frontend-i18n-arabic.test.js).
     localStorage:{getItem:()=>null}, I18N_KEY:'securisite_lang', translateText:s=>s,
+    // UI-4 : alerts.js#date() (helper local) et AlertCenter.load()
+    // appellent désormais currentDateLocale() (frontend/js/ui.js) pour
+    // choisir fr-FR/ar-DZ — même stub passthrough que translateText
+    // ci-dessus, la locale réelle est testée ailleurs
+    // (tests/frontend-i18n-arabic.test.js).
+    currentDateLocale:()=>'fr-FR',
     Realtime: realtimeStub,
     setInterval:()=>0, clearInterval:()=>{}, setTimeout:()=>0, clearTimeout:()=>{},
   });
