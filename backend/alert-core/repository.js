@@ -198,6 +198,17 @@ async function badgeRefusalCount(badge, since, client = db) {
 async function recentBadgeAlert(equipment, since, client = db) {
   return client.get("SELECT id FROM public.security_alerts WHERE equipment=$1 AND created_at>=$2 AND origin='REGLE_BADGE'", [equipment, since]);
 }
+// PCS01 (Lot E) : security_alerts est désormais protégée par RLS (migration
+// 012) — service.js n'écrit jamais de SQL brut lui-même (PG32A), donc ces
+// deux poseurs de marqueur de session (SET LOCAL, comme backend/scope.js
+// #withActorContext) vivent ici, appelés depuis les transactions déjà
+// ouvertes par service.js (atomic()/db.transaction), jamais sur le pool nu.
+async function setActorContext(client, userId) {
+  await client.query("SELECT set_config('securisite.actor_user_id', $1, true)", [String(userId)]);
+}
+async function setSystemJob(client) {
+  await client.query("SELECT set_config('securisite.system_job', 'escalation', true)");
+}
 
 module.exports = {
   findAlertForUpdate, findNotificationForUpdate, readConfigForUpdate, lockBadge,
@@ -205,5 +216,5 @@ module.exports = {
   findAlert, insertAlert, pendingEscalations, updateEscalation, findUser, appendConfigAudit,
   updateConfig, configAudit, notifications, findNotification, markNotificationRead,
   allAlerts, alertsByCreator, timeline, requestCancellation, updateState, touchAlert,
-  badgeRefusalCount, recentBadgeAlert
+  badgeRefusalCount, recentBadgeAlert, setActorContext, setSystemJob
 };

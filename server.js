@@ -29,6 +29,7 @@ const alerts     = require('./backend/alerts');
 const map        = require('./backend/map');
 const realtimeRoutes = require('./backend/realtime-routes');
 const push       = require('./backend/push');
+const webPushProvider = require('./backend/push/web-push-provider');
 const health     = require('./backend/health');
 const { requestContext } = require('./backend/request-context');
 const { observability } = require('./backend/observability');
@@ -103,7 +104,12 @@ function start(opts = {}) {
   return db.init()
     .then(() => readiness.assertReady(db)) // registre, versions 001/002, 18 tables, config,
                                            // fonction/triggers append-only, privilèges runtime
-    .then(() => push.init()) // PG-13 : abonne le fournisseur push (fake par défaut) au bus temps réel (PG-12)
+    // PCS01 (Lot D) : HUMAN CHECKPOINT (docs/push.md) — bascule sur le
+    // fournisseur Web Push réel UNIQUEMENT si les trois variables VAPID sont
+    // explicitement fournies ; sinon backend/push/fake-provider.js reste
+    // actif, exactement comme avant ce lot.
+    .then(() => { if (webPushProvider.configureFromEnv()) push.setProvider(webPushProvider); })
+    .then(() => push.init()) // PG-13 : abonne le fournisseur push (fake par défaut, sauf activation ci-dessus) au bus temps réel (PG-12)
     .then(() => new Promise((resolve, reject) => {
       const server = host
         ? app.listen(port, host, done)

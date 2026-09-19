@@ -124,8 +124,20 @@ router.get('/search', wrap(async (req, res) => res.json(await aiSearch.search(re
 // (structurelle + liste blanche) que l'IA ne peut ni clôturer, ni annuler,
 // ni toucher aux permissions/audit.
 router.post('/assistant', wrap(async (req, res) => res.json(await aiAssistant.ask(req.body?.question, req.user))));
+// PCS01 (Lot C) : liste des comptes ciblables individuellement pour une
+// diffusion — avant /:id (même raison que /search etc.), réservée au SOC
+// (service.js#recipientCandidates le revérifie).
+router.get('/recipients/candidates', wrap(async (req, res) => res.json(await service.recipientCandidates(req.user))));
 router.get('/:id', wrap(async (req, res) => res.json(await service.detail(req.params.id, req.user))));
 router.post('/:id/actions', wrap(async (req, res) => res.json(await service.act(req.params.id, req.body, req.user))));
+// PCS01 (Lot C) : diffuser une alerte déjà créée vers des destinataires
+// explicites (SOC uniquement, service.js#broadcastAlert le revérifie).
+router.post('/:id/broadcast', wrap(async (req, res) => res.status(201).json(await service.broadcastAlert(req.params.id, req.body, req.user))));
+// L'utilisateur ne peut jamais accuser réception au nom d'un autre :
+// req.user.id vient du JWT déjà vérifié par authMiddleware, jamais du corps
+// de la requête.
+router.post('/:id/receipt', wrap(async (req, res) => res.json(await service.receiptAlert(req.params.id, req.user.id, req.body?.status))));
+router.get('/:id/receipts', wrap(async (req, res) => res.json(await service.alertReceipts(req.params.id, req.user))));
 // PG-20 : résumés IA — lisent via service.detail() (own/scope déjà
 // appliqués, PG-8), jamais un accès parallèle à la base. Toujours identifiés
 // comme générés (generated_by_ai: true, backend/ai/summaries.js#label).

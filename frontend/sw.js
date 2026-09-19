@@ -12,7 +12,7 @@
  * poste partagé). Seul l'app shell (HTML/CSS/JS/manifest/icône/vendor
  * statique) est mis en cache.
  */
-const CACHE_VERSION = 'securisite-shell-v1';
+const CACHE_VERSION = 'securisite-shell-v3';
 const SHELL_ASSETS = [
   './',
   'index.html',
@@ -28,6 +28,8 @@ const SHELL_ASSETS = [
   'js/alerts.js',
   'js/notifications.js',
   'js/sos.js',
+  'js/critical-alert.js',
+  'js/push.js',
   'js/app.js',
   'assets/iron-global-securite-logo.png',
   'assets/icon-192.png',
@@ -97,12 +99,17 @@ self.addEventListener('push', event => {
   }));
 });
 
+// PCS01 (Lot B) : ouvre/reprend le focus, puis pointe précisément sur
+// l'alerte concernée — jamais juste "l'app générique". Une fenêtre déjà
+// ouverte reçoit l'id par postMessage (frontend/js/app.js l'écoute) ; sans
+// fenêtre, ?alert=<id> sur l'URL d'ouverture, lu au chargement.
 self.addEventListener('notificationclick', event => {
+  const alertId = event.notification.data && event.notification.data.id;
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-      for (const client of list) if ('focus' in client) return client.focus();
-      if (self.clients.openWindow) return self.clients.openWindow('./');
+      for (const client of list) if ('focus' in client) { client.postMessage({ type: 'securisite:open-alert', id: alertId }); return client.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow(alertId ? './?alert=' + encodeURIComponent(alertId) : './');
     })
   );
 });

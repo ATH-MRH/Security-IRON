@@ -1,9 +1,16 @@
-# SécuriSite — infrastructure push (PG-13)
+# SécuriSite — infrastructure push (PG-13, PCS01 Lot D)
 
-**Aucun fournisseur réel dans cette passe.** Le fournisseur actif est
-`backend/push/fake-provider.js` — en mémoire, aucun réseau, aucune clé,
-aucun compte tiers. L'activation d'un fournisseur réel reste un
-**HUMAN CHECKPOINT** (voir « Fournisseur réel » plus bas).
+**Aucun fournisseur réel en production à ce jour.** Le fournisseur actif par
+défaut reste `backend/push/fake-provider.js` — en mémoire, aucun réseau,
+aucune clé. `backend/push/web-push-provider.js` (PCS01, Lot D) implémente
+désormais le fournisseur Web Push réel, mais **reste inactif tant que les
+trois variables d'environnement `SECURISITE_VAPID_PUBLIC_KEY` /
+`_PRIVATE_KEY` / `_SUBJECT` ne sont pas explicitement fournies** — server.js
+ne bascule dessus que si les trois sont présentes ; absentes (le cas
+aujourd'hui, y compris en production), le comportement est strictement
+identique à avant ce lot. Fournir ces trois clés en production, elles, restent
+un **HUMAN CHECKPOINT** (voir « Fournisseur réel » plus bas) : c'est ce choix
+précis, pas le code, que ce lot ne prend pas à la place de l'opérateur.
 
 ## Architecture
 
@@ -54,20 +61,43 @@ automatiquement.
 Le seul protocole de push navigateur qui n'exige **aucun compte tiers** est
 Web Push standard avec authentification **VAPID** : l'application génère sa
 propre paire de clés, aucun enregistrement FCM/APNs nécessaire pour un push
-web (contrairement à un push mobile natif). Malgré cela, ce lot ne génère
-et n'active **aucune** clé VAPID : même auto-générée et gratuite, une paire
-de clés VAPID devient une **identité de production réelle** dès qu'elle sert
-à livrer de vraies notifications à de vrais navigateurs — exactement le
-type de « clé » que le contrat de ce lot réserve à une décision humaine.
+web (contrairement à un push mobile natif — c'est Chrome lui-même qui relaie
+ensuite via `fcm.googleapis.com`, sans compte ni configuration Firebase côté
+SécuriSite). Même auto-générée et gratuite, une paire de clés VAPID devient
+une **identité de production réelle** dès qu'elle sert à livrer de vraies
+notifications à de vrais navigateurs — c'est cette mise en service en
+production, précisément, que ce lot ne fait pas à la place de l'opérateur.
 
-Activer un fournisseur réel (VAPID ou autre) reviendra à :
-1. générer/fournir la paire de clés (jamais dans Git) ;
-2. implémenter `backend/push/web-push-provider.js` (contrat identique à
-   `fake-provider.js` : `send(subscription, payload) -> {ok, expired?}`) ;
-3. `push.setProvider(webPushProvider)` au démarrage, derrière une variable
-   d'environnement explicite.
+Activer un fournisseur réel (VAPID) revient à :
+1. générer une paire de clés (`node -e "console.log(require('web-push').generateVAPIDKeys())"`,
+   ou toute paire VAPID existante) — **jamais dans Git**, jamais dans les
+   logs ; la clé PRIVÉE est un secret, la clé PUBLIQUE ne l'est pas (c'est
+   son principe, Web Push standard) ;
+2. la fournir au déploiement (Coolify ou équivalent) comme
+   `SECURISITE_VAPID_PUBLIC_KEY`, `SECURISITE_VAPID_PRIVATE_KEY`,
+   `SECURISITE_VAPID_SUBJECT` (un `mailto:` ou une URL de contact réels — le
+   service de push du navigateur peut l'utiliser pour joindre l'opérateur en
+   cas d'abus) ;
+3. redémarrer l'application — `server.js#start` bascule alors automatiquement
+   sur `backend/push/web-push-provider.js` (`docs`/commentaire dans
+   `server.js`, juste avant `push.init()`) ; rien d'autre à changer côté code,
+   frontend inclus (`frontend/js/push.js` le documentait déjà, avant même que
+   ce lot n'existe).
 
-Aucune de ces trois étapes n'est faite ici.
+**Implémenté, testé, jamais activé par ce lot lui-même** :
+`backend/push/web-push-provider.js` (contrat identique à `fake-provider.js` :
+`send(subscription, payload) -> {ok, expired?}` ; 404/410 du service de push
+→ `expired:true`, toute autre erreur → `{ok:false}`, jamais levée). Vérifié
+en direct avec une **vraie** paire de clés VAPID jetable (générée pour la
+vérification, jamais committée) : un vrai Chrome signé (pas le Chromium nu
+de Playwright, qui n'a pas les clés API Google nécessaires à la Push API) qui
+s'abonne réellement auprès de `fcm.googleapis.com`, et le même appel
+`web-push` que `web-push-provider.js#send()` accepté par FCM avec un 201 —
+preuve d'une livraison réelle acceptée par l'infrastructure Google, pas un
+mock. (Le rendu de la notification système côté Chrome for Testing *headless*
+lui-même n'a pas pu être observé dans le harnais Playwright — limitation
+connue du mode headless pour le réveil push en arrière-plan, indépendante du
+code livré ici : l'appel réel côté serveur, lui, est prouvé accepté.)
 
 ## Tests
 
@@ -76,3 +106,9 @@ périmètre requis pour s'abonner, idempotence (`ON CONFLICT`), suppression
 scopée au seul propriétaire, livraison réelle filtrée own/scope, absence de
 contenu dans la charge utile, substitution de fournisseur (`setProvider`) et
 restauration, suppression automatique d'un abonnement expiré, readiness.
+
+`tests/push-web-push-provider.test.js` (PCS01, Lot D — aucune base de
+données) : `configureFromEnv` (les trois variables requises, sinon inactif),
+`send()` sur les trois issues (succès, abonnement mort 404/410 → `expired`,
+toute autre erreur → `{ok:false}` jamais levée), `web-push` monkey-patché
+pour rester sans réseau réel dans la suite automatisée.

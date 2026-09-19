@@ -139,3 +139,110 @@ test('a real mutation (alert creation) succeeds under RLS — its fail-closed se
   assert.equal(r.status, 201, 'the alert is genuinely created, including its fail-closed security_audit event');
   assert.ok(r.body.id);
 });
+
+// PCS01 (Lot C) — régression du même type que PG-28 ci-dessus, trouvée en
+// vérification live sur ce lot précisément : backend/alert-core/
+// recipients.js interrogeait memberships/sites/zones (RLS, migration 005)
+// SANS jamais poser securisite.actor_user_id — sous le rôle réel, chaque
+// résolution de destinataire (site/zone/user/tenant_wide) revenait
+// silencieusement VIDE (pas une erreur), déclenchant à tort "Aucun
+// destinataire actif ne correspond à cette cible" (404) pour une cible
+// pourtant valide. La suite dédiée (tests/postgres-alert-recipients.
+// test.js) ne l'avait pas révélé, pour la même raison que PG-28 : connectée
+// en superutilisateur. Corrigé par scope.withActorContext(...), même
+// remède que PG-28 — verrouillé ici, sous le rôle réel, comme le reste de
+// ce fichier.
+test('PCS01: GET /alerts/recipients/candidates returns real members under the real app role (RLS enforced) — not silently empty', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const soc = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_soc',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await seedMembership(setupPool, soc.id, 'admin');
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_pcs01_soc', password: 'x' }, null);
+  assert.equal(login.status, 200);
+  const r = await request('GET', '/alerts/recipients/candidates', undefined, login.body.token);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.length >= 2, 'must see both the SOC account itself and the already-seeded agent — not an empty array');
+  assert.ok(r.body.some(u => u.username === 'rls_scope_agent'));
+});
+
+test('PCS01: a tenant_wide broadcast resolves real recipients under the real app role (RLS enforced) — not a false "no recipient" 404', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const soc = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_broadcaster',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await seedMembership(setupPool, soc.id, 'admin');
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_pcs01_broadcaster', password: 'x' }, null);
+  const token = login.body.token;
+  const alert = (await request('POST', '/alerts', { site: 'RLS Site', type: 'RLS Broadcast', level: 3 }, token)).body;
+  const r = await request('POST', '/alerts/' + alert.id + '/broadcast', { recipientType: 'tenant_wide' }, token);
+  assert.equal(r.status, 201, 'a real, resolvable tenant_wide target must never come back as "no recipient found" under real RLS');
+  assert.ok(r.body.recipientCount >= 1);
+});
+
+// PCS01 (Lot E) — security_alerts porte désormais sa propre RLS (migration
+// 012, backend/alert-core/service.js#withActor/setActorContext/
+// setSystemJob) — même classe de régression que PG-28/Lot C ci-dessus,
+// vérifiée ici au même titre, sous le même rôle réellement provisionné.
+test('PCS01 (Lot E): a real state transition (POST /alerts/:id/actions) succeeds under RLS — act() poses its own actor context', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const soc = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_actor',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await seedMembership(setupPool, soc.id, 'admin');
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_pcs01_actor', password: 'x' }, null);
+  const token = login.body.token;
+  const alert = (await request('POST', '/alerts', { site: 'RLS Site', type: 'RLS Act', level: 2 }, token)).body;
+  const r = await request('POST', '/alerts/' + alert.id + '/actions', { action: 'ACQUITTEE' }, token);
+  assert.equal(r.status, 200, 'act() must succeed under RLS — before Lot E its own atomic() transaction never posed an actor context');
+  assert.equal(r.body.status, 'ACQUITTEE');
+});
+
+// Le risque le plus élevé de ce lot : le job d'escalade planifié
+// (backend/alert-core/service.js#escalateDue, invoqué nu par server.js, sans
+// requête HTTP ni acteur humain) doit continuer à voir/traiter les alertes de
+// TOUS les tenants sous le rôle réellement restreint — c'est précisément ce
+// que securisite.system_job='escalation' (migration 012) existe pour
+// garantir. Deux tenants distincts, chacun avec sa propre alerte niveau 3,
+// créée via la route HTTP réelle (donc déjà sous RLS) ; le job est ensuite
+// invoqué exactement comme server.js le fait (aucun client transactionnel,
+// aucun acteur) — un `time` très avancé rend les trois paliers de la
+// politique par défaut ([30,60,120] s, migration 002) dus sans dépendre d'un
+// délai réel.
+test('PCS01 (Lot E): the escalation job (no HTTP request, no actor) still escalates real pending alerts across MULTIPLE tenants under the real app role (RLS enforced)', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const tenant2 = await setupPool.get(
+    "INSERT INTO public.tenants(code,name) VALUES('rls-pcs01-tenant2','Tenant RLS 2') RETURNING id");
+  const soc2 = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_pcs01_soc2',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  await setupPool.query(
+    "INSERT INTO public.memberships(user_id,tenant_id,role,alert_access) VALUES($1,$2,'soc','scope')",
+    [soc2.id, tenant2.id]);
+  await setupPool.close();
+
+  const login1 = await request('POST', '/auth/login', { username: 'rls_scope_agent', password: 'x' }, null);
+  const a1 = (await request('POST', '/alerts', { site: 'T1', type: 'Escalade T1', level: 3 }, login1.body.token)).body;
+
+  const login2 = await request('POST', '/auth/login', { username: 'rls_pcs01_soc2', password: 'x' }, null);
+  const a2 = (await request('POST', '/alerts', { site: 'T2', type: 'Escalade T2', level: 3 }, login2.body.token)).body;
+
+  // require() partagé avec server.js (cache module Node) : même pool, déjà
+  // connecté en tant que securisite_app réellement provisionné — jamais le
+  // superutilisateur.
+  const { escalateDue } = require('../backend/alerts');
+  await escalateDue(Date.now() + 365 * 24 * 3600 * 1000);
+
+  const check1 = await request('GET', '/alerts/' + a1.id, undefined, login1.body.token);
+  const check2 = await request('GET', '/alerts/' + a2.id, undefined, login2.body.token);
+  assert.equal(check1.status, 200);
+  assert.equal(check2.status, 200);
+  assert.equal(check1.body.escalation_step, 3, 'tenant 1 alert must have escalated through all 3 tiers under the real app role, no actor context');
+  assert.equal(check2.body.escalation_step, 3, 'tenant 2 alert must ALSO have escalated — proves the job is not scoped to a single tenant');
+});

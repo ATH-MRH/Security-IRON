@@ -1746,6 +1746,46 @@ async function loadParametres(){
   document.getElementById('setSiteNom').value = cache.parametres.site||'';
   document.getElementById('setSiteAdr').value = cache.parametres.adresse||'';
   document.getElementById('setSiteTel').value = cache.parametres.tel||'';
+  renderPushStatus();
+}
+
+// PCS01 (Lot B) : jamais de capacité fabriquée — le texte reflète
+// exactement status().available (clé VAPID configurée côté serveur ou
+// non, docs/push.md) et permission (accordée/refusée/jamais demandée).
+async function renderPushStatus(){
+  const textEl = document.getElementById('pushStatusText'), btn = document.getElementById('pushEnableBtn');
+  if(!textEl) return;
+  try{
+    const s = await PushSubscribe.status();
+    if(!s.supported){ textEl.textContent = 'Non supporté par ce navigateur.'; btn.hidden = true; return; }
+    if(!s.available){ textEl.textContent = 'Pas encore activées côté serveur.'; btn.hidden = true; return; }
+    if(s.permission === 'denied'){ textEl.textContent = 'Bloquées par le navigateur — à réactiver dans ses réglages.'; btn.hidden = true; return; }
+    if(s.subscribed){ textEl.textContent = 'Activées sur cet appareil.'; btn.hidden = true; return; }
+    textEl.textContent = 'Recevez une notification même l’application fermée pour un SOS ou une alerte critique.';
+    btn.hidden = false; btn.disabled = false; btn.textContent = 'Activer les notifications critiques';
+  }catch{ textEl.textContent = 'État indisponible pour le moment.'; if(btn) btn.hidden = true; }
+}
+// PCS01 (Lot B) : navigation exacte vers l'alerte visée par une
+// notification push (frontend/sw.js#notificationclick), qu'une fenêtre ait
+// été réutilisée (postMessage) ou ouverte via ?alert=<id>. openAlert()
+// (frontend/js/alerts.js) applique déjà own/scope à l'affichage ; aucune
+// visibilité nouvelle n'est ajoutée ici.
+function openAlertFromDeepLink(){
+  const id = new URLSearchParams(location.search).get('alert');
+  if(id){ AlertCenter.openAlert(id); history.replaceState(null, '', location.pathname); }
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', e=>{
+    if(e.data && e.data.type === 'securisite:open-alert' && e.data.id) AlertCenter.openAlert(e.data.id);
+  });
+}
+
+async function togglePush(){
+  const btn = document.getElementById('pushEnableBtn');
+  btn.disabled = true; btn.textContent = 'Activation…';
+  try{ await PushSubscribe.enable(); notify('Notifications activées'); }
+  catch(e){ notify(e.message || 'Échec de l’activation', 'warning'); }
+  finally{ renderPushStatus(); }
 }
 
 async function sauverParametres(){
@@ -1756,8 +1796,10 @@ async function sauverParametres(){
 /* ===== INIT ===== */
 function initApp(){
   AlertCenter.start();
+  CriticalAlert.start();
   navTo('alertes');
   initI18nObserver();
+  openAlertFromDeepLink();
   setInterval(()=>{
     if(document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
     if(document.getElementById('page-maincourante').classList.contains('active')){

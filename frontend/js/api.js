@@ -38,7 +38,7 @@ const API = (() => {
     get: (p) => request('GET', p),
     post: (p, b) => request('POST', p, b),
     put: (p, b) => request('PUT', p, b),
-    del: (p) => request('DELETE', p),
+    del: (p, b) => request('DELETE', p, b),
     getToken, setToken, clearToken, getUser, setUser,
 
     login: (username, password) => request('POST', '/auth/login', { username, password }),

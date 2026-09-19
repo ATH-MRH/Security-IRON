@@ -13,6 +13,11 @@ const HISTORICAL = [
   'parking_zones', 'parking_places', 'parking_mouvements', 'main_courante', 'lapi_lectures', 'parametres',
 ];
 const ALERT_CORE = ['security_alerts', 'alert_audit', 'alert_notifications', 'alert_config_audit', 'alert_rules'];
+// PCS01 (Lot C) : ciblage explicite de destinataires + accusés PAR
+// DESTINATAIRE — état de délivrance (comme push_subscriptions), pas un
+// journal : aucun trigger append-only, aucune RLS propre (même modèle que
+// alert_notifications, isolation par user_id en requête).
+const ALERT_RECIPIENTS = ['alert_recipients'];
 // Référentiel multitenant (migrations 003 / 004) : présent, mais non activé côté runtime.
 const SCOPE = ['tenants', 'sites', 'zones'];
 const MEMBERSHIP = ['memberships', 'membership_audit'];
@@ -38,7 +43,14 @@ const AUDIT_TRIGGERS = {
 // périmètre RLS tant qu'elles n'ont pas cette colonne (voir docs/postgresql-scope.md).
 // PG-10 ajoute une deuxième fonction RLS, plus stricte (rôle 'soc' requis) :
 // security_audit n'est lisible par aucun membership 'agent' ordinaire.
-const RLS_FUNCTIONS = ['current_actor_tenant_ids', 'current_actor_soc_tenant_ids'];
+// PCS01 (Lot E) : troisième fonction RLS — security_alerts, la seule table
+// multitenant qui n'en avait toujours aucune (tenant_id ajouté par la
+// migration 009, bien après la 005). Zéro argument comme les deux
+// précédentes : le job d'escalade planifié (sans acteur humain) est géré
+// via un second marqueur de session interne à la fonction elle-même
+// (securisite.system_job), jamais un paramètre de fonction — voir
+// l'en-tête de la migration 012.
+const RLS_FUNCTIONS = ['current_actor_tenant_ids', 'current_actor_soc_tenant_ids', 'security_alerts_visible_tenant_ids'];
 const RLS_FUNCTION = RLS_FUNCTIONS[0]; // rétro-compat
 const RLS_POLICIES = {
   tenants: ['tenants_actor_tenant'],
@@ -47,6 +59,7 @@ const RLS_POLICIES = {
   memberships: ['memberships_actor_tenant'],
   membership_audit: ['membership_audit_actor_tenant'],
   security_audit: ['security_audit_soc_read', 'security_audit_app_insert'],
+  security_alerts: ['security_alerts_actor_tenant'],
 };
 // Verbes réellement exécutés par le runtime (backend/routes.js, auth.js, sync.js, alert-core).
 // Les journaux append-only n'exigent qu'INSERT + SELECT : jamais UPDATE ni DELETE.
@@ -73,6 +86,10 @@ const PRIVILEGES = {
   // PG-13 : ON CONFLICT DO UPDATE (subscribe) exige à la fois INSERT et
   // UPDATE ; DELETE pour unsubscribe ; SELECT pour deliverFor().
   push_subscriptions: 'SELECT,INSERT,UPDATE,DELETE',
+  // PCS01 (Lot C) : INSERT à la diffusion (ON CONFLICT DO NOTHING),
+  // UPDATE pour delivered_at/acknowledged_at, SELECT pour le suivi PCS01 —
+  // jamais DELETE (une ligne de délivrance n'est jamais supprimée).
+  alert_recipients: 'SELECT,INSERT,UPDATE',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -130,7 +147,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT, ...PUSH];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...ALERT_RECIPIENTS, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT, ...PUSH];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -222,6 +239,6 @@ async function assertReady(client, { directory } = {}) {
 }
 
 module.exports = {
-  assertReady, HISTORICAL, ALERT_CORE, SCOPE, MEMBERSHIP, SECURITY_AUDIT, PUSH, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
+  assertReady, HISTORICAL, ALERT_CORE, ALERT_RECIPIENTS, SCOPE, MEMBERSHIP, SECURITY_AUDIT, PUSH, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
   RLS_FUNCTION, RLS_FUNCTIONS, RLS_POLICIES, PRIVILEGES,
 };

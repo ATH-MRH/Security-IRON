@@ -124,7 +124,17 @@ test('the app role can perform its DML but cannot alter structure or touch appen
     await client.query("DELETE FROM public.users WHERE username='prov_app'");
     // PG-16: security_alerts.tenant_id (migration 009) is NOT NULL — the frozen
     // 'local' tenant id from migration 003's backfill.
+    // PCS01 (Lot E): security_alerts now carries RLS (migration 012) — this
+    // test asserts raw GRANT-level DML privilege, not actor-scoped RLS
+    // semantics (that belongs to tests/postgres-scope-rls.test.js), so the
+    // escalation system-job marker (the one escape hatch with no per-user
+    // membership requirement — see the migration's header) is set for just
+    // this one statement, in its own transaction so set_config(...,true) is
+    // actually in effect for it.
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('securisite.system_job','escalation',true)");
     await client.query("INSERT INTO public.security_alerts(id,created_at,updated_at,site,zone,type,level,origin,created_by,username,status,policy,tenant_id) VALUES('ALT-p',now()::text,now()::text,'s','z','t',1,'o',1,'u','NOTIFIEE','[]','507486ba-d55e-5142-9ac2-196da97866df')");
+    await client.query('COMMIT');
     await client.query("INSERT INTO public.alert_audit(alert_id,created_at,actor,action,detail) VALUES('ALT-p',now()::text,'a','A','d')");
     await assert.rejects(client.query('CREATE TABLE public.hack(x int)'), /permission denied|must be owner/i);
     await assert.rejects(client.query('DROP TABLE public.users'), /permission denied|must be owner/i);

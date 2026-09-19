@@ -45,9 +45,14 @@ router.get('/stream', wrap(async (req, res, next) => {
   });
   res.write(':ok\n\n');
 
+  // PCS01 (Lot C) : un événement de diffusion porte aussi
+  // recipientUserIds (jamais le contenu de l'alerte, juste des ids) — un
+  // compte "own" explicitement ciblé le reçoit même s'il n'est ni créateur
+  // ni de périmètre 'scope'. Narrow à dessein : n'élargit rien d'autre que
+  // ce que service.js#broadcastAlert a déjà résolu et inséré en base.
   const matches = event => (alertAccess === 'scope'
     ? event.payload.tenantId === tenantId
-    : event.payload.createdBy === userId);
+    : event.payload.createdBy === userId || (event.payload.recipientUserIds || []).includes(userId));
   // Audit SOS bout-en-bout : bus.emit() (realtime.js) appelle chaque
   // abonné de façon SYNCHRONE — un res.write() qui lève (connexion d'un
   // AUTRE client déjà fermée/détruite, entre la fermeture réelle du socket

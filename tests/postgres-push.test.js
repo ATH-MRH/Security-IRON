@@ -1,9 +1,10 @@
 'use strict';
 // PG-13 — infrastructure push : abstraction de fournisseur (backend/push.js +
 // backend/push/fake-provider.js), câblée sur le même bus que le temps réel
-// (backend/realtime.js, PG-12). Aucun fournisseur réel, aucune clé : le fake
-// est le seul câblé dans cette passe (voir docs/push.md pour le HUMAN
-// CHECKPOINT sur l'activation d'un fournisseur réel).
+// (backend/realtime.js, PG-12). Le fake reste le fournisseur actif par
+// défaut ici (aucune clé VAPID dans cette suite) ; le fournisseur réel
+// (PCS01, Lot D) a sa propre suite, tests/push-web-push-provider.test.js —
+// voir docs/push.md pour le HUMAN CHECKPOINT sur son activation.
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomBytes } = require('node:crypto');
@@ -174,6 +175,25 @@ test('an expired subscription (provider reports expired) is removed automaticall
     await request('POST', '/alerts', { site: 'S', type: 'T', level: 4 }, socToken);
     assert.ok(await waitFor(async () => (await pool.get('SELECT count(*)::int n FROM public.push_subscriptions WHERE endpoint=$1', [s.endpoint])).n === 0));
   } finally { push.setProvider(fakeProvider); }
+});
+
+test('PCS01 (Lot B): GET /push/public-key returns null when no real VAPID key is configured (the honest, current production state)', async () => {
+  delete process.env.SECURISITE_VAPID_PUBLIC_KEY;
+  const r = await request('GET', '/push/public-key', undefined, ownToken);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { publicKey: null });
+});
+
+test('PCS01 (Lot B): GET /push/public-key reflects a configured key verbatim, never invented', async t => {
+  process.env.SECURISITE_VAPID_PUBLIC_KEY = 'a-test-public-key-value';
+  t.after(() => { delete process.env.SECURISITE_VAPID_PUBLIC_KEY; });
+  const r = await request('GET', '/push/public-key', undefined, ownToken);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { publicKey: 'a-test-public-key-value' });
+});
+
+test('PCS01 (Lot B): GET /push/public-key requires the same authentication/scope as the rest of /push (never a special-cased public route)', async () => {
+  assert.equal((await request('GET', '/push/public-key', undefined, null)).status, 401);
 });
 
 test('readiness requires push_subscriptions to exist (no append-only guard, no RLS: a device state table)', async () => {

@@ -111,16 +111,42 @@ const AlertCenter = (() => {
       const draft=target.querySelector('#ac-comment')?.value||'';
       const focused=document.activeElement?.id==='ac-comment';
       const action=next[a.status];
-      target.innerHTML=`<div class="ac-detail-head"><div class="clean-eyebrow">SECURITY ALERT · NIVEAU ${a.level}</div><h2>${e(a.type)}</h2><p>${e(a.site)} · ${e(a.zone||'Zone non renseignée')}</p><span class="badge ${a.level>=3?'danger':'info'}">${labels[a.status]}</span></div><dl class="ac-facts"><dt>Déclarant</dt><dd>${e(a.username)}</dd><dt>Création serveur</dt><dd>${date(a.created_at)}</dd><dt>Responsable</dt><dd>${e(a.owner||'Non affectée')}</dd><dt>Origine</dt><dd>${e(a.origin)}</dd><dt>Équipement</dt><dd>${e(a.equipment||'Non renseigné')}</dd><dt>Position</dt><dd>${a.latitude===null?'Non disponible':e(a.latitude+', '+a.longitude)}</dd><dt>Acquittement</dt><dd>${a.acknowledged_at?Math.round((Date.parse(a.acknowledged_at)-Date.parse(a.created_at))/1000)+' s':'En attente'}</dd></dl>${a.comment?`<p class="ac-description">${e(a.comment)}</p>`:''}${a.cancellation_requested?'<p class="ac-warning">Demande d’annulation reçue. La décision appartient au SOC ; l’historique est conservé.</p>':''}<div class="ac-actions">${!finished(a)&&isAdmin()?`${action?`<button class="btn btn-primary" data-action="${action[0]}">${action[1]}</button>`:''}<button class="btn btn-outline" data-action="ESCALADE">Escalader</button><button class="btn btn-outline" data-action="FAUSSE_ALERTE">Valider fausse alerte</button><button class="btn btn-outline" data-action="ANNULEE">Annuler (SOC)</button>`:''}${!finished(a)&&a.created_by===API.getUser()?.id&&!a.cancellation_requested?'<button class="btn btn-outline" data-action="DEMANDE_ANNULATION">Demander l’annulation</button>':''}</div>${!finished(a)?'<label for="ac-comment">Commentaire / motif de clôture exceptionnelle</label><textarea id="ac-comment" maxlength="4000" rows="3" placeholder="Documenter une action, une décision…"></textarea><button class="btn btn-outline" data-action="COMMENTAIRE">Ajouter au journal</button>':''}<h3 class="ac-timeline-title">Chronologie & audit</h3><ol class="ac-timeline">${a.timeline.map(t=>`<li><strong>${e(t.action.replaceAll('_',' '))}</strong><small>${date(t.created_at)} · ${e(t.actor)}</small>${t.detail?`<p>${e(t.detail)}</p>`:''}</li>`).join('')}</ol><button class="btn btn-outline" id="ac-ai-summary-btn">✨ Résumé IA</button><div class="ac-ai-summary" id="ac-ai-summary" hidden></div><small>${e(a.id)}</small>`;
+      target.innerHTML=`<div class="ac-detail-head"><div class="clean-eyebrow">SECURITY ALERT · NIVEAU ${a.level}</div><h2>${e(a.type)}</h2><p>${e(a.site)} · ${e(a.zone||'Zone non renseignée')}</p><span class="badge ${a.level>=3?'danger':'info'}">${labels[a.status]}</span></div><dl class="ac-facts"><dt>Déclarant</dt><dd>${e(a.username)}</dd><dt>Création serveur</dt><dd>${date(a.created_at)}</dd><dt>Responsable</dt><dd>${e(a.owner||'Non affectée')}</dd><dt>Origine</dt><dd>${e(a.origin)}</dd><dt>Équipement</dt><dd>${e(a.equipment||'Non renseigné')}</dd><dt>Position</dt><dd>${a.latitude===null?'Non disponible':e(a.latitude+', '+a.longitude)}</dd><dt>Acquittement</dt><dd>${a.acknowledged_at?Math.round((Date.parse(a.acknowledged_at)-Date.parse(a.created_at))/1000)+' s':'En attente'}</dd></dl>${a.comment?`<p class="ac-description">${e(a.comment)}</p>`:''}${isAdmin()?'<div id="ac-receipts"><p role="status">Diffusion…</p></div>':''}${a.cancellation_requested?'<p class="ac-warning">Demande d’annulation reçue. La décision appartient au SOC ; l’historique est conservé.</p>':''}<div class="ac-actions">${!finished(a)&&isAdmin()?`${action?`<button class="btn btn-primary" data-action="${action[0]}">${action[1]}</button>`:''}<button class="btn btn-outline" data-action="ESCALADE">Escalader</button><button class="btn btn-outline" data-action="FAUSSE_ALERTE">Valider fausse alerte</button><button class="btn btn-outline" data-action="ANNULEE">Annuler (SOC)</button>`:''}${!finished(a)&&a.created_by===API.getUser()?.id&&!a.cancellation_requested?'<button class="btn btn-outline" data-action="DEMANDE_ANNULATION">Demander l’annulation</button>':''}</div>${!finished(a)?'<label for="ac-comment">Commentaire / motif de clôture exceptionnelle</label><textarea id="ac-comment" maxlength="4000" rows="3" placeholder="Documenter une action, une décision…"></textarea><button class="btn btn-outline" data-action="COMMENTAIRE">Ajouter au journal</button>':''}<h3 class="ac-timeline-title">Chronologie & audit</h3><ol class="ac-timeline">${a.timeline.map(t=>`<li><strong>${e(t.action.replaceAll('_',' '))}</strong><small>${date(t.created_at)} · ${e(t.actor)}</small>${t.detail?`<p>${e(t.detail)}</p>`:''}</li>`).join('')}</ol><button class="btn btn-outline" id="ac-ai-summary-btn">✨ Résumé IA</button><div class="ac-ai-summary" id="ac-ai-summary" hidden></div><small>${e(a.id)}</small>`;
       const input=target.querySelector('#ac-comment'); if(input) {input.value=redraw?'':draft;if(focused&&!redraw)input.focus();}
       target.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(a.id,b.dataset.action));
       const aiBtn=target.querySelector('#ac-ai-summary-btn'); if(aiBtn) aiBtn.onclick=()=>aiSummary(a.id);
+      if(target.querySelector('#ac-receipts')) loadReceiptsPanel(a.id);
     } catch(err) {
       if(request !== detailRequest || selected!==id) return;
       if(redraw) document.getElementById('ac-detail').innerHTML = `<p role="alert">Impossible de charger l’alerte ${e(id)} : ${e(err.message)}</p>`;
       error(err);
     } finally {
       if(request === detailRequest) selectionPending = false;
+    }
+  }
+  // PCS01 (Lot C) : suivi de diffusion — ENVOYÉ/REÇU/ACQUITTÉ PAR
+  // DESTINATAIRE (alert_recipients, distinct de l'acquittement global de
+  // l'alerte ci-dessus). N'affiche jamais "reçu" sans preuve technique
+  // réelle : delivered_at n'est posé que par le destinataire lui-même
+  // (critical-alert.js), jamais déduit ici de l'envoi seul. Vide (aucune
+  // ligne) si l'alerte n'a jamais été diffusée à des destinataires
+  // explicites — état normal, pas une erreur.
+  async function loadReceiptsPanel(id) {
+    if (id !== selected) return;
+    const panel = document.getElementById('ac-receipts');
+    if (!panel) return;
+    try {
+      const rows = await API.get(`/alerts/${id}/receipts`);
+      if (id !== selected) return;
+      if (!rows.length) { panel.innerHTML = ''; return; }
+      const delivered = rows.filter(r=>r.delivered_at).length, acked = rows.filter(r=>r.acknowledged_at).length;
+      const pending = rows.filter(r=>!r.acknowledged_at);
+      const lang = localStorage.getItem(I18N_KEY)||'fr';
+      const w = s => translateText(s, lang);
+      panel.innerHTML = `<div class="ac-receipts-summary"><strong>${w('Diffusion')}</strong> ${rows.length} ${w('ciblé(s)')} · ${delivered} ${w('reçu(s)')} · ${acked} ${w('acquitté(s)')}</div>${pending.length?`<ul class="ac-receipts-pending">${pending.map(r=>`<li>${e(r.username)} — ${r.delivered_at?w('reçu, en attente d’accusé'):w('pas encore reçu')}</li>`).join('')}</ul>`:''}`;
+    } catch(err) {
+      if (id !== selected) return;
+      panel.innerHTML = '';
     }
   }
   // PG-20 : résumé IA à la demande, jamais chargé automatiquement (coût
@@ -167,11 +193,41 @@ const AlertCenter = (() => {
       if(isCurrent() && document.getElementById('ac-comment') === field) buttons.forEach(b=>b.disabled=false);
     }
   }
-  function createForm() {
-    showModal('Nouvelle alerte',`<div class="form-group"><label>Site *</label><input id="new-alert-site" maxlength="200"></div><div class="form-group"><label>Zone</label><input id="new-alert-zone" maxlength="200"></div><div class="form-group"><label>Type *</label><input id="new-alert-type" maxlength="200" placeholder="Intrusion, incident, anomalie…"></div><div class="form-group"><label>Niveau</label><select id="new-alert-level">${levels.slice(1).map((v,i)=>`<option value="${i+1}">${i+1} — ${v}</option>`).join('')}</select></div><div class="form-group"><label>Commentaire</label><textarea id="new-alert-comment" maxlength="4000"></textarea></div><p id="new-alert-error" role="alert"></p>`,async()=>{
+  // PCS01 (Lot C) : "Diffuser à" reste optionnel — laissé sur "Aucune
+  // diffusion" (valeur par défaut), le comportement est exactement celui
+  // d'avant ce lot (aucun appel à /broadcast). Chargé seulement pour un
+  // compte SOC (isAdmin() ici, même proxy que le reste de la Console
+  // d'alertes) : un compte "own" ne peut de toute façon jamais diffuser
+  // (service.js#broadcastAlert le revérifie), inutile de charger la liste.
+  async function createForm() {
+    let sites = [], users = [];
+    if (typeof isAdmin === 'function' && isAdmin()) {
+      try { [sites, users] = await Promise.all([API.get('/map/sites'), API.get('/alerts/recipients/candidates')]); }
+      catch { /* la diffusion reste simplement indisponible dans ce formulaire si ça échoue */ }
+    }
+    const diffusionHtml = (sites.length || users.length) ? `
+      <div class="form-group"><label>Diffuser à</label>
+        <select id="new-alert-target-type" onchange="document.getElementById('new-alert-target-site').style.display=this.value==='site'?'':'none';document.getElementById('new-alert-target-user').style.display=this.value==='user'?'':'none';">
+          <option value="">Aucune diffusion (comportement habituel)</option>
+          ${users.length ? '<option value="user">Un agent précis</option>' : ''}
+          ${sites.length ? '<option value="site">Un site</option>' : ''}
+          <option value="tenant_wide">Tout le périmètre (SOC)</option>
+        </select>
+      </div>
+      ${sites.length ? `<div class="form-group" id="new-alert-target-site" style="display:none"><label>Site ciblé</label><select id="new-alert-target-site-id">${sites.map(s=>`<option value="${e(s.id)}">${e(s.name)}</option>`).join('')}</select></div>` : ''}
+      ${users.length ? `<div class="form-group" id="new-alert-target-user" style="display:none"><label>Agent ciblé</label><select id="new-alert-target-user-id">${users.map(u=>`<option value="${u.id}">${e(u.nom_complet||u.username)}</option>`).join('')}</select></div>` : ''}
+    ` : '';
+    showModal('Nouvelle alerte',`<div class="form-group"><label>Site *</label><input id="new-alert-site" maxlength="200"></div><div class="form-group"><label>Zone</label><input id="new-alert-zone" maxlength="200"></div><div class="form-group"><label>Type *</label><input id="new-alert-type" maxlength="200" placeholder="Intrusion, incident, anomalie…"></div><div class="form-group"><label>Niveau</label><select id="new-alert-level">${levels.slice(1).map((v,i)=>`<option value="${i+1}">${i+1} — ${v}</option>`).join('')}</select></div><div class="form-group"><label>Commentaire</label><textarea id="new-alert-comment" maxlength="4000"></textarea></div>${diffusionHtml}<p id="new-alert-error" role="alert"></p>`,async()=>{
       const button=document.querySelector('#modalConfirm'); if(button)button.disabled=true;
       try {
         const a=await API.post('/alerts',{site:document.getElementById('new-alert-site').value,zone:document.getElementById('new-alert-zone').value,type:document.getElementById('new-alert-type').value,level:Number(document.getElementById('new-alert-level').value),comment:document.getElementById('new-alert-comment').value});
+        const targetType = document.getElementById('new-alert-target-type')?.value;
+        if(targetType) {
+          const recipientId = targetType==='site' ? document.getElementById('new-alert-target-site-id').value
+            : targetType==='user' ? Number(document.getElementById('new-alert-target-user-id').value) : undefined;
+          try { await API.post(`/alerts/${encodeURIComponent(a.id)}/broadcast`, {recipientType:targetType, recipientId}); }
+          catch(err) { notify('Alerte créée, mais échec de la diffusion : '+(err.message||'réessayez'), 'warning'); }
+        }
         closeModal(); selected=a.id; await load();
       } catch(err) {document.getElementById('new-alert-error').textContent=err.message;}
       finally {if(button)button.disabled=false;}
@@ -206,7 +262,7 @@ const AlertCenter = (() => {
     NotificationBell.refresh();
     timer=setInterval(()=>{if(document.hidden)return;updateLiveBadge();NotificationBell.refresh();if(document.getElementById('page-alertes').classList.contains('active'))load();},5000);
     document.getElementById('ac-rules').hidden=!isAdmin();
-    Realtime.on((type)=>{ updateLiveBadge(); if(type==='alert:created'||type==='alert:updated'||type==='poll') refreshNow(); });
+    Realtime.on((type)=>{ updateLiveBadge(); if(type==='alert:created'||type==='alert:updated'||type==='alert:broadcast'||type==='poll') refreshNow(); });
     Realtime.connect();
     updateLiveBadge();
   }

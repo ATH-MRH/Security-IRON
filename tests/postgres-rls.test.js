@@ -111,10 +111,12 @@ after(async () => {
 /*  Readiness — fail-closed startup                              */
 /* ============================================================ */
 
-test('readiness requires RLS enabled with its policies and helper function on all 5 tables', async () => {
+test('readiness requires RLS enabled with its policies and helper function on all originally protected tables', async () => {
   assert.equal(await assertReady(pool, { directory }), undefined);
   // PG-10 adds security_audit (its own, stricter RLS function — see postgres-security-audit.test.js).
-  assert.deepEqual(Object.keys(RLS_POLICIES).sort(), ['membership_audit', 'memberships', 'security_audit', 'sites', 'tenants', 'zones']);
+  // PCS01 (Lot E) adds security_alerts (see tests/postgres-alert-recipients.test.js and
+  // tests/postgres-scope-rls.test.js for its own dedicated RLS coverage) — not re-asserted here.
+  assert.deepEqual(Object.keys(RLS_POLICIES).sort(), ['membership_audit', 'memberships', 'security_alerts', 'security_audit', 'sites', 'tenants', 'zones']);
 });
 
 test('readiness fails if RLS is disabled on one table', async t => {
