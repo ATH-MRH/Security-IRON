@@ -249,10 +249,11 @@
       <div class="card">
         <div class="card-header"><div class="card-title">📊 Activité par heure</div></div>
         <div class="card-body"><div class="ui2-chart-box"><canvas id="chartHourly"></canvas></div></div>
+        <div class="ui2-chart-footer" id="chartHourlyFooter"></div>
       </div>
       <div class="card">
         <div class="card-header"><div class="card-title">Répartition des alertes</div></div>
-        <div class="card-body"><div class="ui2-chart-box ui2-chart-box-donut"><canvas id="chartAlertsDonut"></canvas></div><div id="dashAlertsLegend" class="ui2-donut-legend"></div></div>
+        <div class="card-body"><div class="ui2-donut-row"><div class="ui2-donut-canvas-wrap"><canvas id="chartAlertsDonut"></canvas><div class="ui2-donut-total" id="dashAlertsTotal"></div></div><div id="dashAlertsLegend" class="ui2-donut-legend"></div></div></div>
       </div>
       <div class="card ui2-assistant-card">
         <div class="card-header"><div class="card-title">🤖 Assistant SOC</div><span class="badge info">IA</span></div>
@@ -260,10 +261,10 @@
           <div id="dashAssistantHelp">
             <p>Je peux vous aider à :</p>
             <ul>
-              <li>Analyser les alertes</li>
-              <li>Rechercher un événement</li>
-              <li>Générer un rapport</li>
-              <li>Vérifier l'état d'un site</li>
+              <li><span class="ui2-assistant-ico" aria-hidden="true">🔍</span>Analyser les alertes</li>
+              <li><span class="ui2-assistant-ico" aria-hidden="true">📅</span>Rechercher un événement</li>
+              <li><span class="ui2-assistant-ico" aria-hidden="true">📄</span>Générer un rapport</li>
+              <li><span class="ui2-assistant-ico" aria-hidden="true">📍</span>Vérifier l'état d'un site</li>
             </ul>
           </div>
           <div id="dashAssistantAnswer" hidden></div>
@@ -279,7 +280,7 @@
     </div>
     <div class="grid-2">
       <div class="card"><div class="card-header"><div class="card-title">📊 Flux d'accès — 7 derniers jours</div></div><div class="card-body"><canvas id="chartFlux" height="180"></canvas></div></div>
-      <div class="card"><div class="card-header"><div class="card-title">🥧 Répartition des accès</div></div><div class="card-body"><canvas id="chartRepartition" height="180"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🥧 Répartition des accès</div></div><div class="card-body"><div class="ui2-donut-row"><div class="ui2-donut-canvas-wrap"><canvas id="chartRepartition"></canvas><div class="ui2-donut-total" id="dashRepartitionTotal"></div></div><div id="dashRepartitionLegend" class="ui2-donut-legend"></div></div></div></div>
     </div>
     <div class="grid-2">
       <div class="card"><div class="card-header"><div class="card-title">🚦 Activité récente</div><button class="btn btn-sm btn-outline" onclick="loadDashboard()">↻ Actualiser</button></div><div class="card-body" id="activiteRecente" style="max-height:340px;overflow-y:auto"></div></div>

@@ -439,15 +439,24 @@ function drawChartHourly(alertRows){
   const hours = Array.from({length:24},(_,h)=>h);
   const counts = hours.map(()=>0);
   alertRows.forEach(a=>{ const h = new Date(a.created_at).getHours(); if(h>=0 && h<24) counts[h]++; });
+  const total = counts.reduce((s,c)=>s+c,0);
+  const peakIdx = total ? counts.indexOf(Math.max(...counts)) : -1;
   if(chartHourlyInst) chartHourlyInst.destroy();
   chartHourlyInst = new Chart(canvas, { type:'bar', data:{
     labels: hours.map(h=>String(h).padStart(2,'0')+'h'),
-    datasets:[{ data:counts, backgroundColor:'rgba(37,117,252,.65)', borderRadius:4, maxBarThickness:14 }],
+    datasets:[{ data:counts, backgroundColor:counts.map((c,i)=>i===peakIdx?'rgba(37,117,252,.9)':'rgba(37,117,252,.22)'), borderRadius:4, maxBarThickness:14 }],
   }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } } });
+  const footer = document.getElementById('chartHourlyFooter');
+  if(footer){
+    footer.innerHTML = peakIdx>=0
+      ? `<span>🕐 Pic aujourd’hui : ${String(peakIdx).padStart(2,'0')}h</span><span>${total} événement${total>1?'s':''}</span>`
+      : `<span>🕐 Aucun événement aujourd’hui</span>`;
+  }
 }
 function drawChartAlertsDonut(alertRows){
   const canvas = document.getElementById('chartAlertsDonut');
   const legend = document.getElementById('dashAlertsLegend');
+  const totalEl = document.getElementById('dashAlertsTotal');
   if(!canvas || typeof Chart==='undefined') return;
   const active = alertRows.filter(a=>!['CLOTUREE','FAUSSE_ALERTE','ANNULEE','RESOLUE'].includes(a.status));
   const groups = [
@@ -457,11 +466,16 @@ function drawChartAlertsDonut(alertRows){
   ];
   const total = groups.reduce((s,g)=>s+g.count,0);
   if(chartAlertsDonutInst) chartAlertsDonutInst.destroy();
+  // Etat neutre géométriquement identique si total réel = 0 — jamais de
+  // donnée inventée pour "faire apparaître" un anneau.
+  const data = total ? groups.map(g=>g.count) : [1];
+  const colors = total ? groups.map(g=>g.color) : ['#e6ebf2'];
   chartAlertsDonutInst = new Chart(canvas, { type:'doughnut', data:{
-    labels: groups.map(g=>g.label),
-    datasets:[{ data: groups.map(g=>g.count), backgroundColor: groups.map(g=>g.color), borderWidth:0 }],
-  }, options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}} } });
-  if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span>${g.label}<strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
+    labels: total ? groups.map(g=>g.label) : ['Aucune alerte'],
+    datasets:[{ data, backgroundColor: colors, borderWidth:0 }],
+  }, options:{ responsive:true, maintainAspectRatio:false, cutout:'72%', plugins:{legend:{display:false},tooltip:{enabled:!!total}} } });
+  if(totalEl) totalEl.innerHTML = `<strong>${total}</strong><span>Total</span>`;
+  if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span><span class="ui2-donut-legend-label">${g.label}</span><strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
 }
 
 // Même route que AlertCenter.assistantAsk() (/alerts/assistant) — un second
@@ -673,8 +687,27 @@ function drawChartFlux(){
 }
 function drawChartRepartition(){
   const ctx = document.getElementById('chartRepartition');
+  const legend = document.getElementById('dashRepartitionLegend');
+  const totalEl = document.getElementById('dashRepartitionTotal');
   if(chartRepInst) chartRepInst.destroy();
-  chartRepInst = new Chart(ctx,{type:'doughnut',data:{labels:['Employés','Visiteurs','Prestataires','Véhicules'],datasets:[{data:[cache.employes.length,cache.visiteurs.length,Math.max(1,cache.badges.filter(b=>b.type==='P').length),cache.vehicules.length],backgroundColor:['#00d4ff','#ff3860','#ffb800','#00ff9d'],borderColor:'#101827',borderWidth:2}]},options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+  const groups = [
+    { label:'Employés', color:'#2575fc', count: cache.employes.length },
+    { label:'Visiteurs', color:'#21c7a8', count: cache.visiteurs.length },
+    // UI-WHITE : Math.max(1, …) retiré — forçait un minimum fictif d'1
+    // prestataire même quand le compte réel était 0 (donnée inventée,
+    // seule "part" visible du donut quand tout le reste était à 0).
+    { label:'Prestataires', color:'#f7a928', count: cache.badges.filter(b=>b.type==='P').length },
+    { label:'Véhicules', color:'#ff5f6d', count: cache.vehicules.length },
+  ];
+  const total = groups.reduce((s,g)=>s+g.count,0);
+  const data = total ? groups.map(g=>g.count) : [1];
+  const colors = total ? groups.map(g=>g.color) : ['#e6ebf2'];
+  chartRepInst = new Chart(ctx,{type:'doughnut',data:{
+    labels: total ? groups.map(g=>g.label) : ['Aucun accès'],
+    datasets:[{data, backgroundColor:colors, borderWidth:0}],
+  },options:{responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false},tooltip:{enabled:!!total}}}});
+  if(totalEl) totalEl.innerHTML = `<strong>${total}</strong><span>Total</span>`;
+  if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span><span class="ui2-donut-legend-label">${g.label}</span><strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
 }
 
 /* ===== MAIN COURANTE ===== */

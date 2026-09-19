@@ -781,9 +781,9 @@ function renderKpi2Card({icon, tone, label, value, trend, series, footerIcon, fo
   const svg = series ? kpi2SparklineSvg(series, tone) : null;
   const sparkHtml = svg ? `<div class="kpi2-spark">${svg}</div>` : `<div class="kpi2-spark-empty" aria-hidden="true"></div>`;
   return `<div class="kpi-card ${tone} kpi2-card">
-    <div class="kpi2-top"><div class="kpi2-icon" aria-hidden="true"><span class="kpi-icon-glyph">${icon}</span></div>${trendHtml}</div>
-    <div class="kpi2-body"><div class="kpi-value">${value}</div><div class="kpi-label">${escapeHtml(label)}</div></div>
-    ${sparkHtml}
+    <div class="kpi2-top"><div class="kpi2-icon" aria-hidden="true"><span class="kpi-icon-glyph">${icon}</span></div><div class="kpi-label">${escapeHtml(label)}</div></div>
+    <div class="kpi-value">${value}</div>
+    <div class="kpi2-trend-row">${trendHtml}${sparkHtml}</div>
     <div class="kpi2-footer"><span aria-hidden="true">${footerIcon||''}</span><span>${escapeHtml(footerText)}</span></div>
   </div>`;
 }

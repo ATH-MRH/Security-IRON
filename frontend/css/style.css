@@ -865,21 +865,18 @@ body{
   border-bottom:1px solid rgba(214,224,236,.75);
   box-shadow:none;
 }
-.content{padding:30px 34px}
+.content{padding:22px 26px}
+/* WHITE UI — hero rendu sobre et compact (référence visuelle obligatoire) :
+   blanc, ombre légère, plus de halo/dégradé décoratif ni de grand cercle
+   flou. min-height/padding/radius fortement réduits par rapport à
+   l'ancienne version (280px de hauteur mini, ombre de 80px de flou). */
 .clean-hero{
-  min-height:280px;margin-bottom:24px;padding:30px;
-  display:grid;grid-template-columns:220px 1fr auto;align-items:center;gap:30px;
-  background:
-    radial-gradient(circle at 18% 50%,rgba(37,117,252,.18),transparent 30%),
-    radial-gradient(circle at 78% 28%,rgba(33,199,168,.18),transparent 30%),
-    rgba(255,255,255,.78);
-  border:1px solid rgba(255,255,255,.9);border-radius:34px;
-  box-shadow:0 30px 80px rgba(44,67,104,.14);
+  min-height:0;margin-bottom:18px;padding:16px 22px;
+  display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:20px;
+  background:#fff;
+  border:1px solid var(--border-subtle);border-radius:var(--radius-xl);
+  box-shadow:var(--shadow-sm);
   position:relative;overflow:hidden;
-}
-.clean-hero::after{
-  content:"";position:absolute;inset:auto -8% -45% auto;width:360px;height:360px;border-radius:50%;
-  background:linear-gradient(135deg,rgba(37,117,252,.18),rgba(33,199,168,.16));filter:blur(8px);
 }
 .clean-hero-copy{position:relative;z-index:1;max-width:620px}
 .clean-eyebrow{font-size:12px;font-weight:800;color:#2370f4;margin-bottom:10px}
@@ -1618,25 +1615,22 @@ body.role-agent .admin-only{ display:none !important; }
    updateCleanHeroStatus()/runDashboardAnalysis() ne le référencent jamais,
    seulement #cleanHeroStatus et #cleanStatusText, tous deux conservés). */
 .ui2-hero{
-  grid-template-columns:1fr 1.15fr auto auto;gap:18px;padding:18px 24px;
+  grid-template-columns:1fr auto auto;gap:18px;padding:16px 22px;
   min-height:0;align-items:center;
 }
-.ui2-hero-photo{
-  align-self:stretch;min-height:132px;border-radius:18px;position:relative;z-index:1;
-  background:
-    linear-gradient(0deg,rgba(10,18,38,.6),rgba(10,18,38,.2)),
-    linear-gradient(135deg,#25406e,#0f1b3d);
-  display:flex;align-items:flex-end;padding:12px 16px;overflow:hidden;
-}
-.ui2-hero-photo::after{
-  content:"🛡️";font-size:30px;opacity:.35;position:absolute;inset-inline-end:12px;top:10px;
-}
-.ui2-hero-photo-caption{position:relative;z-index:1;color:#fff;font-size:12px;font-weight:700;line-height:1.35;text-shadow:0 2px 8px rgba(0,0,0,.4)}
+/* WHITE UI : grande surface bleue décorative retirée (référence visuelle
+   obligatoire, point 7 — plus de "grande surface bleue décorative" dans
+   le hero). Rien d'autre ne référence .ui2-hero-photo côté JS. */
+.ui2-hero-photo{display:none}
 .ui2-hero-copy{max-width:none}
-.ui2-hero-copy h2{font-size:21px;margin-bottom:4px}
-.ui2-hero-brand{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:2px}
-.ui2-hero-copy p{margin-bottom:10px;font-size:12px}
-.ui2-hero-copy .clean-actions{gap:8px}
+/* WHITE UI : ne garder dans le hero que "Bonjour, <nom>" + les actions —
+   l'eyebrow/le nom de marque/le sous-titre sont décoratifs, pas dans la
+   liste à conserver (Bonjour admin ; état système ; date/heure ; SOS).
+   .clean-eyebrow masqué seulement ici (scope .ui2-hero-copy), les autres
+   écrans (Centre d'alertes, Carte…) gardent le leur intact. */
+.ui2-hero-copy .clean-eyebrow,.ui2-hero-brand,.ui2-hero-copy p{display:none}
+.ui2-hero-copy h2{font-size:20px;margin-bottom:0}
+.ui2-hero-copy .clean-actions{gap:8px;margin-top:10px}
 .ui2-hero-copy .btn{padding:8px 14px;font-size:12.5px}
 .ui2-hero-time{
   align-self:stretch;display:flex;flex-direction:column;justify-content:center;
@@ -1717,14 +1711,38 @@ body.role-agent .admin-only{ display:none !important; }
 #dashAssistantHelp li{margin-bottom:2px}
 .ui2-assistant-form{margin-top:8px}
 .ui2-chart-box{position:relative;height:130px}
-.ui2-chart-box-donut{height:100px}
+/* WHITE UI — bandeau contextuel bas pour un graphique en barres (réutilise
+   la même anatomie que .kpi2-footer : icône + texte, fond discret). */
+.ui2-chart-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:10px 20px 16px;padding:7px 10px;border-radius:10px;
+  font-size:11.5px;font-weight:650;color:var(--text-muted);background:var(--bg-2);
+}
+/* WHITE UI — donut compact + total au centre + légende à droite (valeur
+   et pourcentage réels), remplace l'ancien rendu (anneau plein sans
+   total, légende Chart.js en bas). */
+.ui2-donut-row{display:flex;align-items:center;gap:20px}
+.ui2-donut-canvas-wrap{position:relative;width:130px;height:130px;flex:0 0 auto}
+.ui2-donut-total{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:none;
+}
+.ui2-donut-total strong{font-size:24px;font-weight:800;color:var(--color-text);line-height:1.1}
+.ui2-donut-total span{font-size:11px;color:var(--color-text-secondary)}
+.ui2-donut-legend{flex:1;display:flex;flex-direction:column;gap:10px;margin-top:0;min-width:0}
+.ui2-donut-legend div{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.ui2-donut-legend span.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.ui2-donut-legend-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui2-donut-legend strong{margin-inline-start:auto;font-weight:700}
+.ui2-donut-legend small{color:var(--text-muted);min-width:32px;text-align:end}
 
-/* --- Teinte bleutée plus présente (fond + cartes), rendu moins blanc/pastel --- */
+/* WHITE UI — référence visuelle obligatoire : fond principal blanc/quasi
+   blanc, plus aucun halo ni dégradé décoratif occupant toute la page
+   (remplace l'ancienne couche "teinte bleutée plus présente" — direction
+   explicitement inversée par la nouvelle référence). Le bleu ne reste
+   qu'en accent discret (icônes, valeurs, liens), jamais en fond. */
 body{
-  background:
-    radial-gradient(circle at 50% -10%,rgba(79,140,255,.26),transparent 36%),
-    radial-gradient(circle at 84% 18%,rgba(66,220,181,.20),transparent 30%),
-    linear-gradient(180deg,#eef5ff 0%,#e4eef9 52%,#dde9f4 100%);
+  background:var(--color-surface-muted);
 }
 /* UI-FOUNDATION-2 : .card/.kpi-card retirés — c'était la déclaration
    RÉELLEMENT gagnante pour leur fond avant ce lot (plus loin dans le
@@ -1735,12 +1753,8 @@ body{
 .ui2-hero-time{
   background:rgba(233,241,253,.86);
 }
-.clean-hero{
-  background:
-    radial-gradient(circle at 18% 50%,rgba(37,117,252,.22),transparent 32%),
-    radial-gradient(circle at 78% 28%,rgba(33,199,168,.20),transparent 32%),
-    rgba(226,237,252,.82);
-}
+/* WHITE UI : .clean-hero retiré d'ici — le fond blanc défini à sa source
+   (plus haut) ne doit plus être recouvert de dégradés décoratifs. */
 
 /* Mini-carte du tableau de bord : même rendu relatif que la page Carte
    (frontend/js/map.js#MapMarkers, réutilisé, jamais dupliqué), un id de
@@ -1788,8 +1802,13 @@ body{
 .ui2-assistant-card{display:flex;flex-direction:column}
 .ui2-assistant-card .card-body{display:flex;flex-direction:column;flex:1}
 #dashAssistantHelp{font-size:12px;color:var(--text-muted);margin-bottom:auto}
-#dashAssistantHelp ul{margin:8px 0 0;padding-inline-start:18px}
-#dashAssistantHelp li{margin-bottom:4px}
+#dashAssistantHelp ul{list-style:none;margin:8px 0 0;padding:0}
+#dashAssistantHelp li{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.ui2-assistant-ico{
+  width:22px;height:22px;border-radius:50%;flex:0 0 auto;font-size:11px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(37,117,252,.1);
+}
 #dashAssistantAnswer{font-size:12.5px;margin-bottom:10px;max-height:160px;overflow-y:auto}
 .ui2-assistant-form{display:flex;gap:8px;margin-top:12px}
 .ui2-assistant-form input{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-2);color:var(--text);font-size:12px}
@@ -1914,14 +1933,19 @@ body{
    le fond/l'ombre/le radius (aucune duplication), et neutralise leur reliquat
    décoratif (bordure/lueur de coin) : la couleur vit désormais DANS le
    contenu (icône, bandeau), jamais en contour de carte. */
+/* WHITE UI — anatomie alignée sur la référence visuelle obligatoire :
+   [icône] Titre / grande valeur / évolution + mini-graphe EN LIGNE (plus
+   l'un au-dessus de l'autre) / bandeau. Densité augmentée (padding et
+   gap réduits) sans perdre la lisibilité. */
 .kpi2-card{
-  border-inline-start:0!important;padding:18px 20px;display:flex;flex-direction:column;gap:12px;
+  border-inline-start:0!important;padding:14px 16px;display:flex;flex-direction:column;gap:8px;
 }
 .kpi2-card::before,.kpi2-card::after{display:none!important}
-.kpi2-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.kpi2-top{display:flex;align-items:center;gap:9px}
+.kpi2-top .kpi-label{margin-top:0;font-size:12.5px}
 .kpi2-icon{
-  width:40px;height:40px;border-radius:50%;flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;font-size:18px;
+  width:32px;height:32px;border-radius:50%;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
   /* .kpi-icon-glyph (span interne, voir plus haut) porte le filtre —
      jamais ce conteneur, qui doit garder son fond coloré plein. */
 }
@@ -1931,24 +1955,24 @@ body{
 .kpi-card.danger .kpi2-icon{background:var(--danger)}
 .kpi-card.purple .kpi2-icon{background:var(--purple)}
 .kpi-card.accent .kpi2-icon{background:var(--accent)}
-.kpi2-trend{font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;text-align:start;max-width:100%}
+.kpi2-card .kpi-value{font-size:26px;line-height:1.05}
+.kpi2-trend-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.kpi2-trend{font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;text-align:start;max-width:100%;flex:0 0 auto}
 .kpi2-trend-label{white-space:normal}
 .kpi2-trend.up{color:#0f8b63;background:rgba(35,196,131,.12)}
 .kpi2-trend.down{color:#c2414d;background:rgba(255,95,109,.12)}
 .kpi2-trend.flat{color:#6f7d91;background:rgba(111,125,145,.10)}
 .kpi2-trend.neutral{color:var(--text-dim);background:transparent;padding-inline:0}
-.kpi2-body .kpi-value{font-size:28px}
-.kpi2-body .kpi-label{margin-top:2px}
-.kpi2-spark{height:30px}
+.kpi2-spark{height:24px;width:64px;flex:0 0 auto}
 .kpi2-spark svg{width:100%;height:100%;display:block}
 .kpi2-spark-empty{
-  height:30px;border-radius:6px;
+  height:24px;width:64px;flex:0 0 auto;border-radius:6px;
   background:repeating-linear-gradient(90deg,var(--border) 0 6px,transparent 6px 12px);
   background-size:100% 1px;background-position:center;background-repeat:no-repeat;
 }
 .kpi2-footer{
-  display:flex;align-items:center;gap:6px;border-radius:10px;padding:7px 10px;
-  font-size:11.5px;font-weight:650;color:var(--text-muted);background:var(--bg-2);
+  display:flex;align-items:center;gap:6px;border-radius:10px;padding:6px 10px;
+  font-size:11px;font-weight:650;color:var(--text-muted);background:var(--bg-2);
 }
 .kpi-card.info .kpi2-footer{background:rgba(91,140,255,.10);color:#2f5fd0}
 .kpi-card.success .kpi2-footer{background:rgba(35,196,131,.10);color:#0f8b63}
