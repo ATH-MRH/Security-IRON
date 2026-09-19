@@ -114,26 +114,6 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeUserMenu(); });
 
-// Thème clair/sombre réel : bascule data-theme sur <html>, persisté par
-// appareil (comme SIDEBAR_COLLAPSE_KEY ci-dessus) — jamais un réglage
-// serveur, aucune donnée ni logique métier affectée, uniquement les jetons
-// CSS (var(--bg)/--surface/--text/... déjà utilisés partout dans style.css).
-const THEME_KEY = 'securisite_theme';
-function applyTheme(theme){
-  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-  const btn = document.getElementById('themeToggle');
-  if(btn) btn.textContent = theme === 'dark' ? '🌙' : '☀️';
-}
-function toggleTheme(){
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  try{ localStorage.setItem(THEME_KEY, next); }catch{}
-  applyTheme(next);
-}
-(function restoreTheme(){
-  let saved = null;
-  try{ saved = localStorage.getItem(THEME_KEY); }catch{}
-  applyTheme(saved === 'dark' ? 'dark' : 'light');
-})();
 
 // Recherche rapide de la topbar : raccourci vers une page existante par son
 // intitulé de menu (données déjà en mémoire, aucune API dédiée) — pas une
