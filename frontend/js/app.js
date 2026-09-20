@@ -96,6 +96,7 @@ document.addEventListener('click', e=>{
   const menu = document.getElementById('langMenuButton')?.closest('.lang-menu');
   if(menu && !menu.contains(e.target)) closeLangMenu();
 });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeLangMenu(); });
 
 function openUserMenu(){
   document.getElementById('userMenuDropdown')?.removeAttribute('hidden');

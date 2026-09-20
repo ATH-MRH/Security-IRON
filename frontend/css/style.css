@@ -934,8 +934,21 @@ body{
   max-height:72px!important;
   padding-top:0!important;
   padding-bottom:0!important;
-  overflow:hidden!important;
 }
+/* HOTFIX TOPBAR — cause racine confirmée en production (DevTools) :
+   l'overflow:hidden ci-dessus (retiré) empêchait tout menu/dropdown
+   enfant (langue, profil, résultats de recherche) de dépasser
+   verticalement de la barre — il était rogné dès qu'il sortait des
+   72px de hauteur. Rien ici ne dépendait d'un rognage horizontal
+   (le contenu tient dans le flex layout de .topbar-left/.topbar-right,
+   voir .page-title qui gère déjà sa propre ellipse). Retrait pur et
+   simple plutôt qu'un overflow-x:hidden/overflow-y:visible : la
+   spec CSS recalcule un axe "visible" en "auto" dès que l'autre axe
+   est "hidden", ce qui aurait réintroduit une fausse scrollbar au
+   lieu d'un menu qui dépasse librement. Hauteur/position sticky/
+   ombre/densité : strictement inchangées (seule la propriété
+   overflow disparaît de cette règle). */
+.topbar{overflow:visible!important}
 .topbar-left,.topbar-right{
   height:100%;
   min-width:0;

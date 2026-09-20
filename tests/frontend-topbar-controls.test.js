@@ -37,6 +37,7 @@ const path = require('node:path');
 const appSource = fs.readFileSync(path.resolve(__dirname, '../frontend/js/app.js'), 'utf8');
 const htmlSource = fs.readFileSync(path.resolve(__dirname, '../frontend/index.html'), 'utf8');
 const swSource = fs.readFileSync(path.resolve(__dirname, '../frontend/sw.js'), 'utf8');
+const cssSource = fs.readFileSync(path.resolve(__dirname, '../frontend/css/style.css'), 'utf8');
 
 const topbarHtml = htmlSource.slice(htmlSource.indexOf('class="topbar"'), htmlSource.indexOf('class="content"'));
 
@@ -232,4 +233,65 @@ test('sw.js : activate() évince un cache resté sous un ancien nom (le vrai mé
 
 test('sw.js : CACHE_VERSION a bien été incrémenté par le hotfix (v3 → v4)', () => {
   assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v4';/);
+});
+
+/* ============================================================ */
+/*  4. HOTFIX TOPBAR — cause racine confirmée en production        */
+/*     (DevTools) : .topbar{overflow:hidden!important} rognait     */
+/*     tout menu enfant (langue/profil/recherche) dès qu'il         */
+/*     dépassait verticalement des 72px de la barre. style.css      */
+/*     empile plusieurs `.topbar{}` distincts (héritage de couches  */
+/*     visuelles successives, cf. commentaires du fichier) : seule  */
+/*     compte la déclaration `overflow` GAGNANTE une fois la        */
+/*     cascade résolue propriété par propriété (comme pour les      */
+/*     autres bugs de ce type déjà rencontrés sur .topbar) — pas    */
+/*     simplement « la dernière règle du bloc ».                    */
+/* ============================================================ */
+
+function resolveCascadeWinner(css, selector, property) {
+  const blockRe = new RegExp('^' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}', 'gm');
+  const declRe = new RegExp('(?:^|;)\\s*' + property + '\\s*:\\s*([^;!]+?)\\s*(!important)?\\s*(?=;|$)');
+  let winner = null;
+  let winnerImportant = false;
+  let match;
+  while ((match = blockRe.exec(css))) {
+    const decl = match[1].match(declRe);
+    if (!decl) continue;
+    const value = decl[1].trim();
+    const important = !!decl[2];
+    if (important || !winnerImportant) { winner = value; winnerImportant = winnerImportant || important; }
+  }
+  return winner;
+}
+
+test('cause racine : la déclaration .topbar{overflow} gagnante (cascade résolue) est "visible", jamais "hidden"', () => {
+  const winner = resolveCascadeWinner(cssSource, '.topbar', 'overflow');
+  assert.equal(winner, 'visible',
+    'si ce test échoue avec "hidden", le bug de rognage des menus (langue/profil/recherche) est de retour : ' +
+    'un dropdown positionné en absolute sous la topbar (top:calc(100% + Npx)) sera de nouveau invisible dès ' +
+    'qu\'il dépasse les 72px de hauteur fixe de la barre.');
+});
+
+test('cause racine : aucun bloc .topbar ne réintroduit overflow:hidden après la règle de hauteur fixe (72px)', () => {
+  // Verrou spécifique sur le bloc historiquement fautif (hauteur constante) :
+  // s'assure qu'un futur retour de "overflow:hidden" à cet endroit précis
+  // serait immédiatement détecté, pas seulement via la résolution globale.
+  const fixedHeightBlock = cssSource.slice(
+    cssSource.indexOf('Hauteur topbar constante sur toutes les pages'),
+    cssSource.indexOf('.topbar-left,.topbar-right{'),
+  ).replace(/\/\*[\s\S]*?\*\//g, ''); // les commentaires peuvent légitimement mentionner "overflow:hidden" (historique) sans que la règle CSS elle-même le redéclare
+  assert.doesNotMatch(fixedHeightBlock, /overflow\s*:\s*hidden/);
+  assert.match(fixedHeightBlock, /height:72px!important/, 'la hauteur fixe doit rester préservée (exigence explicite du hotfix)');
+});
+
+test('les trois dropdowns enfants de la topbar (langue, profil, recherche) sont bien positionnés pour dépasser verticalement, jamais recadrés dans leur propre boîte', () => {
+  // Chacun est position:absolute avec top:calc(100% + Npx) par rapport à son
+  // parent position:relative — c'est .topbar (ancêtre commun) qui doit rester
+  // overflow:visible pour qu'ils s'affichent réellement (vérifié ci-dessus) ;
+  // ici on verrouille seulement que le positionnement lui-même n'a pas changé.
+  for (const sel of ['.lang-menu-dropdown', '.user-menu-dropdown', '.topbar-search-results']) {
+    const block = cssSource.slice(cssSource.indexOf(sel + '{'), cssSource.indexOf(sel + '{') + 300);
+    assert.match(block, /position\s*:\s*absolute/, sel + ' doit rester position:absolute');
+    assert.match(block, /top\s*:\s*calc\(100% \+ \d+px\)/, sel + ' doit rester positionné sous son déclencheur');
+  }
 });
