@@ -370,33 +370,38 @@
 
   <!-- MAIN COURANTE -->
   <div class="page" id="page-maincourante">
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-header"><div class="card-title">✍️ Saisir une nouvelle entrée</div><span class="live-indicator"><span class="live-dot"></span> Horodatage auto</span></div>
-        <div class="card-body">
-          <div class="form-row">
-            <div class="form-group"><label>Poste</label><select id="mcPoste"><option value="PC Sûreté">PC Sûreté</option><option value="Poste 1">Poste 1 — Entrée principale</option><option value="Poste 2">Poste 2 — Accueil visiteurs</option><option value="Poste 3">Poste 3 — Quai logistique</option><option value="Rondier 1">Rondier 1 — Périmètre</option><option value="Rondier 2">Rondier 2 — Bâtiments</option><option value="Rondier 3">Rondier 3 — Parkings</option><option value="Chef de poste">Chef de poste</option></select></div>
-            <div class="form-group"><label>Agent en service</label><input type="text" id="mcAgent" placeholder="Nom de l'agent"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Type d'événement</label><select id="mcType"><option value="Information">📋 Information</option><option value="Ronde">🚶 Ronde / Patrouille</option><option value="Communication">📞 Communication</option><option value="Anomalie">⚠️ Anomalie</option><option value="Incident">🚨 Incident</option><option value="Intervention">🛠️ Intervention</option><option value="Contrôle">🔍 Contrôle</option><option value="Relève">🔄 Relève</option><option value="Visite">👥 Visite</option><option value="Autre">📝 Autre</option></select></div>
-            <div class="form-group"><label>Priorité</label><select id="mcPriorite"><option value="normale">🟢 Normale</option><option value="importante">🟡 Importante</option><option value="critique">🔴 Critique</option></select></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Lieu / Zone</label><input type="text" id="mcLieu" placeholder="Ex: Tourniquet, Parking A..."></div>
-            <div class="form-group"><label>Date / Heure</label><input type="datetime-local" id="mcDatetime"></div>
-          </div>
-          <div class="form-row full"><div class="form-group"><label>Description</label><textarea id="mcDescription" rows="4" placeholder="Décrire l'événement..."></textarea></div></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-accent" onclick="ajouterMainCourante()">📝 Enregistrer</button>
+    <div class="card mc-entry-card">
+      <div class="card-header"><div class="card-title">✍️ Saisir une nouvelle entrée</div><span class="live-indicator"><span class="live-dot"></span> Horodatage auto</span></div>
+      <div class="card-body mc-entry-body">
+        <div class="mc-catalog">
+          <div class="mc-search"><input type="text" id="mcEventSearch" placeholder="Rechercher un événement (code ou libellé)…" oninput="filterMcEvents(this.value)" aria-label="Rechercher un événement"></div>
+          <div class="mc-grid" id="mcEventGrid"><div class="empty-state">Chargement…</div></div>
+          <div class="mc-urgency" id="mcUrgencyBar"></div>
+        </div>
+        <div class="mc-detail">
+          <div class="mc-detail-title">Événement sélectionné</div>
+          <div class="mc-detail-selected" id="mcSelectedSummary"><div class="empty-state">Sélectionnez un événement dans la grille pour commencer une saisie.</div></div>
+          <dl class="mc-detail-meta" id="mcSelectedMeta" hidden>
+            <div><dt>Code</dt><dd id="mcMetaCode"></dd></div>
+            <div><dt>Libellé</dt><dd id="mcMetaLabel"></dd></div>
+            <div><dt>Catégorie</dt><dd id="mcMetaCategory"></dd></div>
+          </dl>
+          <p class="mc-detail-note" id="mcRelatedNote" hidden></p>
+          <p class="mc-detail-instructions" id="mcInstructionsNote" hidden></p>
+          <div class="form-group"><label>Poste <span class="mc-required" aria-hidden="true">*</span></label><select id="mcPoste"><option value="PC Sûreté">PC Sûreté</option><option value="Poste 1">Poste 1 — Entrée principale</option><option value="Poste 2">Poste 2 — Accueil visiteurs</option><option value="Poste 3">Poste 3 — Quai logistique</option><option value="Rondier 1">Rondier 1 — Périmètre</option><option value="Rondier 2">Rondier 2 — Bâtiments</option><option value="Rondier 3">Rondier 3 — Parkings</option><option value="Chef de poste">Chef de poste</option></select></div>
+          <div class="form-group"><label>Agent en service <span class="mc-required" aria-hidden="true">*</span></label><select id="mcAgentSelect"></select></div>
+          <div class="form-group"><label>Lieu / Zone</label><input type="text" id="mcLieu" placeholder="Ex: Clôture nord, Parking A…"></div>
+          <div class="form-group"><label>Date / Heure</label><input type="datetime-local" id="mcDatetime"></div>
+          <div class="form-group"><label>Description complémentaire</label><textarea id="mcDescription" rows="4" placeholder="Décrire les faits, les actions effectuées…"></textarea></div>
+          <label class="mc-pcs01" id="mcPcs01Row" hidden><input type="checkbox" id="mcPcs01Check"> Déclencher une alerte PCS01 <span class="mc-pcs01-info" title="Crée un incident lié à cette entrée, transmis au Centre d'alertes.">ⓘ</span></label>
+          <div class="mc-detail-actions">
             <button class="btn btn-outline" onclick="resetMainCouranteForm()">↻ Effacer</button>
-            <button class="btn btn-outline" onclick="quickMC('Ronde','Ronde de surveillance effectuée. RAS.')">+ Ronde RAS</button>
-            <button class="btn btn-outline" onclick="quickMC('Relève','Prise de service.')">+ Prise service</button>
+            <button class="btn btn-primary" id="mcSaveBtn" onclick="ajouterMainCourante()" disabled>💾 Enregistrer</button>
           </div>
         </div>
       </div>
-      <div class="card"><div class="card-header"><div class="card-title">📊 Statistiques de la journée</div></div><div class="card-body"><div class="kpi-grid" id="mcStats" style="margin-bottom:0"></div><div style="margin-top:16px"><div class="card-title" style="font-size:13px;margin-bottom:10px">Agents en service</div><div id="mcAgentsActifs"></div></div></div></div>
     </div>
+    <div class="card"><div class="card-header"><div class="card-title">📊 Statistiques de la journée</div></div><div class="card-body"><div class="kpi-grid" id="mcStats" style="margin-bottom:0"></div><div style="margin-top:16px"><div class="card-title" style="font-size:13px;margin-bottom:10px">Agents en service</div><div id="mcAgentsActifs"></div></div></div></div>
     <div class="card">
       <div class="card-header"><div class="card-title">📖 Journal en temps réel</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -682,6 +687,8 @@
       <div class="card"><div class="card-header"><div class="card-title">🏢 Site</div></div><div class="card-body">
         <div class="form-row full"><div class="form-group"><label>Nom du site</label><input type="text" id="setSiteNom"></div></div>
         <div class="form-row"><div class="form-group"><label>Adresse</label><input type="text" id="setSiteAdr"></div><div class="form-group"><label>Téléphone</label><input type="text" id="setSiteTel"></div></div>
+        <div class="form-row full"><label class="mc-pcs01"><input type="checkbox" id="setMcPcs01Enabled"> Activer le déclenchement PCS01 depuis la Main courante</label></div>
+        <p class="mc-detail-note">Autorise l'agent, depuis la grille de saisie de la Main courante, à déclencher manuellement une alerte PCS01 (crée un incident lié, transmis au Centre d'alertes). Aucun code ne la déclenche automatiquement — décision explicite de l'agent à chaque fois.</p>
         <button class="btn btn-primary admin-only" onclick="sauverParametres()">Enregistrer</button>
       </div></div>
       <div class="card"><div class="card-header"><div class="card-title">🔐 Niveaux d'accès</div></div><div class="card-body"><table><thead><tr><th>Code</th><th>Libellé</th><th>Zones</th></tr></thead><tbody><tr><td><span class="badge muted">N1</span></td><td>Accueil</td><td>Hall, accueil</td></tr><tr><td><span class="badge info">N2</span></td><td>Bureaux</td><td>Hall, bureaux</td></tr><tr><td><span class="badge warning">N3</span></td><td>Production</td><td>+ ateliers</td></tr><tr><td><span class="badge danger">N4</span></td><td>Zone sensible</td><td>Toutes zones</td></tr></tbody></table></div></div>

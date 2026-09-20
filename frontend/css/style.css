@@ -2008,3 +2008,110 @@ body{
 @media(max-width:1400px){.kpi2-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.kpi2-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.kpi2-grid{grid-template-columns:1fr}}
+
+/* ============================================================
+   MAIN COURANTE — grille de codification événements. Design System
+   existant réutilisé (tokens --color-*, --radius-*, --shadow-sm, mêmes
+   .card/.form-group/.empty-state qu'ailleurs) — pas de nouvelle couche
+   CSS indépendante. Couleur métier uniquement sur l'icône/le badge des
+   boutons (jamais le fond de page), catégories légèrement teintées,
+   conforme aux mêmes règles que le reste du Design System. */
+.mc-entry-body{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start}
+.mc-required{color:var(--danger);margin-inline-start:2px}
+
+.mc-search{margin-bottom:14px}
+.mc-search input{
+  width:100%;padding:10px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  background:var(--bg-2);color:var(--color-text);font-size:13px;font-family:var(--font-sans);
+}
+.mc-search input:focus{outline:none;border-color:rgba(37,117,252,.5);box-shadow:0 0 0 4px rgba(37,117,252,.12)}
+
+.mc-grid{display:flex;flex-direction:column;gap:14px}
+.mc-category{border-radius:var(--radius-md);padding:12px;background:var(--mc-tone-bg,var(--bg-2))}
+.mc-category-title{font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--mc-tone-fg,var(--text-muted));margin-bottom:8px}
+.mc-category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+
+.mc-event-btn{
+  display:flex;flex-direction:column;align-items:flex-start;gap:4px;
+  padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);
+  background:var(--surface);cursor:pointer;text-align:start;transition:var(--transition-fast,.15s);
+  min-height:56px;
+}
+.mc-event-btn:hover{border-color:var(--mc-tone,var(--primary));box-shadow:var(--shadow-sm)}
+.mc-event-btn:focus-visible{outline:2px solid var(--mc-tone,var(--primary));outline-offset:1px}
+.mc-event-btn.selected{
+  border-color:var(--mc-tone,var(--primary));background:var(--mc-tone-bg-strong,rgba(37,117,252,.08));
+  box-shadow:0 0 0 1px var(--mc-tone,var(--primary)) inset;
+}
+.mc-event-code{font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--mc-tone,var(--primary))}
+.mc-event-label{font-size:12px;font-weight:600;color:var(--color-text);line-height:1.25}
+
+/* Palette par ton (icône/badge uniquement) — mêmes jetons que le reste
+   du Design System (--success/--warning/--danger/--info/--purple). */
+.mc-cat-agents{--mc-tone:var(--info);--mc-tone-bg:rgba(91,140,255,.06);--mc-tone-fg:var(--info);--mc-tone-bg-strong:rgba(91,140,255,.10)}
+.mc-cat-rondes{--mc-tone:var(--success);--mc-tone-bg:rgba(35,196,131,.06);--mc-tone-fg:var(--success);--mc-tone-bg-strong:rgba(35,196,131,.10)}
+.mc-cat-clients{--mc-tone:var(--purple);--mc-tone-bg:rgba(139,92,246,.06);--mc-tone-fg:var(--purple);--mc-tone-bg-strong:rgba(139,92,246,.10)}
+.mc-cat-passation{--mc-tone:var(--warning);--mc-tone-bg:rgba(247,169,40,.06);--mc-tone-fg:var(--warning);--mc-tone-bg-strong:rgba(247,169,40,.10)}
+.mc-cat-communication{--mc-tone:var(--info);--mc-tone-bg:rgba(91,140,255,.06);--mc-tone-fg:var(--info);--mc-tone-bg-strong:rgba(91,140,255,.10)}
+.mc-cat-acces{--mc-tone:var(--success);--mc-tone-bg:rgba(35,196,131,.06);--mc-tone-fg:var(--success);--mc-tone-bg-strong:rgba(35,196,131,.10)}
+.mc-cat-incidents_securite{--mc-tone:var(--danger);--mc-tone-bg:rgba(255,95,109,.06);--mc-tone-fg:var(--danger);--mc-tone-bg-strong:rgba(255,95,109,.10)}
+.mc-cat-marchandises{--mc-tone:var(--info);--mc-tone-bg:rgba(91,140,255,.06);--mc-tone-fg:var(--info);--mc-tone-bg-strong:rgba(91,140,255,.10)}
+.mc-cat-autres{--mc-tone:var(--text-dim);--mc-tone-bg:var(--bg-2);--mc-tone-fg:var(--text-dim);--mc-tone-bg-strong:var(--bg-2)}
+.mc-cat-urgence{--mc-tone:var(--danger);--mc-tone-bg:rgba(255,95,109,.08);--mc-tone-fg:var(--danger);--mc-tone-bg-strong:rgba(255,95,109,.14)}
+/* Tons par événement individuel (accès/électricité/feu/RAS/abandon) —
+   surchargent le ton de catégorie sur ce seul bouton, jamais le fond
+   de la catégorie entière. */
+.mc-event-btn.mc-tone-success{--mc-tone:var(--success)}
+.mc-event-btn.mc-tone-warning{--mc-tone:var(--warning)}
+.mc-event-btn.mc-tone-danger{--mc-tone:var(--danger)}
+
+/* 15.100 — reste extrêmement visible (exigence explicite), pleine largeur,
+   rouge, distincte de la grille de catégories. */
+.mc-urgency{margin-top:6px}
+.mc-event-urgent{
+  width:100%;flex-direction:row;align-items:center;gap:12px;min-height:0;
+  padding:14px 18px;border-radius:var(--radius-md);border:0;
+  background:linear-gradient(90deg,var(--danger),#c2414d);box-shadow:0 10px 24px rgba(255,95,109,.35);
+}
+.mc-event-urgent .mc-event-code{color:#fff;font-size:14px}
+.mc-event-urgent .mc-event-label{color:#fff;font-size:14px;font-weight:800}
+.mc-event-urgent:hover{box-shadow:0 14px 30px rgba(255,95,109,.45)}
+.mc-event-urgent.selected{box-shadow:0 0 0 3px rgba(255,255,255,.6) inset,0 10px 24px rgba(255,95,109,.35)}
+
+/* Panneau droit — sticky sur desktop, reproduit l'anatomie de la
+   référence (icône + code + libellé, puis Code/Libellé/Catégorie). */
+.mc-detail{position:sticky;top:14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:16px;background:var(--surface)}
+.mc-detail-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:10px}
+.mc-detail-selected{display:flex;align-items:center;gap:12px;min-height:44px;margin-bottom:12px}
+.mc-detail-icon{
+  width:40px;height:40px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  font-size:18px;background:var(--mc-tone-bg-strong,var(--bg-2));color:var(--mc-tone,var(--text-muted));
+}
+.mc-detail-code{font-family:var(--font-mono);font-weight:800;font-size:13px;color:var(--color-primary)}
+.mc-detail-label{font-size:15px;font-weight:800;color:var(--color-text)}
+.mc-detail-meta{margin:0 0 12px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg-2);display:flex;flex-direction:column;gap:6px}
+.mc-detail-meta div{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+.mc-detail-meta dt{color:var(--text-muted);font-weight:600}
+.mc-detail-meta dd{margin:0;color:var(--color-text);font-weight:700;text-align:end}
+.mc-detail-note{font-size:12px;color:var(--text-muted);background:var(--bg-2);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
+.mc-detail-instructions{font-size:12px;color:#8a5a00;background:rgba(247,169,40,.12);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
+.mc-detail-actions{display:flex;gap:8px;margin-top:14px}
+.mc-detail-actions .btn{flex:1;justify-content:center}
+.mc-pcs01{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--color-text);margin:4px 0 10px;cursor:pointer}
+.mc-pcs01-info{color:var(--text-muted);cursor:help}
+
+@media(max-width:1100px){
+  .mc-entry-body{grid-template-columns:1fr}
+  .mc-detail{position:static}
+}
+@media(max-width:640px){
+  .mc-category-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+  /* Mobile : 15.100 doit rester immédiatement accessible (exigence
+     explicite) sans avoir à descendre toute la grille — remonté juste
+     sous la recherche plutôt que dupliqué ou rendu sticky (qui ne
+     serait visible qu'après un premier défilement). */
+  .mc-catalog{display:flex;flex-direction:column}
+  .mc-search{order:1}
+  .mc-urgency{order:2;margin-top:0;margin-bottom:6px}
+  .mc-grid{order:3}
+}

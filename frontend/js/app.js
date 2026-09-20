@@ -691,58 +691,182 @@ function drawChartRepartition(){
   if(legend) legend.innerHTML = groups.map(g=>`<div><span class="dot" style="background:${g.color}"></span><span class="ui2-donut-legend-label">${g.label}</span><strong>${g.count}</strong><small>${total?Math.round(g.count*100/total):0}%</small></div>`).join('');
 }
 
-/* ===== MAIN COURANTE ===== */
+/* ===== MAIN COURANTE — grille de codification ===== */
+// Référentiel métier (code/libellé/catégorie) servi par le backend
+// (backend/maincourante-events.js, GET /maincourante/events) — jamais
+// recopié à la main côté client pour éviter toute divergence avec la
+// validation serveur de POST /maincourante.
+let mcEventCatalog = { categories: [], events: [] };
+let mcSelectedEventCode = null;
+
+async function loadMcEventCatalog(){
+  if(mcEventCatalog.events.length) return;
+  mcEventCatalog = await API.get('/maincourante/events');
+}
+
+// 15.04/15.70/15.80 : aucun libellé fourni par la grille métier — jamais
+// inventé (voir backend/maincourante-events.js), affiché explicitement
+// comme non configuré plutôt que masqué ou deviné.
+function mcEventLabel(ev){
+  return ev.labelFr || `Code ${ev.code} — libellé à compléter`;
+}
+function mcCategoryLabel(catId){
+  const c = mcEventCatalog.categories.find(c=>c.id===catId);
+  return c ? c.labelFr : catId;
+}
+function mcEventButtonHtml(ev){
+  const urgent = ev.category==='urgence';
+  const selected = ev.code===mcSelectedEventCode;
+  const toneCls = ev.tone ? ` mc-tone-${ev.tone}` : '';
+  return `<button type="button" class="mc-event-btn mc-cat-${ev.category}${toneCls}${urgent?' mc-event-urgent':''}${selected?' selected':''}" data-code="${ev.code}" onclick="selectMcEvent('${ev.code}')" aria-pressed="${selected}">`
+    + `<span class="mc-event-code">${ev.code}</span><span class="mc-event-label">${escapeHtml(mcEventLabel(ev))}</span></button>`;
+}
+
+function renderMcEventGrid(filter){
+  const grid = document.getElementById('mcEventGrid');
+  const urgencyBar = document.getElementById('mcUrgencyBar');
+  if(!grid) return;
+  const q = (filter||'').trim().toLowerCase();
+  const matches = ev => !q || ev.code.toLowerCase().includes(q)
+    || mcEventLabel(ev).toLowerCase().includes(q) || mcCategoryLabel(ev.category).toLowerCase().includes(q);
+  const blocks = mcEventCatalog.categories.filter(c=>c.id!=='urgence').map(cat=>{
+    const evs = mcEventCatalog.events.filter(e=>e.category===cat.id && matches(e));
+    if(!evs.length) return '';
+    return `<div class="mc-category mc-cat-${cat.id}"><div class="mc-category-title">${escapeHtml(cat.labelFr)}</div>`
+      + `<div class="mc-category-grid">${evs.map(mcEventButtonHtml).join('')}</div></div>`;
+  }).filter(Boolean).join('');
+  grid.innerHTML = blocks || '<div class="empty-state">Aucun événement ne correspond à la recherche</div>';
+  const urgent = mcEventCatalog.events.find(e=>e.category==='urgence');
+  if(urgencyBar) urgencyBar.innerHTML = (urgent && matches(urgent)) ? mcEventButtonHtml(urgent) : '';
+}
+function filterMcEvents(v){ renderMcEventGrid(v); }
+
+function selectMcEvent(code){
+  const ev = mcEventCatalog.events.find(e=>e.code===code);
+  if(!ev) return;
+  mcSelectedEventCode = code;
+  document.querySelectorAll('.mc-event-btn').forEach(b=>{
+    const sel = b.dataset.code===code;
+    b.classList.toggle('selected', sel);
+    b.setAttribute('aria-pressed', sel?'true':'false');
+  });
+  const label = mcEventLabel(ev), catLabel = mcCategoryLabel(ev.category);
+  const icon = ev.category==='urgence' ? '🆘' : (ev.category==='incidents_securite' ? '🚨' : '📋');
+  document.getElementById('mcSelectedSummary').innerHTML =
+    `<div class="mc-detail-icon mc-cat-${ev.category}">${icon}</div><div><div class="mc-detail-code">${ev.code}</div><div class="mc-detail-label">${escapeHtml(label)}</div></div>`;
+  document.getElementById('mcMetaCode').textContent = ev.code;
+  document.getElementById('mcMetaLabel').textContent = label;
+  document.getElementById('mcMetaCategory').textContent = catLabel;
+  document.getElementById('mcSelectedMeta').hidden = false;
+  const related = document.getElementById('mcRelatedNote');
+  if(ev.relatedCode){
+    const rel = mcEventCatalog.events.find(e=>e.code===ev.relatedCode);
+    related.textContent = `ℹ️ Associé à ${ev.relatedCode}${rel ? ' — '+mcEventLabel(rel) : ''} (à consigner séparément si pertinent).`;
+    related.hidden = false;
+  } else related.hidden = true;
+  const instructions = document.getElementById('mcInstructionsNote');
+  if(ev.instructions){ instructions.textContent = '⚠️ '+ev.instructions; instructions.hidden = false; }
+  else instructions.hidden = true;
+  document.getElementById('mcSaveBtn').disabled = false;
+  const pcs01Row = document.getElementById('mcPcs01Row');
+  if(pcs01Row) pcs01Row.hidden = !(cache.parametres && cache.parametres.mc_pcs01_enabled === 'true');
+}
+
+// Agent en service : uniquement des personnes réelles (employes réellement
+// enregistrés + l'utilisateur authentifié de la session) — jamais un nom
+// inventé. Remplace l'ancien champ texte libre par cette même contrainte de
+// données déjà appliquée ailleurs dans l'app (ex. sélection de l'hôte d'un
+// visiteur, cache.employes).
+function renderMcAgentOptions(){
+  const sel = document.getElementById('mcAgentSelect');
+  if(!sel) return;
+  const u = API.getUser();
+  const currentUserLabel = u ? (u.nom_complet || u.username) : null;
+  const names = new Set((cache.employes||[]).map(e=>`${e.prenom||''} ${e.nom||''}`.trim()).filter(Boolean));
+  if(currentUserLabel) names.add(currentUserLabel);
+  const preferred = sessionStorage.getItem('lastAgent') || currentUserLabel;
+  if(preferred) names.add(preferred);
+  const options = [...names].sort((a,b)=>a.localeCompare(b,'fr'));
+  sel.innerHTML = options.map(n=>`<option value="${escapeHtml(n)}"${n===preferred?' selected':''}>${escapeHtml(n)}</option>`).join('');
+}
+
 async function loadMaincourante(){
-  await refresh('maincourante');
+  await Promise.all([refresh('maincourante'), refresh('employes'), refresh('parametres'), loadMcEventCatalog()]);
   const dt = document.getElementById('mcDatetime');
   if(dt && !dt.value) dt.value = toLocalInput(new Date());
-  const u = API.getUser();
-  if(u && !document.getElementById('mcAgent').value){
-    document.getElementById('mcAgent').value = sessionStorage.getItem('lastAgent') || u.nom_complet || u.username;
-  }
+  renderMcAgentOptions();
   const lastPoste = sessionStorage.getItem('lastPoste');
   if(lastPoste) document.getElementById('mcPoste').value = lastPoste;
+  renderMcEventGrid(document.getElementById('mcEventSearch')?.value || '');
+  if(mcSelectedEventCode) selectMcEvent(mcSelectedEventCode);
   renderMainCourante();
 }
 
 async function ajouterMainCourante(){
-  const desc = document.getElementById('mcDescription').value.trim();
-  const agent = document.getElementById('mcAgent').value.trim();
-  if(!desc) return alert('Description obligatoire');
-  if(!agent) return alert('Nom de l\'agent obligatoire');
+  if(!mcSelectedEventCode){ notify('Sélectionnez un événement dans la grille', 'warning'); return; }
+  const ev = mcEventCatalog.events.find(e=>e.code===mcSelectedEventCode);
+  const poste = document.getElementById('mcPoste').value;
+  const agent = document.getElementById('mcAgentSelect').value;
+  if(!poste){ notify('Poste obligatoire', 'warning'); return; }
+  if(!agent){ notify('Agent en service obligatoire', 'warning'); return; }
   const dtVal = document.getElementById('mcDatetime').value;
+  const desc = document.getElementById('mcDescription').value.trim();
+  const lieu = document.getElementById('mcLieu').value.trim();
+  const label = mcEventLabel(ev);
   const entry = {
     datetime: dtVal ? new Date(dtVal).toISOString() : new Date().toISOString(),
-    poste: document.getElementById('mcPoste').value,
-    agent, type: document.getElementById('mcType').value,
-    lieu: document.getElementById('mcLieu').value || '—',
-    description: desc, priorite: document.getElementById('mcPriorite').value
+    poste, agent, type: label, code: ev.code, categorie: ev.category,
+    lieu: lieu || '—', description: desc || label,
   };
-  await API.post('/maincourante', entry);
+  const saveBtn = document.getElementById('mcSaveBtn');
+  saveBtn.disabled = true;
+  try{
+    await API.post('/maincourante', entry);
+  }catch(err){
+    notify('Échec de l’enregistrement : ' + (err.message||''), 'danger');
+    saveBtn.disabled = false;
+    return;
+  }
   sessionStorage.setItem('lastAgent', agent);
-  sessionStorage.setItem('lastPoste', entry.poste);
-  document.getElementById('mcDescription').value='';
-  document.getElementById('mcLieu').value='';
-  document.getElementById('mcDatetime').value = toLocalInput(new Date());
-  await loadMaincourante();
-  notify('Entrée enregistrée — '+entry.poste);
-}
+  sessionStorage.setItem('lastPoste', poste);
 
-async function quickMC(type, desc){
-  const agent = document.getElementById('mcAgent').value.trim();
-  if(!agent){ alert('Saisissez le nom de l\'agent'); document.getElementById('mcAgent').focus(); return; }
-  await API.post('/maincourante',{datetime:new Date().toISOString(),poste:document.getElementById('mcPoste').value,agent,type,lieu:document.getElementById('mcLieu').value||'—',description:desc,priorite:'normale'});
-  sessionStorage.setItem('lastAgent', agent);
+  const pcs01Check = document.getElementById('mcPcs01Check');
+  if(pcs01Check && pcs01Check.checked && !pcs01Check.hidden){
+    // Réutilise intégralement le pipeline Incidents existant (POST /incidents
+    // -> alerts.fromIncident, déjà audité) plutôt que d'inventer un second
+    // mécanisme de déclenchement d'alerte propre à la Main courante.
+    try{
+      await API.post('/incidents', {
+        type: label, lieu: lieu || '—', gravite: 'critique', statut: 'ouvert',
+        agent, description: `[Main courante ${ev.code}] ${desc || label}`,
+      });
+      notify('Entrée enregistrée — alerte PCS01 déclenchée ('+ev.code+')');
+    }catch(err){
+      notify('Entrée enregistrée, mais l’alerte PCS01 n’a pas pu être déclenchée : ' + (err.message||''), 'warning');
+    }
+  } else {
+    notify('Entrée enregistrée — '+ev.code);
+  }
+  resetMainCouranteForm();
   await loadMaincourante();
-  notify('Entrée rapide ajoutée');
 }
 
 function resetMainCouranteForm(){
+  mcSelectedEventCode = null;
+  document.querySelectorAll('.mc-event-btn').forEach(b=>{ b.classList.remove('selected'); b.setAttribute('aria-pressed','false'); });
+  const summary = document.getElementById('mcSelectedSummary');
+  if(summary) summary.innerHTML = '<div class="empty-state">Sélectionnez un événement dans la grille pour commencer une saisie.</div>';
+  const meta = document.getElementById('mcSelectedMeta'); if(meta) meta.hidden = true;
+  const related = document.getElementById('mcRelatedNote'); if(related) related.hidden = true;
+  const instructions = document.getElementById('mcInstructionsNote'); if(instructions) instructions.hidden = true;
+  const pcs01Row = document.getElementById('mcPcs01Row'); if(pcs01Row) pcs01Row.hidden = true;
+  const pcs01Check = document.getElementById('mcPcs01Check'); if(pcs01Check) pcs01Check.checked = false;
+  const saveBtn = document.getElementById('mcSaveBtn'); if(saveBtn) saveBtn.disabled = true;
   document.getElementById('mcDescription').value='';
   document.getElementById('mcLieu').value='';
   document.getElementById('mcDatetime').value = toLocalInput(new Date());
-  document.getElementById('mcPriorite').value='normale';
-  document.getElementById('mcType').value='Information';
+  const search = document.getElementById('mcEventSearch'); if(search) search.value='';
+  renderMcEventGrid('');
 }
 
 function renderMainCourante(){
@@ -763,7 +887,12 @@ function renderMainCourante(){
   const dayStart = new Date(); dayStart.setHours(0,0,0,0);
   const day = cache.mainCourante.filter(e=>new Date(e.datetime).getTime()>=dayStart.getTime());
   const stats = document.getElementById('mcStats');
-  if(stats) stats.innerHTML = `<div class="kpi-card info"><div class="kpi-label">Entrées (jour)</div><div class="kpi-value">${day.length}</div></div><div class="kpi-card warning"><div class="kpi-label">Importantes</div><div class="kpi-value">${day.filter(e=>e.priorite==='importante').length}</div></div><div class="kpi-card danger"><div class="kpi-label">Critiques</div><div class="kpi-value">${day.filter(e=>e.priorite==='critique').length}</div></div><div class="kpi-card success"><div class="kpi-label">Rondes (jour)</div><div class="kpi-value">${day.filter(e=>e.type==='Ronde').length}</div></div>`;
+  // "Rondes (jour)" : les nouvelles entrées codifiées portent code 10.06/
+  // 10.07 (Début/Fin de ronde) au lieu de l'ancien type libre 'Ronde' —
+  // les deux formes sont comptées pour ne pas fausser ce KPI le temps que
+  // l'historique pré-codification s'efface (voir MAINCOURANTE.md).
+  const rondesJour = day.filter(e=>e.code==='10.06'||e.code==='10.07'||e.type==='Ronde').length;
+  if(stats) stats.innerHTML = `<div class="kpi-card info"><div class="kpi-label">Entrées (jour)</div><div class="kpi-value">${day.length}</div></div><div class="kpi-card warning"><div class="kpi-label">Importantes</div><div class="kpi-value">${day.filter(e=>e.priorite==='importante').length}</div></div><div class="kpi-card danger"><div class="kpi-label">Critiques</div><div class="kpi-value">${day.filter(e=>e.priorite==='critique').length}</div></div><div class="kpi-card success"><div class="kpi-label">Rondes (jour)</div><div class="kpi-value">${rondesJour}</div></div>`;
 
   const limite = Date.now()-8*3600*1000;
   const map = {};
@@ -784,10 +913,14 @@ function renderMainCourante(){
     const k = fmtDateLong(e.datetime);
     (groups[k] = groups[k]||[]).push(e);
   });
+  // Icône : catégorie du référentiel codifié en priorité (nouvelles entrées),
+  // repli sur l'ancien dictionnaire par type libre (entrées historiques).
+  const catIcons = { agents:'🧑‍✈️', rondes:'🚶', clients:'🤝', passation:'🔄', communication:'📞', acces:'🚪', incidents_securite:'🚨', marchandises:'🚚', autres:'📝', urgence:'🆘' };
+  const icons = {Information:'📋',Ronde:'🚶',Communication:'📞',Anomalie:'⚠️',Incident:'🚨',Intervention:'🛠️',Contrôle:'🔍',Relève:'🔄',Visite:'👥',Autre:'📝'};
   tl.innerHTML = Object.entries(groups).map(([day,entries])=>`<div class="mc-day-header">📅 ${day} <span class="mc-day-count">${entries.length} entrée${entries.length>1?'s':''}</span></div>${entries.map(e=>{
     const cls = e.poste.startsWith('Rondier')?'rondier':(e.poste.includes('Chef')?'chef':'');
-    const icons = {Information:'📋',Ronde:'🚶',Communication:'📞',Anomalie:'⚠️',Incident:'🚨',Intervention:'🛠️',Contrôle:'🔍',Relève:'🔄',Visite:'👥',Autre:'📝'};
-    return `<div class="mc-entry priorite-${e.priorite}"><div class="mc-time"><strong>${fmtTime(e.datetime)}</strong>${fmtDayMonth(e.datetime)}</div><div class="mc-content"><div class="mc-head"><div class="mc-tags"><span class="mc-poste ${cls}">📍 ${escapeHtml(e.poste)}</span><span class="badge muted">${icons[e.type]||'📝'} ${escapeHtml(e.type)}</span>${e.priorite!=='normale'?`<span class="badge ${e.priorite==='critique'?'danger':'warning'}">${e.priorite}</span>`:''}</div><button class="btn btn-sm btn-outline admin-only" onclick="supprimerMC('${e.id}')">🗑️</button></div><div class="mc-desc">${escapeHtml(e.description)}</div><div class="mc-meta">👤 ${escapeHtml(e.agent)} • 📍 ${escapeHtml(e.lieu)}</div></div></div>`;
+    const icon = catIcons[e.categorie] || icons[e.type] || '📝';
+    return `<div class="mc-entry priorite-${e.priorite}"><div class="mc-time"><strong>${fmtTime(e.datetime)}</strong>${fmtDayMonth(e.datetime)}</div><div class="mc-content"><div class="mc-head"><div class="mc-tags"><span class="mc-poste ${cls}">📍 ${escapeHtml(e.poste)}</span>${e.code?`<span class="badge muted">${escapeHtml(e.code)}</span>`:''}<span class="badge muted">${icon} ${escapeHtml(e.type)}</span>${e.priorite!=='normale'?`<span class="badge ${e.priorite==='critique'?'danger':'warning'}">${e.priorite}</span>`:''}</div><button class="btn btn-sm btn-outline admin-only" onclick="supprimerMC('${e.id}')">🗑️</button></div><div class="mc-desc">${escapeHtml(e.description)}</div><div class="mc-meta">👤 ${escapeHtml(e.agent)} • 📍 ${escapeHtml(e.lieu)}</div></div></div>`;
   }).join('')}`).join('');
 }
 
@@ -1792,6 +1925,7 @@ async function loadParametres(){
   document.getElementById('setSiteNom').value = cache.parametres.site||'';
   document.getElementById('setSiteAdr').value = cache.parametres.adresse||'';
   document.getElementById('setSiteTel').value = cache.parametres.tel||'';
+  document.getElementById('setMcPcs01Enabled').checked = cache.parametres.mc_pcs01_enabled === 'true';
   renderPushStatus();
 }
 
@@ -1835,7 +1969,12 @@ async function togglePush(){
 }
 
 async function sauverParametres(){
-  await API.put('/parametres',{site:document.getElementById('setSiteNom').value,adresse:document.getElementById('setSiteAdr').value,tel:document.getElementById('setSiteTel').value});
+  await API.put('/parametres',{
+    site:document.getElementById('setSiteNom').value,
+    adresse:document.getElementById('setSiteAdr').value,
+    tel:document.getElementById('setSiteTel').value,
+    mc_pcs01_enabled: document.getElementById('setMcPcs01Enabled').checked ? 'true' : 'false',
+  });
   notify('Paramètres enregistrés');
 }
 

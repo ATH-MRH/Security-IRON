@@ -150,9 +150,33 @@ const I18N_AR = {
   'Description': 'الوصف',
   'Enregistrer': 'حفظ',
   'Effacer': 'مسح',
-  '+ Ronde RAS': '+ دورية بدون ملاحظات',
-  '+ Prise service': '+ بداية الخدمة',
   'Statistiques de la journée': 'إحصائيات اليوم',
+  // MAIN COURANTE — grille de codification. Chrome UI générique traduit
+  // (établi) ; les libellés métier des événements eux-mêmes (ex. "Tentative
+  // d'intrusion") restent en français faute de référentiel arabe officiel
+  // fourni — les inventer serait une traduction non autorisée d'une
+  // terminologie métier (voir backend/maincourante-events.js). Les codes
+  // numériques (10.17, 15.100…) sont identiques dans les deux langues.
+  "Rechercher un événement (code ou libellé)…": 'ابحث عن حدث (بالرمز أو التسمية)…',
+  'Sélectionnez un événement dans la grille pour commencer une saisie.': 'اختر حدثًا من الشبكة لبدء الإدخال.',
+  'Aucun événement ne correspond à la recherche': 'لا يوجد حدث مطابق للبحث',
+  'Chargement…': 'جارٍ التحميل…',
+  'Ex: Clôture nord, Parking A…': 'مثال: السياج الشمالي، موقف A…',
+  'Décrire les faits, les actions effectuées…': 'صف الوقائع والإجراءات المتخذة…',
+  "Crée un incident lié à cette entrée, transmis au Centre d'alertes.": 'ينشئ حادثًا مرتبطًا بهذا التسجيل، يُحال إلى مركز التنبيهات.',
+  'Événement sélectionné': 'الحدث المحدد',
+  'Catégorie': 'الفئة',
+  'Description complémentaire': 'وصف إضافي',
+  'Déclencher une alerte PCS01': 'إطلاق تنبيه PCS01',
+  'Rondes': 'الجولات',
+  'Clients': 'العملاء',
+  'Passation': 'التسليم',
+  'Communication': 'الاتصال',
+  'Accès': 'الدخول',
+  'Incidents / Sécurité': 'حوادث / أمن',
+  'Marchandises': 'البضائع',
+  'Autres événements': 'أحداث أخرى',
+  'Urgence': 'طوارئ',
   'Agents en service': 'الأعوان المناوبون',
   'Journal en temps réel': 'السجل المباشر',
   'Tous postes': 'كل النقاط',
@@ -284,6 +308,9 @@ const I18N_AR = {
   'Nom du site': 'اسم الموقع',
   'Adresse': 'العنوان',
   'Téléphone': 'الهاتف',
+  'Activer le déclenchement PCS01 depuis la Main courante': 'تفعيل إطلاق PCS01 من سجل الحراسة',
+  "Autorise l'agent, depuis la grille de saisie de la Main courante, à déclencher manuellement une alerte PCS01 (crée un incident lié, transmis au Centre d'alertes). Aucun code ne la déclenche automatiquement — décision explicite de l'agent à chaque fois.":
+    'يسمح للعون، من شبكة إدخال سجل الحراسة، بإطلاق تنبيه PCS01 يدويًا (ينشئ حادثًا مرتبطًا يُحال إلى مركز التنبيهات). لا يوجد رمز يُطلقه تلقائيًا — قرار صريح من العون في كل مرة.',
   "Niveaux d'accès": 'مستويات الدخول',
   'Code': 'الرمز',
   'Libellé': 'التسمية',
