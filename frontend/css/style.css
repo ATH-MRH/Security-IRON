@@ -2001,7 +2001,10 @@ body{
 :root[data-theme="dark"] .kpi-card.danger .kpi2-footer{color:var(--danger)}
 :root[data-theme="dark"] .kpi-card.purple .kpi2-footer{color:var(--purple)}
 :root[data-theme="dark"] .kpi-card.accent .kpi2-footer{color:var(--accent)}
-.kpi2-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+/* 7 cartes (ac-kpis en compte 7, dashKpiRow2 moins) : toutes sur une même
+   ligne en desktop, demandé explicitement — était figé à 6 colonnes,
+   la 7e (Prise en charge moyenne) retombait seule sur une 2e ligne. */
+.kpi2-grid{grid-template-columns:repeat(7,minmax(0,1fr));gap:14px}
 @media(max-width:1400px){.kpi2-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.kpi2-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.kpi2-grid{grid-template-columns:1fr}}
