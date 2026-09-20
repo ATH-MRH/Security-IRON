@@ -7,6 +7,7 @@ const scope   = require('./scope');
 const securityAudit = require('./security-audit');
 const push    = require('./push');
 const aiSummaries = require('./ai/summaries');
+const mcEvents = require('./maincourante-events');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -585,13 +586,28 @@ router.get('/maincourante', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Référentiel de codification : source unique servie au frontend (grille de
+// saisie codifiée) — évite qu'une copie cliente diverge silencieusement du
+// référentiel qui fait foi côté serveur (celui utilisé par la validation de
+// POST /maincourante ci-dessous).
+router.get('/maincourante/events', (req, res) => {
+  res.json({ categories: mcEvents.CATEGORIES, events: mcEvents.EVENTS });
+});
+
 router.post('/maincourante', async (req, res, next) => {
   try {
-    const e   = req.body;
+    const e = req.body;
+    // Référentiel de codification (grille métier) : un code/catégorie fourni
+    // est revalidé contre le référentiel serveur, jamais accepté tel quel —
+    // le frontend n'est pas une autorité (un body forgé ne peut pas associer
+    // un code réel à une catégorie inventée). Une entrée sans code (flux
+    // libre historique) reste acceptée à l'identique.
+    const selection = mcEvents.validateEventSelection({ code: e.code, categorie: e.categorie });
+    if (selection.error) return res.status(400).json({ error: selection.error });
     const row = await db.get(
-      `INSERT INTO main_courante (id, datetime, poste, agent, type, lieu, description, priorite, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid('MC'), e.datetime||now(), e.poste, e.agent || req.user?.username || null, e.type, e.lieu||'—', e.description, e.priorite||'normale', req.user?.username || null]
+      `INSERT INTO main_courante (id, datetime, poste, agent, type, lieu, description, priorite, created_by, code, categorie)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [uid('MC'), e.datetime||now(), e.poste, e.agent || req.user?.username || null, e.type, e.lieu||'—', e.description, e.priorite||'normale', req.user?.username || null, selection.code, selection.categorie]
     );
     res.json(row);
   } catch (e) { next(e); }
