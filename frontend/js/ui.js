@@ -306,6 +306,10 @@ const I18N_AR = {
   'Synthèse exécutive': 'ملخص تنفيذي',
   'Site': 'الموقع',
   'Nom du site': 'اسم الموقع',
+  'Horodatage serveur': 'توقيت الخادم',
+  'Site autorisé': 'الموقع المصرح به',
+  'Tout le site': 'كل الموقع',
+  '⚙️ Configuration du site': '⚙️ تهيئة الموقع',
   'Adresse': 'العنوان',
   'Téléphone': 'الهاتف',
   'Activer le déclenchement PCS01 depuis la Main courante': 'تفعيل إطلاق PCS01 من سجل الحراسة',
@@ -838,11 +842,47 @@ function toLocalInput(d){
 }
 
 // ===== Modal =====
+let _modalTriggerEl = null;
+function _modalOpening(){
+  const backdrop = document.getElementById('modalBackdrop');
+  // Ne capture l'élément déclencheur qu'à l'ouverture réelle — un
+  // showModal() de re-rendu (ex. changement de langue dans un workflow)
+  // appelé pendant que la modale est déjà ouverte ne doit pas écraser la
+  // cible du retour de focus par un élément interne à la modale elle-même.
+  if (!backdrop.classList.contains('show')) _modalTriggerEl = document.activeElement;
+}
+function _modalFocusFirst(){
+  const modal = document.getElementById('modalContent');
+  const focusable = modal.querySelector('input,select,textarea,button,[tabindex]:not([tabindex="-1"]),a[href]');
+  (focusable || modal.querySelector('.modal-close') || modal).focus();
+}
+// Garde de chargement : plusieurs tests unitaires exécutent ce fichier dans
+// un contexte vm délibérément dépourvu de `document` (ou d'un `document`
+// minimal sans addEventListener) pour isoler les fonctions pures — un vrai
+// navigateur fournit toujours document.addEventListener, cette garde ne
+// change donc rien en exécution réelle.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('keydown', e => {
+    const backdrop = document.getElementById('modalBackdrop');
+    if (!backdrop || !backdrop.classList.contains('show')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+    if (e.key !== 'Tab') return;
+    const modal = document.getElementById('modalContent');
+    const items = Array.from(modal.querySelectorAll('input,select,textarea,button,[tabindex]:not([tabindex="-1"]),a[href]'))
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  });
+}
 function showModal(title, body, onConfirm, btnLabel='Enregistrer'){
+  _modalOpening();
   const c = document.getElementById('modalContent');
   c.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">${title}</div>
+      <div class="modal-title" id="modalTitleId">${title}</div>
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">${body}</div>
@@ -853,19 +893,25 @@ function showModal(title, body, onConfirm, btnLabel='Enregistrer'){
   document.getElementById('modalBackdrop').classList.add('show');
   document.getElementById('modalConfirm').onclick = onConfirm;
   applyLanguage();
+  _modalFocusFirst();
 }
-function closeModal(){ document.getElementById('modalBackdrop').classList.remove('show'); }
+function closeModal(){
+  document.getElementById('modalBackdrop').classList.remove('show');
+  if (_modalTriggerEl && document.contains(_modalTriggerEl)) _modalTriggerEl.focus();
+  _modalTriggerEl = null;
+}
 
 // UI-3C : remplace window.confirm() (boîte de dialogue système, non
 // stylable, hors Design System) par une vraie modale — même structure
 // DOM que showModal(), aucun composant ajouté.
 function confirmModal(message, opts={}){
   return new Promise(resolve => {
+    _modalOpening();
     const c = document.getElementById('modalContent');
     const danger = opts.danger !== false;
     c.innerHTML = `
       <div class="modal-header">
-        <div class="modal-title">${escapeHtml(opts.title || 'Confirmation')}</div>
+        <div class="modal-title" id="modalTitleId">${escapeHtml(opts.title || 'Confirmation')}</div>
         <button class="modal-close" id="modalCancelX">×</button>
       </div>
       <div class="modal-body"><p style="margin:0">${escapeHtml(message)}</p></div>
@@ -879,6 +925,7 @@ function confirmModal(message, opts={}){
     document.getElementById('modalCancelX').onclick = () => finish(false);
     document.getElementById('modalBackdrop').classList.add('show');
     applyLanguage();
+    _modalFocusFirst();
   });
 }
 
