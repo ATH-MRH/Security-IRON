@@ -53,8 +53,10 @@ test('assertReady resolves on a freshly migrated database and is read-only', asy
     const rows = await pool.all('SELECT version FROM securisite_meta.schema_migrations ORDER BY version');
     // MAIN COURANTE ajoute la migration 13 (code/categorie/created_at sur
     // main_courante) puis la migration 14 (moteur de workflows : postes/
-    // profils APS/rondes/matériel/PCS01 par site).
-    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    // profils APS/rondes/matériel/PCS01 par site). ADMINISTRATION SYSTÈME
+    // ajoute la migration 15 (sites/zones/mc_posts : coordonnées + cycle de
+    // vie ; memberships.role étendu à 10 valeurs).
+    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   } finally { await pool.close(); }
 });
 

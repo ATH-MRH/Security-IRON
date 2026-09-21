@@ -48,9 +48,12 @@ test('003 creates tenants / sites / zones with the expected columns and defaults
     assert.match(tenants.find(x => x.column_name === 'id').column_default, /gen_random_uuid\(\)/);
     assert.equal(tenants.find(x => x.column_name === 'created_at').data_type, 'timestamp with time zone');
     const sites = (await cols('sites')).map(x => x.column_name);
-    assert.deepEqual(sites, ['id', 'tenant_id', 'code', 'name', 'address', 'timezone', 'latitude', 'longitude', 'external_ref', 'status', 'created_at']);
+    // client/phone/email/updated_at/archived_at ajoutés par la migration 015
+    // (Administration Système) — colonnes 003 d'origine jamais renommées.
+    assert.deepEqual(sites, ['id', 'tenant_id', 'code', 'name', 'address', 'timezone', 'latitude', 'longitude', 'external_ref', 'status', 'created_at', 'client', 'phone', 'email', 'updated_at', 'archived_at']);
     const zones = (await cols('zones')).map(x => x.column_name);
-    assert.deepEqual(zones, ['id', 'site_id', 'tenant_id', 'code', 'name', 'kind', 'status', 'created_at']);
+    // description/access_level/updated_at/archived_at ajoutés par la migration 015.
+    assert.deepEqual(zones, ['id', 'site_id', 'tenant_id', 'code', 'name', 'kind', 'status', 'created_at', 'description', 'access_level', 'updated_at', 'archived_at']);
   });
 });
 
