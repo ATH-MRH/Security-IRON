@@ -28,6 +28,11 @@ const SECURITY_AUDIT = ['security_audit'];
 // aucun trigger append-only, aucune RLS (isolation par user_id en requête,
 // même modèle que alert_notifications).
 const PUSH = ['push_subscriptions'];
+// MAIN COURANTE — moteur de workflows (portage PostgreSQL propre, migration
+// 014) : tables d'extension avec FK vers tenants/sites/zones/employes/
+// main_courante, jamais de table mc_scopes ad-hoc (scope réel déjà porté
+// nativement, contrairement à l'exploration SQLite dont ceci est le portage).
+const MAINCOURANTE_WORKFLOWS = ['mc_posts', 'mc_aps', 'mc_presence', 'round_circuits', 'round_checkpoints', 'rounds', 'round_scans', 'equipment', 'mc_pcs01_config'];
 const AUDIT_FUNCTIONS = ['reject_alert_audit_mutation', 'reject_membership_mutation'];
 const AUDIT_FUNCTION = 'securisite_meta.' + AUDIT_FUNCTIONS[0]; // rétro-compat
 const AUDIT_TRIGGERS = {
@@ -90,6 +95,18 @@ const PRIVILEGES = {
   // UPDATE pour delivered_at/acknowledged_at, SELECT pour le suivi PCS01 —
   // jamais DELETE (une ligne de délivrance n'est jamais supprimée).
   alert_recipients: 'SELECT,INSERT,UPDATE',
+  // MAIN COURANTE — moteur de workflows (migration 014). posts/equipment :
+  // catalogues administrés (SELECT partagé, écriture réservée aux routes
+  // /admin/* déjà gardées par requireAdmin+membership de gestion). aps :
+  // profil + portrait, jamais supprimé (identité employé sous-jacente
+  // conservée). presence/rounds/scans : cycles écrits par le moteur de
+  // workflows en transaction, jamais DELETE (audit/traçabilité).
+  mc_posts: 'SELECT,INSERT,UPDATE', mc_aps: 'SELECT,INSERT,UPDATE',
+  mc_presence: 'SELECT,INSERT,UPDATE',
+  round_circuits: 'SELECT,INSERT,UPDATE', round_checkpoints: 'SELECT,INSERT',
+  rounds: 'SELECT,INSERT,UPDATE', round_scans: 'SELECT,INSERT',
+  equipment: 'SELECT,INSERT,UPDATE',
+  mc_pcs01_config: 'SELECT,INSERT,UPDATE',
 };
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -147,7 +164,7 @@ async function assertReady(client, { directory } = {}) {
   });
 
   // 4. 13 tables historiques + 5 tables Alert Core, en tant que tables de base.
-  const wanted = [...HISTORICAL, ...ALERT_CORE, ...ALERT_RECIPIENTS, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT, ...PUSH];
+  const wanted = [...HISTORICAL, ...ALERT_CORE, ...ALERT_RECIPIENTS, ...SCOPE, ...MEMBERSHIP, ...SECURITY_AUDIT, ...PUSH, ...MAINCOURANTE_WORKFLOWS];
   const missing = await client.all(`
     SELECT t.name FROM unnest($1::text[]) AS t(name)
     LEFT JOIN pg_catalog.pg_class c ON c.oid = pg_catalog.to_regclass('public.' || t.name)
@@ -239,6 +256,6 @@ async function assertReady(client, { directory } = {}) {
 }
 
 module.exports = {
-  assertReady, HISTORICAL, ALERT_CORE, ALERT_RECIPIENTS, SCOPE, MEMBERSHIP, SECURITY_AUDIT, PUSH, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
+  assertReady, HISTORICAL, ALERT_CORE, ALERT_RECIPIENTS, SCOPE, MEMBERSHIP, SECURITY_AUDIT, PUSH, MAINCOURANTE_WORKFLOWS, AUDIT_FUNCTION, AUDIT_FUNCTIONS, AUDIT_TRIGGERS,
   RLS_FUNCTION, RLS_FUNCTIONS, RLS_POLICIES, PRIVILEGES,
 };

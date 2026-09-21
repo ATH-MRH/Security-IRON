@@ -8,6 +8,7 @@ const securityAudit = require('./security-audit');
 const push    = require('./push');
 const aiSummaries = require('./ai/summaries');
 const mcEvents = require('./maincourante-events');
+const mcWorkflows = require('./maincourante-workflows');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -619,6 +620,13 @@ router.delete('/maincourante/:id', requireAdmin, async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// Moteur de workflows (portage PostgreSQL propre, migration 014) : routes
+// additionnelles sous /maincourante/*, jamais un remplacement des routes
+// ci-dessus (GET/POST /maincourante, GET /maincourante/events restent le
+// flux libre historique + référentiel, inchangés — réutilisés tels quels
+// par ce moteur pour la validation code/catégorie).
+router.use('/maincourante', mcWorkflows.router);
 
 /* ============================================================ */
 /*  LAPI                                                        */
