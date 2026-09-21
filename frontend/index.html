@@ -371,33 +371,18 @@
   <!-- MAIN COURANTE -->
   <div class="page" id="page-maincourante">
     <div class="card mc-entry-card">
-      <div class="card-header"><div class="card-title">✍️ Saisir une nouvelle entrée</div><span class="live-indicator"><span class="live-dot"></span> Horodatage auto</span></div>
-      <div class="card-body mc-entry-body">
+      <div class="card-header"><div class="card-title">✍️ Saisir une nouvelle entrée</div><span class="live-indicator"><span class="live-dot"></span> Horodatage serveur</span></div>
+      <div class="card-body">
+        <div class="mc-workflow-toolbar">
+          <div class="form-group"><label for="mcWorkflowSite">Site autorisé</label><select id="mcWorkflowSite" onchange="MainCouranteWorkflows.setSite(this.value).then(()=>renderMcEventGrid(document.getElementById('mcEventSearch').value))"></select></div>
+          <div class="form-group"><label for="mcWorkflowZone">Zone</label><select id="mcWorkflowZone" onchange="MainCouranteWorkflows.setZone(this.value).then(()=>renderMcEventGrid(document.getElementById('mcEventSearch').value))"><option value="">Tout le site</option></select></div>
+          <button type="button" class="btn btn-outline" id="mcConfigure" onclick="MainCouranteWorkflows.configure()" hidden>⚙️ Configuration du site</button>
+          <button type="button" class="btn btn-outline" onclick="loadMaincourante()">↻ Actualiser</button>
+        </div>
         <div class="mc-catalog">
           <div class="mc-search"><input type="text" id="mcEventSearch" placeholder="Rechercher un événement (code ou libellé)…" oninput="filterMcEvents(this.value)" aria-label="Rechercher un événement"></div>
           <div class="mc-grid" id="mcEventGrid"><div class="empty-state">Chargement…</div></div>
           <div class="mc-urgency" id="mcUrgencyBar"></div>
-        </div>
-        <div class="mc-detail">
-          <div class="mc-detail-title">Événement sélectionné</div>
-          <div class="mc-detail-selected" id="mcSelectedSummary"><div class="empty-state">Sélectionnez un événement dans la grille pour commencer une saisie.</div></div>
-          <dl class="mc-detail-meta" id="mcSelectedMeta" hidden>
-            <div><dt>Code</dt><dd id="mcMetaCode"></dd></div>
-            <div><dt>Libellé</dt><dd id="mcMetaLabel"></dd></div>
-            <div><dt>Catégorie</dt><dd id="mcMetaCategory"></dd></div>
-          </dl>
-          <p class="mc-detail-note" id="mcRelatedNote" hidden></p>
-          <p class="mc-detail-instructions" id="mcInstructionsNote" hidden></p>
-          <div class="form-group"><label>Poste <span class="mc-required" aria-hidden="true">*</span></label><select id="mcPoste"><option value="PC Sûreté">PC Sûreté</option><option value="Poste 1">Poste 1 — Entrée principale</option><option value="Poste 2">Poste 2 — Accueil visiteurs</option><option value="Poste 3">Poste 3 — Quai logistique</option><option value="Rondier 1">Rondier 1 — Périmètre</option><option value="Rondier 2">Rondier 2 — Bâtiments</option><option value="Rondier 3">Rondier 3 — Parkings</option><option value="Chef de poste">Chef de poste</option></select></div>
-          <div class="form-group"><label>Agent en service <span class="mc-required" aria-hidden="true">*</span></label><select id="mcAgentSelect"></select></div>
-          <div class="form-group"><label>Lieu / Zone</label><input type="text" id="mcLieu" placeholder="Ex: Clôture nord, Parking A…"></div>
-          <div class="form-group"><label>Date / Heure</label><input type="datetime-local" id="mcDatetime"></div>
-          <div class="form-group"><label>Description complémentaire</label><textarea id="mcDescription" rows="4" placeholder="Décrire les faits, les actions effectuées…"></textarea></div>
-          <label class="mc-pcs01" id="mcPcs01Row" hidden><input type="checkbox" id="mcPcs01Check"> Déclencher une alerte PCS01 <span class="mc-pcs01-info" title="Crée un incident lié à cette entrée, transmis au Centre d'alertes.">ⓘ</span></label>
-          <div class="mc-detail-actions">
-            <button class="btn btn-outline" onclick="resetMainCouranteForm()">↻ Effacer</button>
-            <button class="btn btn-primary" id="mcSaveBtn" onclick="ajouterMainCourante()" disabled>💾 Enregistrer</button>
-          </div>
         </div>
       </div>
     </div>
@@ -703,7 +688,7 @@
 </div>
 </div>
 
-<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modalContent"></div></div>
+<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modalContent" role="dialog" aria-modal="true" aria-labelledby="modalTitleId"></div></div>
 
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
@@ -716,6 +701,7 @@
 <script src="js/sos.js"></script>
 <script src="js/critical-alert.js"></script>
 <script src="js/push.js"></script>
+<script src="js/maincourante-workflows.js"></script>
 <script src="js/app.js"></script>
 <script>SOS.init();</script>
 <script>

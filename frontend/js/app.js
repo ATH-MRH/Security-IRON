@@ -697,7 +697,6 @@ function drawChartRepartition(){
 // recopié à la main côté client pour éviter toute divergence avec la
 // validation serveur de POST /maincourante.
 let mcEventCatalog = { categories: [], events: [] };
-let mcSelectedEventCode = null;
 
 async function loadMcEventCatalog(){
   if(mcEventCatalog.events.length) return;
@@ -716,9 +715,8 @@ function mcCategoryLabel(catId){
 }
 function mcEventButtonHtml(ev){
   const urgent = ev.category==='urgence';
-  const selected = ev.code===mcSelectedEventCode;
   const toneCls = ev.tone ? ` mc-tone-${ev.tone}` : '';
-  return `<button type="button" class="mc-event-btn mc-cat-${ev.category}${toneCls}${urgent?' mc-event-urgent':''}${selected?' selected':''}" data-code="${ev.code}" onclick="selectMcEvent('${ev.code}')" aria-pressed="${selected}">`
+  return `<button type="button" class="mc-event-btn mc-cat-${ev.category}${toneCls}${urgent?' mc-event-urgent':''}" data-mc-code="${ev.code}" data-code="${ev.code}" onclick="selectMcEvent('${ev.code}')">`
     + `<span class="mc-event-code">${ev.code}</span><span class="mc-event-label">${escapeHtml(mcEventLabel(ev))}</span></button>`;
 }
 
@@ -741,132 +739,34 @@ function renderMcEventGrid(filter){
 }
 function filterMcEvents(v){ renderMcEventGrid(v); }
 
+// Sélectionner un code dans la grille ouvre directement le formulaire réel
+// du workflow (modal partagée, contenu piloté par le code — backend/
+// maincourante-workflows.js via frontend/js/maincourante-workflows.js) :
+// plus de panneau latéral générique Poste/Agent/Lieu/Description, chaque
+// code a ses vrais champs (APS vérifié, ressources réelles du site...).
 function selectMcEvent(code){
-  const ev = mcEventCatalog.events.find(e=>e.code===code);
-  if(!ev) return;
-  mcSelectedEventCode = code;
-  document.querySelectorAll('.mc-event-btn').forEach(b=>{
-    const sel = b.dataset.code===code;
-    b.classList.toggle('selected', sel);
-    b.setAttribute('aria-pressed', sel?'true':'false');
-  });
-  const label = mcEventLabel(ev), catLabel = mcCategoryLabel(ev.category);
-  const icon = ev.category==='urgence' ? '🆘' : (ev.category==='incidents_securite' ? '🚨' : '📋');
-  document.getElementById('mcSelectedSummary').innerHTML =
-    `<div class="mc-detail-icon mc-cat-${ev.category}">${icon}</div><div><div class="mc-detail-code">${ev.code}</div><div class="mc-detail-label">${escapeHtml(label)}</div></div>`;
-  document.getElementById('mcMetaCode').textContent = ev.code;
-  document.getElementById('mcMetaLabel').textContent = label;
-  document.getElementById('mcMetaCategory').textContent = catLabel;
-  document.getElementById('mcSelectedMeta').hidden = false;
-  const related = document.getElementById('mcRelatedNote');
-  if(ev.relatedCode){
-    const rel = mcEventCatalog.events.find(e=>e.code===ev.relatedCode);
-    related.textContent = `ℹ️ Associé à ${ev.relatedCode}${rel ? ' — '+mcEventLabel(rel) : ''} (à consigner séparément si pertinent).`;
-    related.hidden = false;
-  } else related.hidden = true;
-  const instructions = document.getElementById('mcInstructionsNote');
-  if(ev.instructions){ instructions.textContent = '⚠️ '+ev.instructions; instructions.hidden = false; }
-  else instructions.hidden = true;
-  document.getElementById('mcSaveBtn').disabled = false;
-  const pcs01Row = document.getElementById('mcPcs01Row');
-  if(pcs01Row) pcs01Row.hidden = !(cache.parametres && cache.parametres.mc_pcs01_enabled === 'true');
+  MainCouranteWorkflows.open(code);
 }
 
-// Agent en service : uniquement des personnes réelles (employes réellement
-// enregistrés + l'utilisateur authentifié de la session) — jamais un nom
-// inventé. Remplace l'ancien champ texte libre par cette même contrainte de
-// données déjà appliquée ailleurs dans l'app (ex. sélection de l'hôte d'un
-// visiteur, cache.employes).
-function renderMcAgentOptions(){
-  const sel = document.getElementById('mcAgentSelect');
-  if(!sel) return;
-  const u = API.getUser();
-  const currentUserLabel = u ? (u.nom_complet || u.username) : null;
-  const names = new Set((cache.employes||[]).map(e=>`${e.prenom||''} ${e.nom||''}`.trim()).filter(Boolean));
-  if(currentUserLabel) names.add(currentUserLabel);
-  const preferred = sessionStorage.getItem('lastAgent') || currentUserLabel;
-  if(preferred) names.add(preferred);
-  const options = [...names].sort((a,b)=>a.localeCompare(b,'fr'));
-  sel.innerHTML = options.map(n=>`<option value="${escapeHtml(n)}"${n===preferred?' selected':''}>${escapeHtml(n)}</option>`).join('');
+// Site/zone du moteur de workflows : une seule appartenance -> sélection
+// automatique par MainCouranteWorkflows.loadContext(), plusieurs -> l'agent
+// choisit ici. Jamais un site deviné : la liste vient de req.scope (serveur).
+function renderMcWorkflowScopeSelectors(){
+  const siteSel = document.getElementById('mcWorkflowSite');
+  const zoneSel = document.getElementById('mcWorkflowZone');
+  const configureBtn = document.getElementById('mcConfigure');
+  const ctx = MainCouranteWorkflows.context;
+  if(!siteSel || !ctx) return;
+  siteSel.innerHTML = ctx.sites.map(s=>`<option value="${escapeHtml(s.id)}"${s.id===MainCouranteWorkflows.siteId?' selected':''}>${escapeHtml(s.name)}</option>`).join('');
+  zoneSel.innerHTML = `<option value="">Tout le site</option>` + ctx.zones.map(z=>`<option value="${escapeHtml(z.id)}">${escapeHtml(z.name)}</option>`).join('');
+  if(configureBtn) configureBtn.hidden = !ctx.permissions.admin;
 }
 
 async function loadMaincourante(){
-  await Promise.all([refresh('maincourante'), refresh('employes'), refresh('parametres'), loadMcEventCatalog()]);
-  const dt = document.getElementById('mcDatetime');
-  if(dt && !dt.value) dt.value = toLocalInput(new Date());
-  renderMcAgentOptions();
-  const lastPoste = sessionStorage.getItem('lastPoste');
-  if(lastPoste) document.getElementById('mcPoste').value = lastPoste;
+  await Promise.all([refresh('maincourante'), loadMcEventCatalog(), MainCouranteWorkflows.loadContext()]);
+  renderMcWorkflowScopeSelectors();
   renderMcEventGrid(document.getElementById('mcEventSearch')?.value || '');
-  if(mcSelectedEventCode) selectMcEvent(mcSelectedEventCode);
   renderMainCourante();
-}
-
-async function ajouterMainCourante(){
-  if(!mcSelectedEventCode){ notify('Sélectionnez un événement dans la grille', 'warning'); return; }
-  const ev = mcEventCatalog.events.find(e=>e.code===mcSelectedEventCode);
-  const poste = document.getElementById('mcPoste').value;
-  const agent = document.getElementById('mcAgentSelect').value;
-  if(!poste){ notify('Poste obligatoire', 'warning'); return; }
-  if(!agent){ notify('Agent en service obligatoire', 'warning'); return; }
-  const dtVal = document.getElementById('mcDatetime').value;
-  const desc = document.getElementById('mcDescription').value.trim();
-  const lieu = document.getElementById('mcLieu').value.trim();
-  const label = mcEventLabel(ev);
-  const entry = {
-    datetime: dtVal ? new Date(dtVal).toISOString() : new Date().toISOString(),
-    poste, agent, type: label, code: ev.code, categorie: ev.category,
-    lieu: lieu || '—', description: desc || label,
-  };
-  const saveBtn = document.getElementById('mcSaveBtn');
-  saveBtn.disabled = true;
-  try{
-    await API.post('/maincourante', entry);
-  }catch(err){
-    notify('Échec de l’enregistrement : ' + (err.message||''), 'danger');
-    saveBtn.disabled = false;
-    return;
-  }
-  sessionStorage.setItem('lastAgent', agent);
-  sessionStorage.setItem('lastPoste', poste);
-
-  const pcs01Check = document.getElementById('mcPcs01Check');
-  if(pcs01Check && pcs01Check.checked && !pcs01Check.hidden){
-    // Réutilise intégralement le pipeline Incidents existant (POST /incidents
-    // -> alerts.fromIncident, déjà audité) plutôt que d'inventer un second
-    // mécanisme de déclenchement d'alerte propre à la Main courante.
-    try{
-      await API.post('/incidents', {
-        type: label, lieu: lieu || '—', gravite: 'critique', statut: 'ouvert',
-        agent, description: `[Main courante ${ev.code}] ${desc || label}`,
-      });
-      notify('Entrée enregistrée — alerte PCS01 déclenchée ('+ev.code+')');
-    }catch(err){
-      notify('Entrée enregistrée, mais l’alerte PCS01 n’a pas pu être déclenchée : ' + (err.message||''), 'warning');
-    }
-  } else {
-    notify('Entrée enregistrée — '+ev.code);
-  }
-  resetMainCouranteForm();
-  await loadMaincourante();
-}
-
-function resetMainCouranteForm(){
-  mcSelectedEventCode = null;
-  document.querySelectorAll('.mc-event-btn').forEach(b=>{ b.classList.remove('selected'); b.setAttribute('aria-pressed','false'); });
-  const summary = document.getElementById('mcSelectedSummary');
-  if(summary) summary.innerHTML = '<div class="empty-state">Sélectionnez un événement dans la grille pour commencer une saisie.</div>';
-  const meta = document.getElementById('mcSelectedMeta'); if(meta) meta.hidden = true;
-  const related = document.getElementById('mcRelatedNote'); if(related) related.hidden = true;
-  const instructions = document.getElementById('mcInstructionsNote'); if(instructions) instructions.hidden = true;
-  const pcs01Row = document.getElementById('mcPcs01Row'); if(pcs01Row) pcs01Row.hidden = true;
-  const pcs01Check = document.getElementById('mcPcs01Check'); if(pcs01Check) pcs01Check.checked = false;
-  const saveBtn = document.getElementById('mcSaveBtn'); if(saveBtn) saveBtn.disabled = true;
-  document.getElementById('mcDescription').value='';
-  document.getElementById('mcLieu').value='';
-  document.getElementById('mcDatetime').value = toLocalInput(new Date());
-  const search = document.getElementById('mcEventSearch'); if(search) search.value='';
-  renderMcEventGrid('');
 }
 
 function renderMainCourante(){
