@@ -215,24 +215,29 @@ test('sw.js : install() peuple un cache nommé d\'après CACHE_VERSION', async (
   let waited;
   await listeners.install({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.ok(caches.stores.has('securisite-shell-v4'), 'le cache actuel doit exister après install()');
+  assert.ok(caches.stores.has('securisite-shell-v6'), 'le cache actuel doit exister après install()');
 });
 
 test('sw.js : activate() évince un cache resté sous un ancien nom (le vrai mécanisme derrière le hotfix)', async () => {
   const { listeners, caches } = loadServiceWorker();
   // Simule un navigateur déjà visité sous l'ancienne version, jamais évincé
   // faute de CACHE_VERSION incrémenté — exactement le bug de production.
-  caches.stores.set('securisite-shell-v3', {});
-  caches.stores.set('securisite-shell-v4', {});
+  caches.stores.set('securisite-shell-v5', {});
+  caches.stores.set('securisite-shell-v6', {});
   let waited;
   await listeners.activate({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.equal(caches.stores.has('securisite-shell-v3'), false, 'l\'ancien cache doit être évincé par activate()');
-  assert.equal(caches.stores.has('securisite-shell-v4'), true, 'le cache courant doit être conservé');
+  assert.equal(caches.stores.has('securisite-shell-v5'), false, 'l\'ancien cache doit être évincé par activate()');
+  assert.equal(caches.stores.has('securisite-shell-v6'), true, 'le cache courant doit être conservé');
 });
 
-test('sw.js : CACHE_VERSION a bien été incrémenté par le hotfix (v3 → v4)', () => {
-  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v4';/);
+test('sw.js : SHELL_ASSETS inclut le moteur de workflows (js/maincourante-workflows.js, entré dans SHELL_ASSETS au bump v4 → v5)', () => {
+  assert.match(swSource, /'js\/maincourante-workflows\.js'/);
+});
+
+test('sw.js : CACHE_VERSION a bien été incrémenté pour la modale accessible (v5 → v6, js/ui.js modifié dans SHELL_ASSETS)', () => {
+  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v6';/);
+  assert.match(swSource, /'js\/ui\.js'/);
 });
 
 /* ============================================================ */
