@@ -2016,9 +2016,6 @@ body{
    CSS indépendante. Couleur métier uniquement sur l'icône/le badge des
    boutons (jamais le fond de page), catégories légèrement teintées,
    conforme aux mêmes règles que le reste du Design System. */
-.mc-entry-body{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start}
-.mc-required{color:var(--danger);margin-inline-start:2px}
-
 .mc-search{margin-bottom:14px}
 .mc-search input{
   width:100%;padding:10px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
@@ -2080,30 +2077,27 @@ body{
 
 /* Panneau droit — sticky sur desktop, reproduit l'anatomie de la
    référence (icône + code + libellé, puis Code/Libellé/Catégorie). */
-.mc-detail{position:sticky;top:14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:16px;background:var(--surface)}
-.mc-detail-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:10px}
-.mc-detail-selected{display:flex;align-items:center;gap:12px;min-height:44px;margin-bottom:12px}
-.mc-detail-icon{
-  width:40px;height:40px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
-  font-size:18px;background:var(--mc-tone-bg-strong,var(--bg-2));color:var(--mc-tone,var(--text-muted));
-}
-.mc-detail-code{font-family:var(--font-mono);font-weight:800;font-size:13px;color:var(--color-primary)}
-.mc-detail-label{font-size:15px;font-weight:800;color:var(--color-text)}
-.mc-detail-meta{margin:0 0 12px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg-2);display:flex;flex-direction:column;gap:6px}
-.mc-detail-meta div{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
-.mc-detail-meta dt{color:var(--text-muted);font-weight:600}
-.mc-detail-meta dd{margin:0;color:var(--color-text);font-weight:700;text-align:end}
 .mc-detail-note{font-size:12px;color:var(--text-muted);background:var(--bg-2);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
 .mc-detail-instructions{font-size:12px;color:#8a5a00;background:rgba(247,169,40,.12);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
-.mc-detail-actions{display:flex;gap:8px;margin-top:14px}
-.mc-detail-actions .btn{flex:1;justify-content:center}
+
+/* Moteur de workflows — formulaire réel par code, rendu dans la modale
+   partagée (showModal/closeModal, déjà stylée/accessible ailleurs). */
+.mc-workflow-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.mc-workflow-toolbar .form-group{margin-bottom:0;min-width:180px}
+.mc-lookup-row{display:flex;gap:8px}
+.mc-lookup-row input{flex:1}
+.mc-wf-aps{border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:12px;margin-bottom:14px}
+.mc-wf-aps legend{font-size:12px;font-weight:700;color:var(--text-muted);padding:0 4px}
+.mc-aps-result{margin-top:10px}
+.mc-identity{display:flex;align-items:center;gap:12px}
+.mc-identity-photo{width:48px;height:48px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;font-size:20px;color:var(--text-muted)}
+.mc-identity-photo img{width:100%;height:100%;object-fit:cover}
+.mc-identity small{color:var(--text-muted);display:block;margin-top:2px}
+.mc-wf-error{color:var(--danger);font-size:12.5px}
+.mc-wf-check{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer}
 .mc-pcs01{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--color-text);margin:4px 0 10px;cursor:pointer}
 .mc-pcs01-info{color:var(--text-muted);cursor:help}
 
-@media(max-width:1100px){
-  .mc-entry-body{grid-template-columns:1fr}
-  .mc-detail{position:static}
-}
 @media(max-width:640px){
   .mc-category-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
   /* Mobile : 15.100 doit rester immédiatement accessible (exigence
