@@ -12,7 +12,7 @@
  * poste partagé). Seul l'app shell (HTML/CSS/JS/manifest/icône/vendor
  * statique) est mis en cache.
  */
-const CACHE_VERSION = 'securisite-shell-v4';
+const CACHE_VERSION = 'securisite-shell-v6';
 const SHELL_ASSETS = [
   './',
   'index.html',
@@ -30,6 +30,7 @@ const SHELL_ASSETS = [
   'js/sos.js',
   'js/critical-alert.js',
   'js/push.js',
+  'js/maincourante-workflows.js',
   'js/app.js',
   'assets/iron-global-securite-logo.png',
   'assets/icon-192.png',
