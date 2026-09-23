@@ -1,0 +1,32 @@
+-- ============================================================
+-- 021 — Bouton SOS : alarme réelle chez des utilisateurs désignés.
+--
+-- Décision produit validée par l'utilisateur (choix explicite parmi
+-- plusieurs options proposées) : la désignation se fait par une case à
+-- cocher PAR COMPTE ("Destinataire SOS"), globale — indépendante du
+-- groupe/site/rôle — dans Administration Système → Utilisateurs. Jamais
+-- une deuxième table de configuration ici : un simple booléen sur
+-- public.users, cohérent avec le reste du compte (comme `status`,
+-- migration 016), suffit à la sémantique "cet utilisateur reçoit toute
+-- alarme SOS, où qu'elle se déclenche".
+--
+-- Le déclenchement lui-même (POST /api/alerts/sos, backend/alert-core/
+-- service.js#sos -> create()) réutilise intégralement l'infrastructure de
+-- diffusion déjà construite au LOT PCS01 (migration 011, alert_recipients)
+-- — jamais un second mécanisme de notification : chaque destinataire
+-- désigné reçoit une ligne alert_recipients (recipient_type='user',
+-- recipient_ref=son propre id) au moment même de la création de l'alerte
+-- SOS, dans LA MÊME transaction (voir backend/alert-core/recipients.js
+-- #broadcastToSosDesignated) — donc le même flux temps réel (realtime.js,
+-- SSE) et la même sirène plein écran (frontend/js/critical-alert.js, déjà
+-- opérationnelle pour tout destinataire d'une alerte SOS/niveau critique)
+-- les alarment réellement, sans rien reconstruire.
+--
+-- Pas de contrainte CHECK sur alert_recipients.recipient_type à étendre :
+-- 'user' (déjà autorisé, migration 011) décrit exactement cette situation
+-- — un destinataire individuel, résolu ici par le booléen global plutôt
+-- que par une appartenance de tenant, mais la ligne écrite a rigoureusement
+-- la même forme qu'une diffusion manuelle "à cet utilisateur précis".
+-- ============================================================
+ALTER TABLE public.users
+    ADD COLUMN sos_recipient BOOLEAN NOT NULL DEFAULT false;

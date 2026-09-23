@@ -55,7 +55,7 @@ const AUDIT_TRIGGERS = {
 // via un second marqueur de session interne à la fonction elle-même
 // (securisite.system_job), jamais un paramètre de fonction — voir
 // l'en-tête de la migration 012.
-const RLS_FUNCTIONS = ['current_actor_tenant_ids', 'current_actor_soc_tenant_ids', 'security_alerts_visible_tenant_ids'];
+const RLS_FUNCTIONS = ['current_actor_tenant_ids', 'current_actor_soc_tenant_ids', 'security_alerts_visible_tenant_ids', 'current_actor_is_global_admin'];
 const RLS_FUNCTION = RLS_FUNCTIONS[0]; // rétro-compat
 const RLS_POLICIES = {
   tenants: ['tenants_actor_tenant'],
@@ -79,11 +79,20 @@ const PRIVILEGES = {
   security_alerts: 'SELECT,INSERT,UPDATE', alert_audit: 'SELECT,INSERT',
   alert_notifications: 'SELECT,INSERT,UPDATE', alert_config_audit: 'SELECT,INSERT',
   alert_rules: 'SELECT,UPDATE',
-  // Référentiel multitenant : lecture seule tant que l'activation (PG-8) n'a pas eu lieu.
-  // membership_audit reçoit INSERT (écrit par le trigger AFTER, jamais directement)
-  // en prévision des écritures de memberships du lot PG-8.
-  tenants: 'SELECT', sites: 'SELECT', zones: 'SELECT',
-  memberships: 'SELECT', membership_audit: 'SELECT,INSERT',
+  // Référentiel multitenant : lecture seule tant que l'activation (PG-8) n'a pas eu lieu,
+  // sauf sites — Administration Système (LOT 3, migration 015/backend/admin-sites.js)
+  // écrit désormais création/modification/transition de statut/suppression
+  // (LOT 19 allégé, refusée dès qu'une donnée réelle en dépend — voir
+  // DELETE /admin/sites/:id). zones reste lecture seule : sa mutation
+  // (LOT 6) n'est pas encore livrée par ce lot. tenants gagne INSERT/UPDATE
+  // (LOT GROUPES, migration 018/backend/admin-groups.js — tenants EST le
+  // référentiel Groupe, jamais dupliqué) ; pas de DELETE, aucune suppression
+  // physique de groupe n'est livrée (archivage uniquement, surface FK trop
+  // large pour un LOT « allégé »). memberships gagne INSERT/UPDATE :
+  // affectation utilisateur↔groupe/site et révocation (par statut, jamais
+  // une ligne supprimée — immuable par trigger, migration 004).
+  tenants: 'SELECT,INSERT,UPDATE', sites: 'SELECT,INSERT,UPDATE,DELETE', zones: 'SELECT',
+  memberships: 'SELECT,INSERT,UPDATE', membership_audit: 'SELECT,INSERT',
   // PG-10 : INSERT pour record() (backend/security-audit.js) ; SELECT pour
   // GET /api/admin/security-audit — RLS (migration 006) restreint la lecture
   // effective aux memberships actifs de rôle 'soc' sous leur propre tenant.

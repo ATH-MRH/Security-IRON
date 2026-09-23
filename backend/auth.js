@@ -84,6 +84,14 @@ router.post('/login', async (req, res, next) => {
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) { bump(accountFailures, accountKey); bump(ipFailures, ip); await auditFailure(user.username); return res.status(401).json({ error: 'Identifiants invalides' }); }
     accountFailures.delete(accountKey);
+    // Vérifié APRÈS le mot de passe (jamais avant) : un mot de passe faux sur
+    // un compte bloqué reste "Identifiants invalides", générique — révéler le
+    // blocage avant d'avoir prouvé la possession du mot de passe permettrait
+    // l'énumération de comptes bloqués (migration 016, LOT 8).
+    if (user.status === 'blocked') {
+      await securityAudit.recordBestEffort({ ...auditBase, eventType: 'auth.login.blocked', outcome: 'denied', actorUserId: user.id, actorUsername: user.username, actorRole: user.role });
+      return res.status(403).json({ error: 'Compte bloqué' });
+    }
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       JWT_SECRET,

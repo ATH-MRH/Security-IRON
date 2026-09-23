@@ -40,16 +40,20 @@ async function loadActiveMemberships(userId, client) {
 // site and zone under that tenant; a site-level membership covers every zone
 // under that site). The caller is expected to pass siteId/zoneId that are
 // already coherent (resolved against sites/zones), never raw free text.
-// Known boundary: this function does not itself re-verify that a supplied
-// siteId/zoneId truly belongs to tenantId — it trusts the triple the way it
-// trusts any (tenantId, siteId, zoneId) sourced from the sites/zones tables,
-// which already enforce that coherence via composite foreign keys (PG-6/PG-7).
-// Nothing downstream currently filters business rows by tenant/site/zone (no
-// historical table carries such a column yet — see docs/postgresql-scope.md),
-// so a caller-forged mismatched triple cannot expose cross-tenant DATA today;
-// it could only make the coarse requireScope gate pass when a stricter
-// implementation might refuse it. Tighten this (query sites/zones to validate
-// the triple) before any endpoint starts trusting siteId/zoneId to filter rows.
+// Former known boundary (now closed, see requireScope() below): this
+// function itself still never re-verifies that a supplied siteId/zoneId
+// truly belongs to tenantId — it purely trusts the (tenantId, siteId,
+// zoneId) triple as stored on each membership row. That used to be safe
+// because sites/zones (id, tenant_id) coherence was enforced forever via
+// composite foreign keys (PG-6/PG-7). Since migration 019 (site transfer:
+// sites.tenant_id can now change after the fact, see backend/admin-
+// sites.js#POST /sites/:id/transfer), a membership's stored triple can
+// legitimately go stale — requireScope() now re-validates the requested
+// site/zone against the LIVE sites/zones tables via liveResourceTenant()
+// before trusting coverageOf()'s verdict, closing exactly this gap for
+// every requireScope()-guarded route. coverageOf() itself stays a pure,
+// synchronous function on already-loaded data; the live check lives one
+// layer up because it needs DB access this function deliberately doesn't.
 function coverageOf(memberships, tenantId, siteId, zoneId) {
   let best = null;
   for (const m of memberships) {
@@ -73,6 +77,32 @@ function tenantAccessOf(memberships, tenantId) {
 
 function hasRoleOf(memberships, tenantId, role) {
   return memberships.some(m => m.tenant_id === tenantId && m.role === role);
+}
+
+// LOT GROUPES §17 (helper central de scope) : le seul ensemble de site_id
+// qu'un module métier (Tableau de bord, Centre d'alertes, Main courante,
+// Rondes, etc.) doit filtrer par — jamais recalculé différemment ailleurs.
+//
+// Règle métier verrouillée par le mandat, dérivée de coverageOf()
+// ci-dessus (jamais une intersection recalculée à part — le même mécanisme
+// qui décide allows()/coverage() décide aussi cet ensemble) :
+//   - Une appartenance de niveau TENANT (site_id/zone_id NULL) = périmètre
+//     maximal = TOUS les sites du groupe → retourne le sentinel `null`
+//     ("ALL", jamais une énumération que l'appelant pourrait mal filtrer).
+//   - Sinon, seulement les site_id des appartenances de niveau site/zone
+//     dans ce tenant = la restriction réelle de l'utilisateur.
+//   - Ne fait JAMAIS l'union des deux : coverageOf() couvre déjà tout site
+//     dès qu'une ligne tenant existe, donc la coexistence de lignes site
+//     ne restreint rien — elle ne fait que documenter une intention qui
+//     n'a plus d'effet tant que la ligne tenant reste active. Le seul
+//     moyen réel de restreindre un utilisateur est l'ABSENCE de ligne
+//     tenant (voir backend/admin-groups.js, qui applique cette règle à la
+//     création/mise à jour des appartenances plutôt que de la fabriquer
+//     ici après coup).
+function visibleSiteIdsOf(memberships, tenantId) {
+  const inTenant = memberships.filter(m => m.tenant_id === tenantId);
+  if (inTenant.some(m => m.scope === 'tenant')) return null; // null = tous les sites du tenant
+  return [...new Set(inTenant.filter(m => m.site_id != null).map(m => m.site_id))];
 }
 
 // PG-28 (revue déploiement) : jusqu'ici, cette requête tournait SANS jamais
@@ -104,6 +134,9 @@ async function resolveScope(userId, client = db) {
     coverage: (tenantId, siteId = null, zoneId = null) => coverageOf(memberships, tenantId, siteId, zoneId),
     tenantAccess: tenantId => tenantAccessOf(memberships, tenantId),
     hasRole: (tenantId, role) => hasRoleOf(memberships, tenantId, role),
+    // null = tous les sites du tenant (périmètre maximal, appartenance
+    // tenant) ; tableau = restriction réelle (voir visibleSiteIdsOf ci-dessus).
+    visibleSiteIds: tenantId => visibleSiteIdsOf(memberships, tenantId),
     // No argument: resolves the sole covered tenant (today's single-tenant
     // reality). With an argument: only that exact tenant, and only if it is
     // actually covered by an active membership — never trusted otherwise.
@@ -132,6 +165,37 @@ function auditDenied(req, resourceType, detail) {
   });
 }
 
+// TRANSFERT INTER-GROUPES DES SITES (migration 019) : sites.tenant_id peut
+// désormais changer après coup (un site transféré reste le même site.id,
+// mais change de groupe propriétaire). Ceci rouvre exactement la faille que
+// le commentaire au-dessus de coverageOf() documentait déjà comme « limite
+// connue » avant cette mission : coverageOf() ne valide JAMAIS qu'un
+// site_id/zone_id demandé appartient RÉELLEMENT, EN CE MOMENT, au tenant
+// résolu — elle fait entièrement confiance au triplet (tenant_id, site_id,
+// zone_id) déjà stocké sur la ligne memberships. Pour une appartenance de
+// niveau SITE/ZONE devenue obsolète après un transfert, la transaction de
+// transfert elle-même neutralise déjà la ligne (archivage, voir
+// backend/admin-sites.js#POST /sites/:id/transfer) — mais une appartenance
+// de niveau TENANT couvre par construction N'IMPORTE QUEL site_id/zone_id
+// demandé sous ce tenant, y compris un site qui n'y appartient plus : sans
+// contrôle supplémentaire, un ancien membre tenant-wide du groupe SOURCE
+// pourrait continuer à demander tenant_id=SOURCE&site_id=<site transféré>
+// et franchir ce portail. Un aller-retour supplémentaire (clé primaire,
+// léger) corrige ceci pour TOUT appelant de requireScope() — pas seulement
+// Groupes — en revalidant le site/zone demandé contre les tables sites/
+// zones RÉELLES, jamais seulement contre la ligne memberships stockée.
+async function liveResourceTenant(userId, siteId, zoneId, client = db) {
+  if (zoneId != null) {
+    const row = await withActorContext(userId, c => c.get('SELECT tenant_id FROM public.zones WHERE id=$1', [zoneId]), client);
+    return row ? row.tenant_id : null;
+  }
+  if (siteId != null) {
+    const row = await withActorContext(userId, c => c.get('SELECT tenant_id FROM public.sites WHERE id=$1', [siteId]), client);
+    return row ? row.tenant_id : null;
+  }
+  return null;
+}
+
 function requireScope() {
   return async (req, res, next) => {
     try {
@@ -150,9 +214,16 @@ function requireScope() {
         return res.status(403).json({ error: 'Accès au périmètre refusé' });
       }
       const siteId = param('site_id'), zoneId = param('zone_id');
-      if ((siteId != null || zoneId != null) && !scope.allows(tenantId, siteId, zoneId)) {
-        await auditDenied(req, 'scope', { reason_code: 'site_or_zone_not_covered' });
-        return res.status(403).json({ error: 'Accès au périmètre refusé' });
+      if (siteId != null || zoneId != null) {
+        if (!scope.allows(tenantId, siteId, zoneId)) {
+          await auditDenied(req, 'scope', { reason_code: 'site_or_zone_not_covered' });
+          return res.status(403).json({ error: 'Accès au périmètre refusé' });
+        }
+        const liveTenant = await module.exports.liveResourceTenant(req.user.id, siteId, zoneId);
+        if (liveTenant !== tenantId) {
+          await auditDenied(req, 'scope', { reason_code: 'site_tenant_mismatch' });
+          return res.status(403).json({ error: 'Accès au périmètre refusé' });
+        }
       }
       req.scope = scope;
       req.tenantId = tenantId;
@@ -174,4 +245,4 @@ async function withActorContext(userId, fn, database = db) {
   });
 }
 
-module.exports = { resolveScope, requireScope, withActorContext };
+module.exports = { resolveScope, requireScope, withActorContext, liveResourceTenant };

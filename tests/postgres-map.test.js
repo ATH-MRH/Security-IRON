@@ -147,8 +147,10 @@ test('no membership at all: 403, same as every other scoped route', async () => 
 test('an archived site/zone is never listed on the map', async () => {
   const soc = await createUser('admin'); await grant(soc.id, { tenantId: ids.tenantA, role: 'soc', alertAccess: 'scope' });
   const token = await login(soc.username);
+  // archived_at requis avec status='archived' depuis la migration 015
+  // (Administration Système) — sites_archived_at_chk.
   const archivedSite = (await pool.get(
-    "INSERT INTO public.sites(tenant_id,code,name,status) VALUES($1,'old','Ancien site','archived') RETURNING id", [ids.tenantA])).id;
+    "INSERT INTO public.sites(tenant_id,code,name,status,archived_at) VALUES($1,'old','Ancien site','archived',now()) RETURNING id", [ids.tenantA])).id;
   const sites = (await request('GET', '/map/sites?tenant_id=' + ids.tenantA, undefined, token)).body;
   assert.ok(!sites.some(s => s.id === archivedSite));
 });

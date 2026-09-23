@@ -85,7 +85,11 @@ test('toggleSidebar flips between open and closed', () => {
 });
 
 test('navTo() always closes the mobile sidebar on navigation', () => {
-  assert.match(appSource, /function navTo\(page\)\{\s*closeSidebar\(\);/);
+  // Signature étendue à navTo(page, el) par Administration Système (RECETTE
+  // VISUELLE ÉCRAN 1) : el identifie quel sous-item .nav-sub-item a été
+  // cliqué (16 entrées partagent data-page="administration") — closeSidebar()
+  // reste le tout premier appel, comportement mobile inchangé.
+  assert.match(appSource, /function navTo\(page, el\)\{\s*closeSidebar\(\);/);
 });
 
 test('the topbar has a ☰ toggle wired to the sidebar, and a backdrop that closes it on tap', () => {

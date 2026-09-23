@@ -84,6 +84,124 @@ test('topbar : le SOS reste présent, câblé sur son comportement existant (app
   assert.doesNotMatch(topbarHtml.match(/class="[^"]*sos-trigger[^"]*"[^>]*>/)[0], /onclick=/);
 });
 
+/* ============================================================ */
+/*  MISSION TOPBAR GLOBALE — date/heure/état système déplacés de   */
+/*  l'ancien widget du tableau de bord (.ui2-hero-time, retiré)     */
+/*  vers la topbar globale, visible sur tout le shell principal.   */
+/* ============================================================ */
+
+test('topbar : date/heure — éléments présents et câblés sur une seule horloge (initTopbarStatus/tickTopbarClock)', () => {
+  assert.match(topbarHtml, /id="topbarDateFull"/);
+  assert.match(topbarHtml, /id="topbarDateShort"/);
+  assert.match(topbarHtml, /id="topbarClockFull"/);
+  assert.match(topbarHtml, /id="topbarClockShort"/);
+  assert.match(appSource, /function initTopbarStatus\(\)\{/);
+  assert.match(appSource, /function tickTopbarClock\(\)\{/);
+  // Une seule instance de minuteur (clearInterval avant setInterval), pas
+  // une horloge séparée créée à chaque navigation.
+  assert.match(appSource, /clearInterval\(topbarClockTimer\);\s*\n\s*topbarClockTimer = setInterval\(tickTopbarClock, 1000\)/);
+  assert.match(appSource, /function initApp\(\)\{[\s\S]*initTopbarStatus\(\);/, 'initTopbarStatus doit être démarré depuis initApp(), une seule fois par session');
+});
+
+test('topbar : état système — bouton câblé (aria-haspopup/aria-expanded/aria-controls/aria-label), popover et liste présents', () => {
+  assert.match(topbarHtml, /id="topbarHealthButton"[^>]*aria-haspopup="true"/);
+  assert.match(topbarHtml, /id="topbarHealthButton"[^>]*aria-expanded="false"/);
+  assert.match(topbarHtml, /id="topbarHealthButton"[^>]*aria-controls="topbarHealthPopover"/);
+  assert.match(topbarHtml, /id="topbarHealthButton"[^>]*aria-label="[^"]+"/);
+  assert.match(topbarHtml, /id="topbarHealthButton"[^>]*onclick="toggleTopbarHealthPopover\(\)"/);
+  assert.match(topbarHtml, /<button[^>]*id="topbarHealthButton"/, 'doit être un vrai <button>, jamais une div cliquable inaccessible');
+  assert.match(topbarHtml, /id="topbarHealthPopover"[^>]*hidden/);
+  assert.match(topbarHtml, /id="topbarHealthList"/);
+  assert.match(appSource, /function toggleTopbarHealthPopover\(\)\{/);
+  assert.match(appSource, /function refreshTopbarHealth\(\)\{/);
+});
+
+test('topbar : état système réutilise le même seuil critique que Administration Système (application+postgresql), jamais un second calcul divergent', () => {
+  assert.match(appSource, /const TOPBAR_CRITICAL_SERVICES = \['application', 'postgresql'\]/);
+  const adminSystemSource = fs.readFileSync(path.resolve(__dirname, '../frontend/js/admin-system.js'), 'utf8');
+  assert.match(adminSystemSource, /const CRITICAL_SERVICES = \['application', 'postgresql'\]/);
+});
+
+test('topbar : l\'appel santé pour un administrateur réutilise GET /admin/system (déjà utilisé par Administration Système), jamais un nouvel endpoint', () => {
+  assert.match(appSource, /API\.get\('\/admin\/system'\)/);
+  assert.match(appSource, /API\.get\('\/ready'\)/, 'repli pour un utilisateur non-administrateur : la sonde publique déjà existante, jamais un endpoint inventé');
+});
+
+test('topbar : le pilotage de fréquence évite un appel santé chaque seconde (§12 mission — performance)', () => {
+  assert.match(appSource, /topbarHealthTimer = setInterval\(refreshTopbarHealth, 60000\)/);
+});
+
+test('l\'ancien widget hero (heroDate/heroClock/cleanStatusText) n\'apparaît plus jamais deux fois : retiré du tableau de bord, remplacé par la topbar', () => {
+  assert.doesNotMatch(appSource, /function tickHeroClock/);
+  assert.doesNotMatch(appSource, /let heroClockTimer;/, 'la variable de minuteur elle-même doit avoir disparu (une seule mention historique en commentaire est attendue, jamais une seconde déclaration)');
+  assert.doesNotMatch(appSource, /heroClockTimer = setInterval/);
+  assert.doesNotMatch(htmlSource, /id="heroDate"/);
+  assert.doesNotMatch(htmlSource, /id="heroClock"/);
+  assert.doesNotMatch(htmlSource, /id="cleanStatusText"/);
+});
+
+/* ============================================================ */
+/*  MISSION TOPBAR COMPACTE — visuel validé appliqué : bloc marque   */
+/*  retiré de la topbar (sidebar intacte), voyant seul (plus de      */
+/*  pilule texte), langue ultra-compacte, SOS capsule premium.       */
+/* ============================================================ */
+
+test('topbar : le bloc marque (logo/SécuriSite/SOC/Centre de Sécurité) est retiré, la recherche devient le premier élément important', () => {
+  assert.doesNotMatch(topbarHtml, /topbar-brand/);
+  assert.doesNotMatch(topbarHtml, /app-logo-topbar/);
+  assert.doesNotMatch(topbarHtml, />SécuriSite</);
+  assert.doesNotMatch(topbarHtml, />SOC</);
+  assert.doesNotMatch(topbarHtml, />Centre de Sécurité</);
+  assert.match(topbarHtml, /id="topbarSearch"/);
+});
+
+test('sidebar : le branding (logo + SécuriSite) reste intact — seule la topbar a perdu le sien', () => {
+  const sidebarHtml = htmlSource.slice(htmlSource.indexOf('id="sidebar"'), htmlSource.indexOf('class="topbar"'));
+  assert.match(sidebarHtml, /app-logo-sidebar/);
+  assert.match(sidebarHtml, /SécuriSite<\/h1>/);
+});
+
+test('topbar : l\'ancienne pilule texte de l\'état système ("Système opérationnel" permanent) est retirée — seul le voyant (cercle) reste dans le DOM', () => {
+  assert.doesNotMatch(topbarHtml, /topbar-health-copy/);
+  assert.doesNotMatch(topbarHtml, /id="topbarHealthText"/);
+  assert.doesNotMatch(topbarHtml, /id="topbarHealthSub"/);
+  assert.match(topbarHtml, /id="topbarHealthDot"/);
+  // Le texte d'état réel n'a pas disparu : déplacé dans l'aria-label du
+  // bouton (voir app.js#renderTopbarHealth), toujours calculé à partir de
+  // la même santé réelle — jamais une valeur statique/fictive.
+  assert.match(appSource, /button\.setAttribute\('aria-label', label\)/);
+});
+
+test('topbar : le voyant système garde ses 4 états réels (vert/orange/rouge/gris), jamais une couleur inventée', () => {
+  assert.match(cssSource, /\.topbar-health-dot\.topbar-health-ok\{background:var\(--success\)/);
+  assert.match(cssSource, /\.topbar-health-dot\.topbar-health-degraded\{background:var\(--warning\)/);
+  assert.match(cssSource, /\.topbar-health-dot\.topbar-health-down\{background:var\(--danger\)/);
+  assert.match(cssSource, /\.topbar-health-dot\.topbar-health-unknown\{background:var\(--text-dim\)/);
+});
+
+test('topbar : sélecteur de langue ultra-compact — affiche la langue ACTIVE seule ("FR" ou "AR"), jamais "FR / AR" simultané', () => {
+  assert.match(topbarHtml, /id="langMenuButtonLabel">FR</);
+  assert.doesNotMatch(topbarHtml, />FR \/ AR</);
+});
+
+test('ui.js : applyLanguage() met à jour le libellé compact de langue (FR/AR), quel que soit le point d\'entrée réel (pas seulement setLanguage)', () => {
+  const uiSource = fs.readFileSync(path.resolve(__dirname, '../frontend/js/ui.js'), 'utf8');
+  const fn = uiSource.slice(uiSource.indexOf('function applyLanguage'), uiSource.indexOf('function applyLanguage') + 2000);
+  assert.match(fn, /langMenuButtonLabel/);
+  assert.match(fn, /lang === 'ar' \? 'AR' : 'FR'/);
+});
+
+test('topbar : le SOS reprend la capsule rouge foncé premium (fond dégradé bordeaux, forme très arrondie, ombre douce) — logique de maintien inchangée', () => {
+  const block = cssSource.slice(cssSource.lastIndexOf('.topbar .sos-button{'), cssSource.lastIndexOf('.topbar .sos-button{') + 900);
+  assert.match(block, /border-radius:999px/);
+  assert.match(block, /linear-gradient\(180deg,#8f1029/);
+  assert.match(block, /box-shadow:/);
+  assert.match(topbarHtml, /class="sos-icon"/, 'icône alerte blanche à côté du texte SOS');
+  // Toujours le même mécanisme sos-trigger (appui maintenu ~1,5s), jamais
+  // un onclick de substitution.
+  assert.match(topbarHtml, /class="sos-button sos-trigger"/);
+});
+
 test('d35b9a0 (commit incriminé) n\'a modifié ni index.html dans la zone topbar, ni app.js du tout', () => {
   // Preuve statique, en plus de la reproduction Playwright réelle : le
   // commit accusé ne touche que Centre d'alertes (alerts.css/alerts.js),
@@ -128,6 +246,8 @@ function loadApp() {
   const userMenuDropdown = el('userMenuDropdown'); userMenuDropdown._insideOf = userMenuButton;
   const langMenuButton = el('langMenuButton'); langMenuButton._group = 'lang-menu';
   const langMenuDropdown = el('langMenuDropdown'); langMenuDropdown._insideOf = langMenuButton;
+  const topbarHealthButton = el('topbarHealthButton'); topbarHealthButton._group = 'topbar-status';
+  const topbarHealthPopover = el('topbarHealthPopover'); topbarHealthPopover._insideOf = topbarHealthButton;
   const outsideEl = el('somePage'); // n'appartient à aucun groupe
 
   const docListeners = { click: [], keydown: [] };
@@ -145,7 +265,9 @@ function loadApp() {
   const get = expr => new vm.Script(expr).runInContext(context);
   return {
     toggleUserMenu: () => get('toggleUserMenu()'),
-    userMenuButton, userMenuDropdown, langMenuButton, langMenuDropdown, outsideEl,
+    toggleTopbarHealthPopover: () => get('toggleTopbarHealthPopover()'),
+    userMenuButton, userMenuDropdown, langMenuButton, langMenuDropdown,
+    topbarHealthButton, topbarHealthPopover, outsideEl,
     fireDocClick: target => docListeners.click.forEach(fn => fn({ target })),
     fireDocKeydown: key => docListeners.keydown.forEach(fn => fn({ key, metaKey: false, ctrlKey: false, preventDefault() {} })),
   };
@@ -183,13 +305,46 @@ test('Echap referme le menu profil', () => {
   assert.equal(userMenuDropdown.hasAttribute('hidden'), true);
 });
 
+test('toggleTopbarHealthPopover() ouvre et referme le popover État système, aria-expanded suit l\'état', () => {
+  const { toggleTopbarHealthPopover, topbarHealthPopover, topbarHealthButton } = loadApp();
+  topbarHealthPopover.setAttribute('hidden', ''); // état initial réel : index.html porte `hidden`
+  toggleTopbarHealthPopover();
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), false, 'le popover doit s\'ouvrir au premier clic');
+  assert.equal(topbarHealthButton.getAttribute('aria-expanded'), 'true');
+  toggleTopbarHealthPopover();
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), true, 'le popover doit se refermer au second clic');
+  assert.equal(topbarHealthButton.getAttribute('aria-expanded'), 'false');
+});
+
+test('un clic en dehors du popover État système le referme (jamais un clic à l\'intérieur)', () => {
+  const { toggleTopbarHealthPopover, topbarHealthPopover, topbarHealthButton, outsideEl, fireDocClick } = loadApp();
+  topbarHealthPopover.setAttribute('hidden', '');
+  toggleTopbarHealthPopover();
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), false, 'ouvert avant le test');
+  fireDocClick(topbarHealthButton); // clic "à l'intérieur" : ne doit rien fermer
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), false, 'un clic à l\'intérieur ne doit pas fermer le popover');
+  fireDocClick(outsideEl); // clic réellement extérieur
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), true, 'un clic extérieur doit fermer le popover');
+});
+
+test('Echap referme le popover État système', () => {
+  const { toggleTopbarHealthPopover, topbarHealthPopover, fireDocKeydown } = loadApp();
+  topbarHealthPopover.setAttribute('hidden', '');
+  toggleTopbarHealthPopover();
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), false);
+  fireDocKeydown('Escape');
+  assert.equal(topbarHealthPopover.hasAttribute('hidden'), true);
+});
+
 /* ============================================================ */
 /*  3. Service Worker : le mécanisme d'éviction de cache dont     */
 /*     dépend la véritable correction (frontend/sw.js).           */
 /* ============================================================ */
 
-function loadServiceWorker() {
+function loadServiceWorker(opts = {}) {
   const listeners = {};
+  const cachedMatch = opts.cachedMatch === undefined ? undefined : opts.cachedMatch;
+  const fetchImpl = opts.fetchImpl || (async () => ({ ok: false }));
   const caches = {
     stores: new Map(),
     open(name) {
@@ -198,14 +353,14 @@ function loadServiceWorker() {
     },
     keys() { return Promise.resolve([...this.stores.keys()]); },
     delete(name) { return Promise.resolve(this.stores.delete(name)); },
-    match() { return Promise.resolve(undefined); },
+    match() { return Promise.resolve(cachedMatch); },
   };
   const self = {
     addEventListener(type, fn) { listeners[type] = fn; },
     skipWaiting: async () => {}, clients: { claim: async () => {} },
     registration: {}, location: { origin: 'https://example.test' },
   };
-  const context = vm.createContext({ self, caches, console, fetch: async () => ({ ok: false }) });
+  const context = vm.createContext({ self, caches, console, fetch: fetchImpl, URL });
   new vm.Script(swSource, { filename: 'sw.js' }).runInContext(context);
   return { listeners, caches };
 }
@@ -215,29 +370,77 @@ test('sw.js : install() peuple un cache nommé d\'après CACHE_VERSION', async (
   let waited;
   await listeners.install({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.ok(caches.stores.has('securisite-shell-v6'), 'le cache actuel doit exister après install()');
+  assert.ok(caches.stores.has('securisite-shell-v19'), 'le cache actuel doit exister après install()');
 });
 
 test('sw.js : activate() évince un cache resté sous un ancien nom (le vrai mécanisme derrière le hotfix)', async () => {
   const { listeners, caches } = loadServiceWorker();
   // Simule un navigateur déjà visité sous l'ancienne version, jamais évincé
   // faute de CACHE_VERSION incrémenté — exactement le bug de production.
-  caches.stores.set('securisite-shell-v5', {});
-  caches.stores.set('securisite-shell-v6', {});
+  caches.stores.set('securisite-shell-v18', {});
+  caches.stores.set('securisite-shell-v19', {});
   let waited;
   await listeners.activate({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.equal(caches.stores.has('securisite-shell-v5'), false, 'l\'ancien cache doit être évincé par activate()');
-  assert.equal(caches.stores.has('securisite-shell-v6'), true, 'le cache courant doit être conservé');
+  assert.equal(caches.stores.has('securisite-shell-v18'), false, 'l\'ancien cache doit être évincé par activate()');
+  assert.equal(caches.stores.has('securisite-shell-v19'), true, 'le cache courant doit être conservé');
 });
 
 test('sw.js : SHELL_ASSETS inclut le moteur de workflows (js/maincourante-workflows.js, entré dans SHELL_ASSETS au bump v4 → v5)', () => {
   assert.match(swSource, /'js\/maincourante-workflows\.js'/);
 });
 
-test('sw.js : CACHE_VERSION a bien été incrémenté pour la modale accessible (v5 → v6, js/ui.js modifié dans SHELL_ASSETS)', () => {
-  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v6';/);
-  assert.match(swSource, /'js\/ui\.js'/);
+test('sw.js : CACHE_VERSION a bien été incrémenté pour la mission TOPBAR COMPACTE — visuel validé appliqué (v18 → v19)', () => {
+  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v19';/);
+  assert.match(swSource, /'js\/admin-system\.js'/);
+});
+
+/* ============================================================ */
+/*  BUG BLOQUANT — Administration Système → Groupes → Ouvrir       */
+/*  Cause racine reproduite en navigateur réel (profil Playwright  */
+/*  persistant, rapport de mission) : l'ancienne stratégie          */
+/*  cache-first (`cached || network`) servait la version en cache   */
+/*  MÊME APRÈS correction du fichier sur le serveur — il fallait    */
+/*  systématiquement DEUX rechargements avant qu'un correctif       */
+/*  devienne visible ; un onglet resté ouvert pendant l'itération   */
+/*  pouvait afficher une sidebar à jour (index.html déjà rafraîchi) */
+/*  avec un admin-system.js encore obsolète (fichiers mis en cache  */
+/*  indépendamment) — un clic sur "Ouvrir" appelant alors une        */
+/*  fonction manquante/obsolète, silencieusement.                   */
+/* ============================================================ */
+
+test('sw.js : le gestionnaire fetch interroge le RÉSEAU EN PREMIER — jamais le cache en priorité (cause racine du bug "Ouvrir" bloquant)', async () => {
+  let networkCalled = false;
+  const { listeners } = loadServiceWorker({
+    cachedMatch: new Response('CACHED-STALE-CONTENT', { status: 200 }),
+    fetchImpl: async () => { networkCalled = true; return new Response('FRESH-NETWORK-CONTENT', { status: 200 }); },
+  });
+  let responded;
+  const event = {
+    request: { url: 'https://example.test/js/admin-system.js', method: 'GET' },
+    respondWith(p) { responded = p; },
+  };
+  listeners.fetch(event);
+  const response = await responded;
+  const body = await response.text();
+  assert.equal(networkCalled, true, 'le réseau doit toujours être tenté en premier, jamais seulement en arrière-plan');
+  assert.equal(body, 'FRESH-NETWORK-CONTENT', 'la réponse retournée à la page doit être celle du réseau, pas celle du cache — sinon un correctif serveur reste invisible tant qu\'aucun second rechargement n\'a eu lieu (bug reproduit et documenté dans le rapport de mission)');
+});
+
+test('sw.js : le cache reste un repli hors-ligne réel quand le réseau échoue — jamais une page blanche', async () => {
+  const { listeners } = loadServiceWorker({
+    cachedMatch: new Response('OFFLINE-CACHED-SHELL', { status: 200 }),
+    fetchImpl: async () => { throw new Error('network unreachable (offline)'); },
+  });
+  let responded;
+  const event = {
+    request: { url: 'https://example.test/index.html', method: 'GET' },
+    respondWith(p) { responded = p; },
+  };
+  listeners.fetch(event);
+  const response = await responded;
+  const body = await response.text();
+  assert.equal(body, 'OFFLINE-CACHED-SHELL', 'hors ligne, le cache doit rester servi — c\'est la seule raison d\'être du cache app-shell');
 });
 
 /* ============================================================ */

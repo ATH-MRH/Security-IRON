@@ -12,7 +12,7 @@
  * poste partagé). Seul l'app shell (HTML/CSS/JS/manifest/icône/vendor
  * statique) est mis en cache.
  */
-const CACHE_VERSION = 'securisite-shell-v6';
+const CACHE_VERSION = 'securisite-shell-v19';
 const SHELL_ASSETS = [
   './',
   'index.html',
@@ -31,6 +31,7 @@ const SHELL_ASSETS = [
   'js/critical-alert.js',
   'js/push.js',
   'js/maincourante-workflows.js',
+  'js/admin-system.js',
   'js/app.js',
   'assets/iron-global-securite-logo.png',
   'assets/icon-192.png',
@@ -56,6 +57,32 @@ self.addEventListener('activate', event => {
   );
 });
 
+// BUG BLOQUANT (Groupes → Ouvrir, LOT GROUPES) — cause racine reproduite et
+// prouvée en navigateur réel (profil Playwright persistant) : la stratégie
+// cache-first précédente (`cached || network`, réseau en arrière-plan
+// seulement) servait TOUJOURS la version en cache tant qu'aucun nouveau
+// install()/activate() n'avait eu lieu — soit à CHAQUE modification de
+// fichier qui ne changeait pas CACHE_VERSION (le cas normal en itération
+// locale), soit même juste après un bump de CACHE_VERSION, le PREMIER
+// rechargement d'un onglet déjà ouvert servait encore l'ancien cache pendant
+// que le réseau le rafraîchissait silencieusement en arrière-plan — il
+// fallait systématiquement DEUX rechargements avant qu'un correctif serveur
+// devienne visible. Reproduit précisément : un admin-system.js cassé
+// volontairement (référence non définie) servi une première fois reste
+// servi identique au rechargement suivant MÊME APRÈS correction du fichier
+// sur le serveur ; seul un second rechargement révèle le correctif. C'est
+// cette fenêtre qui explique qu'un onglet resté ouvert pendant les
+// itérations puisse afficher une sidebar à jour (index.html) mais un
+// admin-system.js pas encore rafraîchi (fichiers mis en cache
+// indépendamment, pas atomiquement) — un clic sur "Ouvrir" appelant alors
+// une fonction manquante/obsolète, silencieusement.
+//
+// Correctif minimal : réseau EN PREMIER, cache uniquement en repli (hors
+// ligne, ou échec réseau) — jamais l'inverse. Un rechargement en ligne voit
+// donc toujours le code réellement servi par le serveur, sans délai d'un
+// cycle ; le mode hors-ligne (raison d'être initiale du cache) reste
+// couvert par le .catch(). Pour une application de sûreté, servir du code
+// à jour prime sur le gain de vitesse d'un cache-first.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   // Never our own origin's /api/*, and never a cross-origin request (a proxied
@@ -64,20 +91,15 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      const network = fetch(event.request)
-        .then(response => {
-          if (response && response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_VERSION).then(cache => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached); // offline: fall back to whatever is cached, if anything
-      // Cache-first when available (instant, works offline); still refreshes
-      // the cache in the background so the next load picks up changes.
-      return cached || network;
-    })
+    fetch(event.request)
+      .then(response => {
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_VERSION).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request)) // offline (or network failure): fall back to cache
   );
 });
 

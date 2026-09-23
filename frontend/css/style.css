@@ -101,7 +101,6 @@ body{
   flex:0 0 auto;
 }
 .app-logo-sidebar{width:46px;height:46px}
-.app-logo-topbar{width:34px;height:34px}
 .app-logo-login{width:92px;height:92px;margin:0 auto 14px}
 .nav-section{padding:8px 0}
 .nav-title{
@@ -137,9 +136,17 @@ body{
 .topbar{
   background:linear-gradient(180deg,var(--bg-2),var(--surface));
   border-bottom:1px solid var(--border);padding:14px 28px;
-  display:flex;align-items:center;justify-content:space-between;
+  display:flex;align-items:center;gap:12px;
   position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);
 }
+/* MISSION TOPBAR COMPACTE : justify-content:space-between (ancienne valeur)
+   supposait seulement 4 enfants directs (gauche/recherche/statut/droite) —
+   avec la recherche/date/voyant/notifications/langue/utilisateur/SOS
+   désormais listés à plat (séparateurs .topbar-sep explicites entre
+   chacun), space-between répartirait un espace ÉGAL et disproportionné
+   entre chaque petit élément. gap fixe ci-dessus + .topbar-search en
+   flex:1 (seul élément qui grandit) reproduisent le regroupement compact
+   du visuel validé, recherche large puis tout le reste resserré à droite. */
 .topbar::after{
   content:"";position:absolute;bottom:-1px;left:0;right:0;height:1px;
   background:linear-gradient(90deg,transparent,var(--primary),transparent);opacity:.6;
@@ -161,7 +168,13 @@ body{
   width:8px;height:8px;background:var(--success);border-radius:50%;
   box-shadow:0 0 8px var(--success-glow);animation:pulse 1.2s infinite;
 }
-.topbar-right{display:flex;align-items:center;gap:10px}
+/* flex-shrink:0 : ce groupe (langue/utilisateur/SOS) ne doit JAMAIS être
+   comprimé par le moteur flex en dessous de la largeur naturelle de ses
+   enfants (SOS notamment) — sans quoi le navigateur le réduit puis laisse
+   ses enfants déborder silencieusement (overflow:visible global de
+   .topbar) au lieu de rogner .topbar-search/.topbar-spacer, pourtant
+   prévus pour céder en premier (mesuré réellement, Playwright, 861-980px). */
+.topbar-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .user-chip{
   display:flex;align-items:center;gap:10px;padding:6px 14px;
   background:var(--surface-2);border:1px solid var(--border);
@@ -528,10 +541,17 @@ td strong{color:var(--text-bright)}
    bas, contrairement à --font-display : il rendait donc réellement en
    JetBrains Mono) avec un text-shadow néon sur l'onglet actif — aplati
    pour rester cohérent avec le reste (boutons/badges/th déjà migrés). */
-.tabs{display:flex;border-bottom:1px solid var(--border-subtle);margin-bottom:20px}
+/* overflow-x:auto : sur mobile étroit, une barre d'onglets (ex: Groupes —
+   5 onglets, l'un avec un compteur) peut dépasser le conteneur ; sans
+   défilement, les derniers onglets deviennent invisibles ET inatteignables
+   (le conteneur parent .admin-groups-shell coupe le débordement) — jamais
+   un onglet silencieusement injoignable au doigt. */
+.tabs{display:flex;border-bottom:1px solid var(--border-subtle);margin-bottom:20px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabs .tab{flex:0 0 auto;white-space:nowrap}
 .tab{padding:12px 22px;cursor:pointer;font-size:11px;color:var(--color-text-secondary);border-bottom:2px solid transparent;font-weight:600;font-family:var(--font-sans);transition:color var(--transition-base),border-color var(--transition-base)}
 .tab.active{color:var(--color-primary);border-bottom-color:var(--color-primary);font-weight:700}
 .tab:hover{color:var(--color-text)}
+.tab:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:-2px}
 
 /* ===== QR ===== */
 .qr-panel{text-align:center;padding:24px;background:#fff;border:1px solid var(--primary);position:relative}
@@ -910,16 +930,14 @@ body{
      règle UI 2.0 plus loin dans ce fichier qui la réécrit avec une
      spécificité/!important égale ou supérieure — mort avéré (vérifié par
      capture + getComputedStyle, zéro différence après suppression).
-   Deux exceptions, réellement rendues et donc PRÉSERVÉES ci-dessous plutôt
-   que supprimées : le halo jaune du logo topbar (.app-logo-topbar) et le
-   survol jaune du bouton profil (.user-chip:hover) — aucune règle UI 2.0
-   ultérieure ne les réécrivait, ils étaient donc les SEULS déclarants
-   réels malgré leur emplacement dans cette section "abandonnée". Conservés
-   ici tels quels (comportement actuel inchangé) ; à trancher dans un lot
-   de design ultérieur, pas celui-ci (zéro changement visuel non demandé). */
-.app-logo-topbar{
-  box-shadow:0 0 0 2px rgba(255,212,0,.18),0 8px 18px rgba(0,0,0,.25)!important;
-}
+   Une exception, réellement rendue et donc PRÉSERVÉE ci-dessous plutôt
+   que supprimée : le survol jaune du bouton profil (.user-chip:hover) —
+   aucune règle UI 2.0 ultérieure ne le réécrivait, c'était le SEUL
+   déclarant réel malgré son emplacement dans cette section "abandonnée".
+   (Le halo jaune du logo topbar, .app-logo-topbar, formait la seconde
+   exception jusqu'à la mission TOPBAR COMPACTE : le logo a été retiré de
+   la topbar — .app-logo-topbar n'existe plus dans le HTML, règle retirée
+   avec lui ; le branding reste inchangé dans la sidebar.) */
 .topbar .user-chip:hover{
   color:#ffd400!important;
   border-color:rgba(255,212,0,.45)!important;
@@ -1460,8 +1478,14 @@ body.role-agent .admin-only{ display:none !important; }
 .topbar .page-title{font-size:13px;color:var(--text-muted);font-weight:600;max-width:160px}
 .topbar .page-title::before{display:none}
 .topbar-search{
-  flex:1;max-width:520px;position:relative;margin-inline-start:8px;
+  /* Ajustement visuel demandé après coup : champ recherche réduit (ne
+     grandit plus, largeur fixe) — l'espace libéré profite à la date/heure,
+     agrandie ci-dessous. .topbar-spacer (juste après, dans le HTML) prend
+     désormais le rôle de "flex:1" pour garder le reste des contrôles
+     ancré à droite. */
+  flex:0 0 auto;width:280px;max-width:280px;position:relative;margin-inline-start:8px;
 }
+.topbar-spacer{flex:1 1 auto;min-width:0}
 /* UI-FOUNDATION-2 — Search (#15) suite : topbar-search alignée sur le
    même focus plat que .search-box/.form-group (l'anneau + halo néon
    était encore réel ici aussi), radius rapproché de --radius-md. */
@@ -1500,10 +1524,14 @@ body.role-agent .admin-only{ display:none !important; }
   .topbar-right{gap:3px}
   .user-chip{padding:2px}
   .topbar .btn-icon{width:32px;padding:0}
-  .topbar-brand-text small{display:none}
-  .lang-menu-btn{padding:7px 8px;font-size:10px;white-space:nowrap;gap:4px}
+  .lang-menu-btn{padding:4px 6px;font-size:10px;white-space:nowrap;gap:2px;min-width:30px;min-height:30px}
   .topbar-sep{display:none}
-  .topbar .sos-button{width:40px!important;height:40px!important}
+  /* MISSION TOPBAR COMPACTE : la capsule large (icône + "SOS", voir plus
+     bas) redevient un disque compact sous 640px — priorité §12 : le SOS
+     ne doit JAMAIS disparaître ni pousser le reste hors écran ; un texte
+     seul, sans icône séparée, tient mieux dans un petit disque. */
+  .topbar .sos-button{width:40px!important;height:40px!important;min-width:0!important;padding:0!important;border-radius:50%!important;gap:0!important}
+  .topbar .sos-button .sos-icon{display:none}
   .user-chip-chevron{display:none}
 }
 .topbar .btn-icon:hover{color:var(--primary)!important;border-color:var(--primary)!important;background:var(--surface)!important}
@@ -1526,22 +1554,128 @@ body.role-agent .admin-only{ display:none !important; }
   animation:none;
 }
 
-/* --- En-tête : bloc identité (logo + SécuriSite / SOC / Centre de Sécurité),
-   séparateurs, bascule thème, menu profil — fidélité au modèle de référence.
-   Recherche/notifications/FR-AR/authentification : comportement inchangé,
-   uniquement la disposition et le style. --- */
-.topbar-brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
-.topbar-brand-text{display:flex;flex-direction:column;line-height:1.3}
-.topbar-brand-text strong{font-size:15px;font-weight:800;color:var(--text-bright)}
-.topbar-brand-text span{font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.5px}
-.topbar-brand-text small{font-size:10px;color:var(--text-dim)}
+/* --- Topbar : date / heure / état système (globale, mission TOPBAR
+   GLOBALE — un seul widget dans tout le shell, remplace l'ancien
+   .ui2-hero-time du tableau de bord, retiré). Compact par défaut, réduit
+   par palier de largeur (§9 mission) : desktop large affiche tout ;
+   desktop standard perd la date longue et le sous-texte d'état ; tablette
+   perd la date et les secondes ; mobile ne garde que la pastille + l'heure
+   courte — mêmes éléments DOM partout, seul l'affichage change (CSS),
+   jamais recalculés différemment par palier. --- */
+/* MISSION TOPBAR COMPACTE : date en petit, heure renforcée (plus grande,
+   plus sombre) — même mécanisme de rendu qu'avant (app.js#tickTopbarClock),
+   seule la présentation change. Ajustement visuel demandé après coup :
+   date/heure agrandies encore (champ recherche réduit pour compenser). */
+.topbar-datetime{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-mono);white-space:nowrap;flex:0 0 auto}
+.topbar-date-full,.topbar-date-short{font-size:12px;color:var(--text-muted);font-weight:600}
+.topbar-clock-full,.topbar-clock-short{font-size:20px;color:var(--text-bright);font-weight:800;letter-spacing:.3px}
+.topbar-date-short,.topbar-clock-short{display:none}
+
+/* MISSION TOPBAR COMPACTE : la pilule texte permanente ("Système
+   opérationnel" / sous-titre, mission TOPBAR GLOBALE précédente) est
+   retirée du DOM (voir index.html) — le voyant seul (cercle + halo) reste,
+   même logique de santé réelle (app.js#refreshTopbarHealth/
+   classifyTopbarHealth), même popover au clic. aria-label (posé par JS,
+   jamais statique) porte désormais le SEUL texte d'état visible pour un
+   lecteur d'écran, voir renderTopbarHealth(). */
+.topbar-status{position:relative;display:flex;align-items:center;flex:0 0 auto}
+.topbar-health{
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:50%;
+  border:1px solid var(--border-subtle);background:var(--bg-2);
+  cursor:pointer;padding:0;
+}
+.topbar-health:hover{border-color:var(--primary)}
+.topbar-health:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.topbar-health-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+.topbar-health-dot.topbar-health-ok{background:var(--success);box-shadow:0 0 8px var(--success-glow);animation:pulse 1.4s infinite}
+.topbar-health-dot.topbar-health-degraded{background:var(--warning);box-shadow:0 0 8px var(--warning-glow)}
+.topbar-health-dot.topbar-health-down{background:var(--danger);box-shadow:0 0 8px var(--danger-glow);animation:pulse 1.4s infinite}
+.topbar-health-dot.topbar-health-unknown{background:var(--text-dim)}
+
+.topbar-health-popover{
+  position:absolute;top:calc(100% + 8px);inset-inline-start:0;min-width:220px;
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-lg);z-index:60;overflow:hidden;padding:10px 12px;
+}
+.topbar-health-popover-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px}
+.topbar-health-popover ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.topbar-health-popover li{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+.topbar-health-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700}
+.topbar-health-badge.ok{color:#0f8b63}
+.topbar-health-badge.muted{color:var(--text-muted)}
+.topbar-health-badge.down{color:#c2414d}
+.topbar-health-badge.unknown{color:var(--text-dim)}
+
+/* MISSION TOPBAR COMPACTE §12 — priorité de conservation en cas de manque
+   d'espace : 1.SOS 2.voyant système 3.notifications 4.utilisateur
+   5.langue 6.heure 7.date 8.recherche complète. Le voyant (cercle) est
+   volontairement de taille FIXE à tous les paliers — seuls date/heure/
+   recherche cèdent du terrain avant lui. */
+@media(max-width:1260px){
+  /* Seuil relevé de 1180 à 1260px (mesuré réellement, Playwright, balayage
+     fin 340-1920px par pas de 10px) : entre 1181 et 1250px, aucun des deux
+     paliers ne s'appliquait (ni celui-ci, ni le désormais-fusionné
+     ≤860px) — la recherche pleine largeur + le nom/rôle utilisateur en
+     toutes lettres suffisaient déjà à pousser le SOS hors écran dans cette
+     zone étroite. */
+  .topbar-date-full{display:none}
+  .topbar-date-short{display:inline}
+  /* Ajustement visuel demandé après coup (date/heure agrandies, recherche
+     réduite) : mesuré réellement (Playwright, TOUTE la plage 861-1180px,
+     sidebar non réduite avant 860px) — sans ce palier, le nom/rôle
+     utilisateur en toutes lettres, la largeur de la recherche et les
+     secondes de l'heure agrandie poussent ensemble le SOS hors écran.
+     Un seul palier couvrant toute la plage (plutôt que plusieurs seuils
+     rapprochés) : pas de zone étroite où le budget d'un palier ne tient
+     plus à la largeur suivante. Nom/rôle (utilisateur, priorité §12 #4),
+     recherche (priorité #8, la plus basse) et secondes (accessoires) cèdent
+     avant l'heure elle-même (HH:MM conservé, agrandi comme demandé) —
+     avatar/chevron restent, le menu profil reste pleinement fonctionnel ;
+     ⌘K reste le raccourci recherche (juste masqué visuellement ici, le
+     champ text lui-même reste utilisable). */
+  .topbar .user-info{display:none}
+  .topbar-search{width:76px;max-width:76px}
+  .topbar-search kbd{display:none}
+  .topbar-search input{padding-inline-end:10px}
+  .topbar-clock-full{display:none}
+  .topbar-clock-short{display:inline}
+  /* Marge de sécurité mesurée (Playwright, 861px précisément — le point le
+     plus tendu juste avant que la sidebar ne repasse en tiroir à 860px) :
+     réduire aussi le remplissage/les espacements de la barre elle-même,
+     jamais un contrôle individuel de plus. */
+  .topbar{padding-inline:16px;gap:8px}
+}
+@media(max-width:860px){
+  .topbar-datetime{flex-direction:row;gap:5px;align-items:baseline}
+  .topbar-date-short{display:none}
+}
+@media(max-width:640px){
+  /* Mission §12 (mobile) : la date/l'heure cèdent avant le voyant système
+     (priorité 6/7, sous notifications/langue/utilisateur/SOS) — mesuré
+     réellement (Playwright, 390px) : la topbar déborde horizontalement dès
+     que l'heure compacte reste affichée à côté des contrôles existants
+     (recherche déjà masquée, SOS/langue/profil compactés). L'heure reste
+     visible dès qu'il y a de nouveau de la place (palier tablette,
+     ≤860px). */
+  .topbar-datetime{display:none}
+}
+
+/* --- En-tête : séparateurs, bascule thème, menu profil — fidélité au
+   modèle de référence. Recherche/notifications/FR-AR/authentification :
+   comportement inchangé, uniquement la disposition et le style. Le bloc
+   marque (logo/SécuriSite/SOC/Centre de Sécurité) a été retiré de la
+   topbar (mission TOPBAR COMPACTE) — le branding reste intact dans la
+   sidebar, jamais supprimé de là. --- */
 .topbar-sep{width:1px;height:26px;background:var(--border);flex:0 0 auto}
-@media(max-width:860px){.topbar-brand-text{display:none}}
 
 .user-menu{position:relative}
 .user-chip-btn{
+  /* MISSION TOPBAR COMPACTE §8 : ensemble légèrement resserré (gap/padding
+     réduits) pour libérer de l'espace — avatar/nom/rôle/chevron conservés,
+     logique de profil/session inchangée. */
   cursor:pointer;border:0;background:transparent;font:inherit;
-  display:flex;align-items:center;gap:10px;padding:6px 14px;border-radius:18px;
+  display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:18px;
 }
 .user-chip-chevron{color:var(--text-muted);font-size:11px;transition:transform .15s}
 .user-chip-btn[aria-expanded="true"] .user-chip-chevron{transform:rotate(180deg)}
@@ -1562,12 +1696,19 @@ body.role-agent .admin-only{ display:none !important; }
 
 .lang-select-hidden{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
 .lang-menu{position:relative}
+/* MISSION TOPBAR COMPACTE §7 : "FR / AR" (les deux langues affichées à la
+   fois) devient un bouton ultra-compact affichant SEULEMENT la langue
+   ACTIVE ("FR⌄" ou "AR⌄", texte posé par app.js#syncLangMenuButtonLabel —
+   même mécanisme de traduction que le reste, jamais un second sélecteur :
+   le menu déroulant conserve les deux choix explicites). Réduit au
+   minimum (ajustement visuel demandé après coup) — >=32px conservé comme
+   plancher tactile minimal. */
 .lang-menu-btn{
   cursor:pointer;border:0;background:var(--sidebar-bg,#0f1b3d);color:#fff;font:inherit;
-  display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:999px;
-  font-size:12px;font-weight:800;letter-spacing:.5px;
+  display:flex;align-items:center;gap:2px;padding:4px 6px;border-radius:999px;
+  font-size:11px;font-weight:800;letter-spacing:.3px;min-width:32px;min-height:32px;justify-content:center;
 }
-.lang-menu-chevron{font-size:11px;transition:transform .15s}
+.lang-menu-chevron{font-size:9px;transition:transform .15s}
 .lang-menu-btn[aria-expanded="true"] .lang-menu-chevron{transform:rotate(180deg)}
 .lang-menu-dropdown{
   position:absolute;top:calc(100% + 8px);inset-inline-start:0;min-width:140px;
@@ -1580,12 +1721,30 @@ body.role-agent .admin-only{ display:none !important; }
 }
 .lang-menu-dropdown button:hover{background:var(--bg-2);color:var(--primary)}
 
+/* MISSION TOPBAR COMPACTE §9 : capsule rouge foncé/bordeaux premium,
+   remplace le disque rouge vif — logique de maintien 1,5s/déclenchement
+   totalement inchangée (frontend/js/sos.js, agnostique de la forme du
+   bouton : .sos-fill se remplit toujours en fonction de la géométrie réelle
+   du bouton via inset:0). width auto (plus une largeur fixe carrée) pour
+   accueillir l'icône + le texte côte à côte, comme le reste des contrôles
+   compacts de la topbar (lang-menu-btn notamment, même famille visuelle
+   pilule sombre). */
 .topbar .sos-button{
-  width:52px!important;height:52px!important;font-size:9px;
-  margin-inline-start:6px;
-  box-shadow:0 0 0 6px var(--danger-glow),0 8px 20px rgba(255,95,109,.4)!important;
+  width:auto!important;height:40px!important;min-width:0;
+  padding:0 16px 0 13px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-size:12px;font-weight:800;letter-spacing:.4px;
+  background:linear-gradient(180deg,#8f1029 0%,#5c0a1c 100%)!important;
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 0 0 4px rgba(143,16,41,.16),0 10px 22px rgba(92,10,28,.45),inset 0 1px 0 rgba(255,255,255,.14)!important;
+  margin-inline-start:0;
 }
-.topbar .sos-fill{border-radius:50%}
+.topbar .sos-button:hover{transform:translateY(-1px) scale(1.03)}
+.topbar .sos-button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.topbar .sos-button:active,.topbar .sos-button.sos-holding{transform:scale(1.06)}
+.topbar .sos-fill{border-radius:999px}
+.topbar .sos-label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.topbar .sos-icon{font-size:13px;line-height:1}
 
 /* --- Thème clair/sombre réel : mêmes jetons CSS (var(--bg)/--surface/--text/
    ...) déjà utilisés dans tout le fichier — bascule data-theme sur <html>,
@@ -1618,15 +1777,14 @@ body.role-agent .admin-only{ display:none !important; }
   border-color:rgba(255,255,255,.08);
 }
 :root[data-theme="dark"] .card,
-:root[data-theme="dark"] .kpi-card,
-:root[data-theme="dark"] .ui2-hero-time{background:rgba(20,29,51,.86)}
+:root[data-theme="dark"] .kpi-card{background:rgba(20,29,51,.86)}
 :root[data-theme="dark"] .login-overlay{background:var(--bg)}
 :root[data-theme="dark"] .sidebar{box-shadow:0 0 0 1px rgba(255,255,255,.04) inset!important}
 
 /* --- Hero du tableau de bord --- */
 /* .clean-orb masqué en ligne dans le HTML (aucune donnée perdue :
    updateCleanHeroStatus()/runDashboardAnalysis() ne le référencent jamais,
-   seulement #cleanHeroStatus et #cleanStatusText, tous deux conservés). */
+   seulement #cleanHeroStatus, conservé). */
 .ui2-hero{
   grid-template-columns:1fr auto auto;gap:18px;padding:16px 22px;
   min-height:0;align-items:center;
@@ -1645,22 +1803,6 @@ body.role-agent .admin-only{ display:none !important; }
 .ui2-hero-copy h2{font-size:20px;margin-bottom:0}
 .ui2-hero-copy .clean-actions{gap:8px;margin-top:10px}
 .ui2-hero-copy .btn{padding:8px 14px;font-size:12.5px}
-/* Demande utilisateur : agrandir le bloc date/heure/état du hero. */
-.ui2-hero-time{
-  align-self:stretch;display:flex;flex-direction:column;justify-content:center;
-  background:rgba(255,255,255,.85);border-radius:18px;padding:18px 26px;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.8),0 14px 34px rgba(37,55,88,.10);
-  min-width:230px;position:relative;z-index:1;
-}
-.ui2-hero-date{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-muted);text-transform:capitalize}
-.ui2-hero-clock{font-size:28px;font-weight:800;color:var(--text-bright);font-family:var(--font-mono);margin:5px 0 12px}
-.ui2-hero-status{display:flex;align-items:center;gap:10px}
-.ui2-hero-status .live-dot{width:11px;height:11px;background:var(--success);border-radius:50%;box-shadow:0 0 8px var(--success-glow);animation:pulse 1.2s infinite;flex:0 0 auto}
-.ui2-hero-status strong{display:block;font-size:14px;color:var(--text-bright)}
-.ui2-hero-status small{color:var(--text-muted);font-size:12px}
-.clean-hero.danger .ui2-hero-status .live-dot{background:var(--danger);box-shadow:0 0 8px var(--danger-glow)}
-.clean-hero.danger .ui2-hero-status small,.clean-hero.danger .ui2-hero-status #cleanStatusText{color:var(--danger)}
-.clean-hero.analyzing .ui2-hero-status .live-dot{background:var(--warning);box-shadow:0 0 8px var(--warning-glow)}
 .ui2-hero-sos{
   width:88px;height:88px;font-size:11px;flex:0 0 auto;align-self:center;position:relative;z-index:1;
   box-shadow:0 0 0 6px rgba(255,95,109,.12),0 14px 30px rgba(255,95,109,.28);
@@ -1668,17 +1810,15 @@ body.role-agent .admin-only{ display:none !important; }
 .ui2-hero-sos .sos-label small{display:block;font-size:7.5px;font-weight:500;opacity:.85;text-transform:none;letter-spacing:0}
 .ui2-hero-sos-icon{display:block;font-size:18px;margin-bottom:2px;filter:grayscale(1) brightness(4)}
 @media(max-width:1180px){
-  .ui2-hero{grid-template-columns:1fr 1fr;grid-template-areas:"copy copy" "photo photo" "time sos";text-align:center}
+  .ui2-hero{grid-template-columns:1fr 1fr;grid-template-areas:"copy copy" "photo photo" "sos sos";text-align:center}
   .ui2-hero-copy{grid-area:copy}
   .ui2-hero-photo{grid-area:photo;min-height:100px;justify-content:center;align-items:center}
-  .ui2-hero-time{grid-area:time}
   .ui2-hero-sos{grid-area:sos;margin-inline:auto}
 }
 @media(max-width:980px){
-  .ui2-hero{grid-template-columns:1fr;grid-template-areas:"copy" "photo" "time" "sos"}
-  .ui2-hero-copy,.ui2-hero-photo,.ui2-hero-time,.ui2-hero-sos{grid-area:auto}
+  .ui2-hero{grid-template-columns:1fr;grid-template-areas:"copy" "photo" "sos"}
+  .ui2-hero-copy,.ui2-hero-photo,.ui2-hero-sos{grid-area:auto}
   .ui2-hero-photo{width:100%;min-height:110px}
-  .ui2-hero-time{margin:auto}
   .ui2-hero-sos{margin:auto}
 }
 
@@ -1762,11 +1902,8 @@ body{
    RÉELLEMENT gagnante pour leur fond avant ce lot (plus loin dans le
    fichier que la nouvelle source unique, donc prioritaire par ordre de
    cascade) : celle qui rendait les cartes teintées/translucides plutôt que
-   blanches. .ui2-hero-time (widget horloge du hero, hors périmètre des 17
-   composants de ce lot) conserve sa teinte, inchangée. */
-.ui2-hero-time{
-  background:rgba(233,241,253,.86);
-}
+   blanches. .ui2-hero-time (widget horloge du hero) a été retiré (mission
+   TOPBAR GLOBALE, déplacé dans .topbar-status) — plus rien à teinter ici. */
 /* WHITE UI : .clean-hero retiré d'ici — le fond blanc défini à sa source
    (plus haut) ne doit plus être recouvert de dégradés décoratifs. */
 
@@ -2108,4 +2245,257 @@ body{
   .mc-search{order:1}
   .mc-urgency{order:2;margin-top:0;margin-bottom:6px}
   .mc-grid{order:3}
+}
+
+/* ============================================================
+   ADMINISTRATION SYSTÈME — RECETTE VISUELLE ÉCRAN 1 (Vue générale)
+   Navigation horizontale supprimée : la sidebar porte désormais 16
+   sous-entrées .nav-sub-item sous "Administration système"
+   (frontend/index.html). Réutilise .nav-item pour l'état/hover/actif ;
+   seule l'indentation et une taille légèrement réduite distinguent le
+   sous-menu du niveau racine — cohérent avec le motif .nav-title déjà
+   utilisé pour "Contrôle d'accès".
+   ============================================================ */
+.nav-sub-item{padding-inline-start:34px;font-size:12px}
+.nav-sub-item .nav-icon{font-size:12.5px;width:16px}
+
+.admin-header{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  flex-wrap:wrap;margin-bottom:18px;
+}
+.admin-header-title{margin:0 0 4px;font-size:22px;font-weight:700;color:var(--text-bright,var(--text))}
+.admin-header-subtitle{margin:0;color:var(--text-muted);font-size:13px}
+.admin-header-state{flex:0 0 auto}
+
+.admin-cockpit-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:18px;margin-bottom:18px;align-items:start;
+}
+.admin-widget-body{display:flex;flex-direction:column;gap:2px}
+.admin-status-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 2px;border-bottom:1px solid var(--border-subtle,var(--border));font-size:13px;
+}
+.admin-status-row:last-child{border-bottom:0}
+.admin-activity-row{
+  display:flex;align-items:center;gap:10px;padding:8px 2px;
+  border-bottom:1px solid var(--border-subtle,var(--border));font-size:12.5px;flex-wrap:wrap;
+}
+.admin-activity-row:last-child{border-bottom:0}
+.admin-activity-time{color:var(--text-muted);flex:0 0 auto;font-size:11.5px;white-space:nowrap}
+.admin-activity-text{flex:1 1 auto;min-width:0}
+.admin-big-number{font-size:42px;font-weight:800;line-height:1;color:var(--primary,var(--color-info))}
+.admin-cockpit-actions{display:flex;gap:10px;flex-wrap:wrap}
+.admin-kpi-clickable{cursor:pointer}
+.admin-kpi-clickable:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:2px}
+
+@media(max-width:640px){
+  .admin-header{flex-direction:column;align-items:stretch}
+  .admin-cockpit-grid{grid-template-columns:1fr}
+  .admin-big-number{font-size:32px}
+}
+
+/* Sites — suppression (LOT 19 allégé) : colonne de sélection + barre
+   d'action fixe sous le tableau, jamais un bouton "Supprimer" trivial
+   sans confirmation ni motif (voir frontend/js/admin-system.js). */
+.admin-select-col{width:36px;text-align:center}
+.admin-delete-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:10px;padding:10px 14px;border-radius:10px;
+  background:rgba(255,95,109,.08);border:1px solid var(--danger,#ff5f6d);
+  font-size:13px;font-weight:600;
+}
+
+/* Groupes — alignement sur la maquette validée. Bloc visuel UNIQUE (pas
+   deux cartes génériques posées côte à côte) : .admin-groups-shell est le
+   seul conteneur avec bordure/ombre, la liste et la fiche sont deux
+   régions internes séparées par une bordure verticale, jamais deux .card
+   indépendantes. display:flex suit nativement dir="rtl"/"ltr" (ui.js
+   #setLanguage pose document.documentElement.dir) : liste/fiche s'inversent
+   sans règle miroir séparée, même mécanisme que le reste de l'application. */
+.admin-groups-page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.admin-groups-page-title{font-size:20px;font-weight:800;color:var(--color-text)}
+.admin-groups-page-subtitle{font-size:12.5px;color:var(--text-muted);margin-top:2px}
+
+.admin-groups-shell{
+  background:#fff;border:1px solid var(--border-subtle);border-radius:var(--radius-xl);
+  box-shadow:var(--shadow-md);overflow:hidden;
+}
+.admin-groups-layout{display:flex;align-items:stretch}
+.admin-groups-list-col{flex:0 0 40%;min-width:340px;border-inline-end:1px solid var(--border-subtle);display:flex;flex-direction:column}
+.admin-groups-detail-col{flex:1 1 0;min-width:0;padding:22px 26px}
+.admin-groups-row-selected{background:rgba(37,117,252,.08)}
+.admin-groups-row-clickable{cursor:pointer}
+.admin-groups-row-clickable:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:-2px}
+.admin-groups-back-btn{display:none}
+
+.admin-groups-list-header{
+  padding:17px 20px;border-bottom:1px solid var(--border-subtle);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+}
+.admin-groups-list-title{font-size:14px;font-weight:800;color:var(--color-text);display:flex;align-items:center;gap:8px}
+.admin-groups-list-body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:12px}
+.admin-groups-pills{display:flex;gap:6px;flex-wrap:wrap}
+.admin-groups-pill{
+  padding:6px 12px;border-radius:999px;border:1px solid var(--border-subtle);background:var(--bg-2,#f6f8fb);
+  font-size:11.5px;font-weight:700;color:var(--text-muted);cursor:pointer;white-space:nowrap;transition:all .15s;
+}
+.admin-groups-pill:hover{color:var(--text)}
+.admin-groups-pill.active{background:var(--primary,var(--color-info));color:#fff;border-color:transparent}
+/* table-layout:fixed : la largeur NATURELLE de ce tableau à 6 colonnes
+   (~500px de contenu) dépasse presque toujours la largeur réellement
+   disponible de .admin-groups-list-col (320-543px selon l'écran) — sans
+   layout fixe, .table-wrap (overflow-x:auto) fait alors défiler le
+   tableau HORIZONTALEMENT À L'INTÉRIEUR de la colonne liste, souvent sans
+   que l'utilisateur ne le remarque (barre de défilement fine, colonne
+   Code poussée hors-vue) : symptôme réel observé — un code de groupe
+   affiché tronqué au milieu ("...ette-mucxza63" au lieu de "dhl-recette-
+   mucxza63"), en-tête "Code" invisible. width:100% + colonnes en % force
+   le tableau à toujours tenir dans sa colonne, quelle que soit la largeur
+   d'écran ; le texte trop long (codes/noms) est tronqué proprement par
+   ellipsis plutôt que de pousser le tableau plus large que son
+   conteneur — valeur complète toujours consultable via title="…". */
+/* Correction visuelle (colonne liste trop comprimée) : la colonne liste
+   passe de 34% à 40% (§1 mission) et le bouton texte "Ouvrir" par ligne
+   est remplacé par un menu compact "⋯" (§3) — l'espace ainsi libéré va
+   entièrement à Code/Nom, qui n'ont donc plus besoin d'un ellipsis aussi
+   agressif. Les en-têtes reçoivent aussi overflow/ellipsis (pas seulement
+   les cellules) : sans cela, un en-tête trop long pour sa colonne fixe
+   déborde visuellement sur la colonne suivante ("chevauchement" constaté :
+   Utilisateurs/Statut). */
+.admin-groups-table{font-size:12.5px;table-layout:fixed;width:100%}
+.admin-groups-table th,.admin-groups-table td{padding:9px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-groups-table th:nth-child(1),.admin-groups-table td:nth-child(1){width:23%}
+.admin-groups-table th:nth-child(2),.admin-groups-table td:nth-child(2){width:28%}
+.admin-groups-table th:nth-child(3),.admin-groups-table td:nth-child(3){width:11%}
+.admin-groups-table th:nth-child(4),.admin-groups-table td:nth-child(4){width:15%}
+.admin-groups-table th:nth-child(5),.admin-groups-table td:nth-child(5){width:15%}
+.admin-groups-table th:nth-child(6),.admin-groups-table td:nth-child(6){width:8%}
+/* IMPORTANT : cible toujours un enfant interne (strong/span), jamais le
+   <td> lui-même — un display:block posé directement sur un <td> le sort
+   entièrement de l'algorithme table-layout:fixed (il cesse d'être une
+   vraie cellule de table et se met à rétrécir à son contenu), cassant le
+   partage de largeur de colonne : bug réel rencontré ici (colonne Nom
+   réduite à ~32px quelle que soit la largeur d'écran, alors que son
+   <th> mesurait correctement 28% de la table). */
+.admin-groups-table td:nth-child(1) strong,.admin-groups-table td:nth-child(2) span{
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
+}
+.admin-groups-table th:nth-child(3),.admin-groups-table th:nth-child(4),
+.admin-groups-table td:nth-child(3),.admin-groups-table td:nth-child(4){text-align:center}
+.admin-groups-table td:nth-child(6){padding-inline:4px;text-align:center;overflow:visible}
+
+/* Ligne ouvrable au clic ET au clavier (§3/§4 mission) — remplace le gros
+   bouton "Ouvrir" par ligne. Le rôle natif <tr> est conservé (jamais
+   role="button" qui casserait la sémantique de table pour un lecteur
+   d'écran) ; tabindex + gestionnaires suffisent à l'activer au clavier,
+   aria-selected signale déjà la ligne courante (posé en JS). */
+.admin-groups-table tbody tr{cursor:pointer}
+.admin-groups-table tbody tr:hover{background:var(--bg-2,#f6f8fb)}
+.admin-groups-table tbody tr.admin-groups-row-selected:hover{background:rgba(37,117,252,.12)}
+.admin-groups-table tbody tr:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:-2px}
+
+/* Bouton "⋯" compact (menu d'actions par ligne) — même famille visuelle
+   que .admin-groups-icon-btn (retirer un site), jamais un second style
+   inventé. stopPropagation() (posé en JS) empêche l'ouverture de la ligne
+   quand on ouvre ce menu (§4 mission). */
+.admin-groups-row-menu-btn{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-2,#f6f8fb);
+  color:var(--text-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  font-size:16px;line-height:1;font-weight:800;flex:0 0 auto;
+}
+.admin-groups-row-menu-btn:hover{background:var(--surface-3,#eef2f8);color:var(--text)}
+.admin-groups-row-menu-btn:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:1px}
+.admin-groups-table td:nth-child(6) .admin-actions-menu{display:inline-block}
+
+/* Empty-state du panneau droit : aucun cadre de carte, juste un message
+   centré — la fiche remplace ce bloc une fois un groupe ouvert. */
+.admin-groups-empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:420px;text-align:center;color:var(--text-muted);gap:10px;
+}
+.admin-groups-empty-icon{font-size:36px;opacity:.35}
+
+/* Header de fiche : avatar + identité + méta, actions séparées
+   (Modifier / Plus d'actions ▾ / Fermer discret) — jamais une simple
+   ligne "Nom (code) Statut" ni un bouton Fermer dominant. */
+.admin-group-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--border-subtle)}
+.admin-group-header-main{display:flex;align-items:center;gap:14px;min-width:0}
+.admin-group-avatar{
+  width:52px;height:52px;border-radius:14px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;letter-spacing:.5px;
+}
+.admin-group-header-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.admin-group-name{font-size:19px;font-weight:800;color:var(--color-text)}
+.admin-group-header-meta{font-size:12px;color:var(--text-muted);margin-top:3px}
+.admin-group-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-groups-close-icon{width:32px;height:32px;font-size:13px}
+
+.admin-actions-menu{position:relative}
+.admin-actions-dropdown{
+  position:absolute;top:calc(100% + 6px);inset-inline-end:0;min-width:170px;
+  background:var(--surface,#fff);border:1px solid var(--border-subtle);border-radius:var(--radius-md,10px);
+  box-shadow:var(--shadow-lg);z-index:40;overflow:hidden;padding:6px;
+}
+.admin-actions-dropdown button{
+  display:block;width:100%;padding:9px 12px;background:none;border:0;border-radius:8px;
+  color:var(--text);font-size:13px;text-align:start;cursor:pointer;
+}
+.admin-actions-dropdown button:hover{background:var(--bg-2,#f2f5fa)}
+.admin-actions-dropdown-danger{color:var(--danger,#ff5f6d)!important}
+.admin-actions-dropdown-danger:hover{background:rgba(255,95,109,.08)!important}
+
+.admin-group-tab-content{padding-top:16px}
+
+/* Onglet Informations — consultation par défaut (jamais un formulaire
+   toujours en édition) ; "Modifier" (header) bascule vers des champs. */
+.admin-group-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px}
+.admin-group-info-item{display:flex;flex-direction:column;gap:4px}
+.admin-group-info-item.full{grid-column:1/-1}
+.admin-group-info-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
+.admin-group-info-value{font-size:14px;color:var(--color-text)}
+
+.admin-groups-sites-banner{
+  display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;
+  background:rgba(37,117,252,.06);border:1px solid rgba(37,117,252,.18);font-size:12.5px;color:var(--text-muted);margin-bottom:14px;
+}
+.admin-groups-sites-panel-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;min-height:34px}
+.admin-groups-sites-panel-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)}
+.admin-groups-icon-btn{
+  width:28px;height:28px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-2,#f6f8fb);
+  color:var(--danger,#ff5f6d);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto;
+}
+.admin-groups-icon-btn:hover{background:rgba(255,95,109,.1);border-color:var(--danger,#ff5f6d)}
+
+/* Case "Sites disponibles" — zone cliquable/tactile agrandie (mission :
+   "suffisamment grande et accessible") sans toucher au design/layout déjà
+   validé du double panneau : seule la taille de la case elle-même change
+   (13px natif → 17px), le padding existant de la cellule (td{padding:11px
+   14px}) reste identique. */
+.group-avail-check{width:17px;height:17px;cursor:pointer;accent-color:var(--primary,var(--color-info))}
+.group-avail-check:disabled{cursor:not-allowed}
+.group-avail-check:focus-visible{outline:2px solid var(--primary,var(--color-info));outline-offset:2px}
+
+/* Tablette (ex: 820px) : le sidebar off-canvas libère toute la largeur dès
+   860px (règle .sidebar existante) — largeur "suffisante" au sens de la
+   mission pour garder deux colonnes, juste des proportions resserrées.
+   Seule la vraie largeur mobile (téléphone) force une section unique. */
+@media(max-width:900px){
+  .admin-groups-list-col{flex-basis:42%;min-width:300px}
+  .admin-groups-detail-col{padding:18px 20px}
+}
+@media(max-width:520px){.admin-group-info-grid{grid-template-columns:1fr}}
+
+@media(max-width:640px){
+  .admin-groups-shell{border:0;box-shadow:none;background:transparent;border-radius:0}
+  .admin-groups-layout{display:block}
+  .admin-groups-list-col{min-width:0;border-inline-end:0}
+  .admin-groups-detail-col{padding:0}
+  /* Mobile : une seule section visible à la fois — la liste par défaut,
+     la fiche seulement après un "Ouvrir" (classe posée par
+     openGroupDetail/closeGroupDetail, jamais par CSS seul). */
+  .admin-groups-detail-col{display:none}
+  .admin-groups-layout.admin-groups-showing-detail .admin-groups-list-col{display:none}
+  .admin-groups-layout.admin-groups-showing-detail .admin-groups-detail-col{display:block}
+  .admin-groups-back-btn{display:inline-flex}
 }

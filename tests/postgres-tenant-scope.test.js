@@ -43,7 +43,10 @@ test('003 creates tenants / sites / zones with the expected columns and defaults
       "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position",
       [t]).then(r => r.rows);
     const tenants = await cols('tenants');
-    assert.deepEqual(tenants.map(x => x.column_name), ['id', 'code', 'name', 'status', 'created_at']);
+    // description/updated_at/archived_at ajoutés par la migration 018 (LOT
+    // GROUPES : groupe = tenant réutilisé, jamais une table dupliquée) —
+    // colonnes 003 d'origine jamais renommées.
+    assert.deepEqual(tenants.map(x => x.column_name), ['id', 'code', 'name', 'status', 'created_at', 'description', 'updated_at', 'archived_at']);
     assert.equal(tenants.find(x => x.column_name === 'id').data_type, 'uuid');
     assert.match(tenants.find(x => x.column_name === 'id').column_default, /gen_random_uuid\(\)/);
     assert.equal(tenants.find(x => x.column_name === 'created_at').data_type, 'timestamp with time zone');
@@ -102,12 +105,23 @@ test('a zone whose tenant_id differs from its site is rejected by the composite 
   });
 });
 
-test('changing a site tenant while zones reference it is blocked by the composite foreign key', async t => {
+test('MISSION — TRANSFERT INTER-GROUPES : changing a site tenant now succeeds and cascades to its zones (migration 019)', async t => {
   const { env } = await scoped(t);
   await withClient(env, async c => {
     await c.query("INSERT INTO public.tenants(id,code,name) VALUES('22222222-2222-2222-2222-222222222222','t2','T2')");
-    await c.query("INSERT INTO public.zones(site_id,tenant_id,code,name) VALUES($1,$2,'z','Z')", [MAIN_SITE, LOCAL_TENANT]);
-    await rejects(c.query("UPDATE public.sites SET tenant_id='22222222-2222-2222-2222-222222222222' WHERE id=$1", [MAIN_SITE]), '23503');
+    const zoneId = (await c.query("INSERT INTO public.zones(site_id,tenant_id,code,name) VALUES($1,$2,'z','Z') RETURNING id", [MAIN_SITE, LOCAL_TENANT])).rows[0].id;
+    // Décision métier validée (rapport de mission "TRANSFERT INTER-GROUPES
+    // DES SITES") : un site avec des zones réelles DOIT pouvoir changer de
+    // groupe — la contrainte ON UPDATE RESTRICT d'origine (migration 003)
+    // rendait cela définitivement impossible ; migration 019 la remplace
+    // par ON UPDATE CASCADE (zones.tenant_id est une colonne purement
+    // dénormalisée, sans signification de sécurité propre — elle suit
+    // simplement son site parent). zones.id reste inchangé (même zone,
+    // même historique), seul zones.tenant_id suit sites.tenant_id.
+    await c.query("UPDATE public.sites SET tenant_id='22222222-2222-2222-2222-222222222222' WHERE id=$1", [MAIN_SITE]);
+    const zone = await c.query('SELECT id, tenant_id FROM public.zones WHERE id=$1', [zoneId]);
+    assert.equal(zone.rows[0].id, zoneId, 'la zone conserve exactement le même id');
+    assert.equal(zone.rows[0].tenant_id, '22222222-2222-2222-2222-222222222222', 'zones.tenant_id suit sites.tenant_id via CASCADE');
   });
 });
 
@@ -168,8 +182,14 @@ test('readiness now requires tenants/sites/zones and passes on a 003-migrated da
 });
 
 test('PG-6 does not activate anything at the grant level; PG-9 row-level security requires a real actor context', async t => {
-  assert.equal(PRIVILEGES.tenants, 'SELECT');
-  assert.equal(PRIVILEGES.sites, 'SELECT');
+  // tenants gagne INSERT,UPDATE à la migration 018 (LOT Groupes — tenants
+  // EST le référentiel Groupe canonique, jamais dupliqué ; pas de DELETE).
+  assert.equal(PRIVILEGES.tenants, 'SELECT,INSERT,UPDATE');
+  // sites gagne INSERT,UPDATE à la migration 015 (Administration Système,
+  // backend/admin-sites.js — création/modification/statut de site) puis
+  // DELETE (suppression refusée dès qu'une donnée réelle en dépend) ; zones
+  // reste lecture seule tant que sa propre mutation (LOT 6) n'est pas livrée.
+  assert.equal(PRIVILEGES.sites, 'SELECT,INSERT,UPDATE,DELETE');
   assert.equal(PRIVILEGES.zones, 'SELECT');
   const { env, n } = await scoped(t);
   const role = 'sec_test_scope_app_' + tag();
@@ -180,6 +200,12 @@ test('PG-6 does not activate anything at the grant level; PG-9 row-level securit
     await c.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
     await c.query(`GRANT USAGE ON SCHEMA securisite_meta TO "${role}"`);
     await c.query(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_tenant_ids() TO "${role}"`);
+    // Migration 017 : chaque politique RLS du référentiel de scope évalue
+    // désormais aussi current_actor_is_global_admin() (exception
+    // Administrateur global) — EXECUTE requis même pour ce rôle 'agent' non
+    // admin, sinon l'évaluation de la politique échoue avant de pouvoir
+    // même conclure "false".
+    await c.query(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_is_global_admin() TO "${role}"`);
     for (const s of SCOPE) await c.query(`GRANT SELECT ON public.${s} TO "${role}"`);
     userId = (await c.query(
       "INSERT INTO public.users(username,password_hash,role) VALUES('scope-rls','fixture','agent') RETURNING id")).rows[0].id;

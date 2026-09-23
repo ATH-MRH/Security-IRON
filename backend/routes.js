@@ -9,6 +9,9 @@ const push    = require('./push');
 const aiSummaries = require('./ai/summaries');
 const mcEvents = require('./maincourante-events');
 const mcWorkflows = require('./maincourante-workflows');
+const adminSites = require('./admin-sites');
+const adminGroups = require('./admin-groups');
+const permissions = require('./permissions');
 
 const router = express.Router();
 const uid  = (p = 'ID') => p + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -45,11 +48,15 @@ const requireAdmin = (req, res, next) => {
 // 401 muette — même event_type qu'ailleurs (auth.session.revoked).
 router.use(async (req, res, next) => {
   try {
-    const fresh = req.user ? await db.get('SELECT id, username, role FROM public.users WHERE id=$1', [req.user.id]) : null;
-    if (!fresh) {
+    const fresh = req.user ? await db.get('SELECT id, username, role, status FROM public.users WHERE id=$1', [req.user.id]) : null;
+    // LOT 8 (migration 016) : un compte bloqué APRÈS l'émission du JWT (jusqu'à
+    // 8h) doit perdre l'accès immédiatement — même mécanisme PG-25 que pour un
+    // compte supprimé ou rétrogradé, jamais une simple vérification au login.
+    if (!fresh || fresh.status === 'blocked') {
       await securityAudit.recordBestEffort({
         ...auditFields(req), actorUserId: req.user?.id ?? null,
         eventType: 'auth.session.revoked', resourceType: 'session', action: 'access', outcome: 'denied',
+        detail: fresh ? { reason: 'blocked' } : { reason: 'deleted' },
       });
       return res.status(401).json({ error: 'Session révoquée' });
     }
@@ -91,9 +98,24 @@ router.use((req, res, next) => {
 /* ============================================================ */
 /*  ADMINISTRATION SYSTÈME                                      */
 /* ============================================================ */
+// LOT 3/4/5 : Sites — additif, ne remplace rien. Même gate requireAdmin que
+// le reste de /admin/* (routes.js:70 contourne requireScope pour ce préfixe
+// entier : la création/l'archivage d'un site est une capacité de compte
+// globale, pas scope-limitée).
+router.use('/admin', requireAdmin, adminSites.router);
+router.use('/admin', requireAdmin, adminGroups.router);
+
+// LOT 9 : référentiel Rôles & Permissions — lecture seule, statique
+// (backend/permissions.js, jamais un éditeur dynamique — voir son
+// en-tête). N'EST PAS l'assignation d'un rôle à un utilisateur pour un
+// site donné (memberships), qui reste hors périmètre de ce lot.
+router.get('/admin/roles', requireAdmin, (req, res) => {
+  res.json({ roles: permissions.ROLES, modules: permissions.MODULES, verbs: permissions.VERBS, permissions: permissions.PERMISSIONS });
+});
+
 router.get('/admin/users', requireAdmin, async (req, res, next) => {
   try {
-    res.json(await db.all('SELECT id, username, nom_complet, role, created_at FROM users ORDER BY role, username'));
+    res.json(await db.all('SELECT id, username, nom_complet, role, status, sos_recipient, created_at, updated_at FROM users ORDER BY role, username'));
   } catch (e) { next(e); }
 });
 
@@ -177,6 +199,66 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// LOT 8 (migration 016) : transition de statut dédiée, distincte de PUT
+// /admin/users/:id (identité/rôle) — même raison que sites/:id/status : un
+// blocage/déblocage est un événement métier propre, mérite sa propre entrée
+// d'audit plutôt que d'être noyé dans "changed_fields".
+router.put('/admin/users/:id/status', requireAdmin, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { status, reason } = req.body || {};
+    if (!['active', 'blocked'].includes(status)) return res.status(400).json({ error: 'Statut invalide' });
+    if (id === req.user.id && status === 'blocked') return res.status(400).json({ error: 'Impossible de bloquer votre propre compte' });
+    const current = await db.get('SELECT id, username, role, status FROM users WHERE id=$1', [id]);
+    if (!current) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    if (current.status === status) return res.status(409).json({ error: 'Le compte est déjà dans ce statut' });
+    const row = await db.transaction(async client => {
+      const updated = await client.get(
+        `UPDATE users SET status=$1, blocked_at=CASE WHEN $1='blocked' THEN now() ELSE NULL END WHERE id=$2
+         RETURNING id, username, nom_complet, role, status, created_at, updated_at`,
+        [status, id]);
+      await securityAudit.record({
+        ...auditFields(req), ...actorFields(req),
+        eventType: 'user.status_change', resourceType: 'user', resourceId: String(id), action: 'update', outcome: 'success',
+        detail: { before_status: current.status, after_status: status, reason: reason || null },
+      }, client);
+      return updated;
+    });
+    res.json(row);
+  } catch (e) { next(e); }
+});
+
+// Bouton SOS réel (mission « panic button ») — décision produit validée :
+// désignation par simple case à cocher PAR COMPTE (migration 021), même
+// convention que PUT /admin/users/:id/status ci-dessus (transition dédiée,
+// sa propre entrée d'audit, distincte du PUT générique identité/rôle).
+// Le déclenchement effectif (POST /alerts/sos) lit ce booléen à chaque
+// création d'alerte SOS — voir backend/alert-core/recipients.js
+// #broadcastToSosDesignated, jamais un second mécanisme.
+router.put('/admin/users/:id/sos-recipient', requireAdmin, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { sos_recipient } = req.body || {};
+    if (typeof sos_recipient !== 'boolean') return res.status(400).json({ error: 'sos_recipient (booléen) requis' });
+    const current = await db.get('SELECT id, username, sos_recipient FROM users WHERE id=$1', [id]);
+    if (!current) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    if (current.sos_recipient === sos_recipient) return res.status(409).json({ error: 'Déjà dans cet état' });
+    const row = await db.transaction(async client => {
+      const updated = await client.get(
+        `UPDATE users SET sos_recipient=$1 WHERE id=$2
+         RETURNING id, username, nom_complet, role, status, sos_recipient, created_at, updated_at`,
+        [sos_recipient, id]);
+      await securityAudit.record({
+        ...auditFields(req), ...actorFields(req),
+        eventType: 'user.sos_recipient_change', resourceType: 'user', resourceId: String(id), action: 'update', outcome: 'success',
+        detail: { before: current.sos_recipient, after: sos_recipient },
+      }, client);
+      return updated;
+    });
+    res.json(row);
+  } catch (e) { next(e); }
+});
+
 // PG-10 : lecture du journal de sécurité global. requireAdmin (rôle JWT) est
 // une première porte grossière ; l'application réelle est la RLS (migration
 // 006, policy security_audit_soc_read) — via withActorContext, seul un
@@ -248,7 +330,83 @@ router.get('/admin/system', requireAdmin, async (req, res, next) => {
     for (const t of tables) {
       counts[t] = int((await db.get(`SELECT COUNT(*) as c FROM ${t}`)).c);
     }
-    res.json({ counts, database: 'PostgreSQL', server_time: now(), user: req.user });
+    // LOT 2 (Administration Système — cockpit) : KPI réels, jamais une
+    // constante. "caméras si réellement disponibles" : backend/camera-registry.js
+    // est un fichier JSON, pas une table — comptée séparément, jamais forcée à
+    // zéro pour ne pas laisser croire "aucune caméra configurée" à tort.
+    let camerasCount = null;
+    try { camerasCount = require('./camera-registry').all().length; } catch { camerasCount = null; }
+    // sites est protégée par RLS (migration 005/017) : un db.all() nu y
+    // verrait silencieusement zéro ligne sous le rôle applicatif restreint
+    // (même classe de bug déjà trouvée et corrigée dans backend/admin-sites.js).
+    // users/mc_posts/round_circuits ne sont pas RLS-protégées, lues normalement.
+    const [sitesByStatus, usersByStatus, postesCount, roundsCount] = await Promise.all([
+      scope.withActorContext(req.user.id, client => client.all(`SELECT status, count(*)::int AS c FROM public.sites GROUP BY status`)),
+      db.all(`SELECT status, count(*)::int AS c FROM public.users GROUP BY status`),
+      db.get(`SELECT count(*)::int AS c FROM public.mc_posts WHERE status='active'`),
+      db.get(`SELECT count(*)::int AS c FROM public.round_circuits`),
+    ]);
+    const byStatus = rows => Object.fromEntries(rows.map(r => [r.status, r.c]));
+    const sitesStatus = byStatus(sitesByStatus);
+    const usersStatus = byStatus(usersByStatus);
+    let pushConfigured = false;
+    try { pushConfigured = push.getProvider() !== require('./push/fake-provider'); } catch { pushConfigured = false; }
+    res.json({
+      counts, database: 'PostgreSQL', server_time: now(), user: req.user,
+      kpis: {
+        sites_total: (sitesByStatus || []).reduce((a, r) => a + r.c, 0),
+        sites_active: sitesStatus.active || 0, sites_suspended: sitesStatus.suspended || 0, sites_archived: sitesStatus.archived || 0,
+        users_total: (usersByStatus || []).reduce((a, r) => a + r.c, 0),
+        users_active: usersStatus.active || 0, users_blocked: usersStatus.blocked || 0,
+        maincourante_codes: mcEvents.EVENTS.length,
+        postes_actifs: postesCount.c,
+        round_circuits: roundsCount.c,
+        cameras: camerasCount, // null = registre indisponible/illisible, jamais 0 par défaut
+      },
+      health: {
+        application: 'operational', // ce endpoint répond : trivialement vrai, jamais une constante affichée seule
+        postgresql: 'operational', // les requêtes ci-dessus ont réussi ; sinon l'erreur remonte via next(e)
+        push: pushConfigured ? 'operational' : 'not_configured',
+        cameras: camerasCount == null ? 'unavailable' : 'operational', // registre vide (0) reste "operational" — absence de caméra ≠ registre en panne
+        api: 'operational',
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// LOT 2 (Vue générale — recette visuelle) : widgets cockpit à données
+// réelles, endpoint dédié distinct de /admin/system (qui reste les
+// compteurs bruts déjà utilisés ailleurs). sites (RLS, migrations 005/017)
+// lu via withActorContext ; main_courante/security_audit non RLS pour la
+// première, RLS pour la seconde (migration 006) — même mécanisme que
+// /admin/security-audit existant. pg_database_size() est une métrique
+// PostgreSQL réelle (jamais une valeur inventée) : seule donnée "stockage"
+// disponible aujourd'hui, faute d'un widget disque/volume dédié.
+router.get('/admin/overview', requireAdmin, async (req, res, next) => {
+  try {
+    const { recentActivity, sitesByStatus, topSites } = await scope.withActorContext(req.user.id, async client => ({
+      recentActivity: await client.all(
+        `SELECT id, created_at, actor_username, event_type, resource_type, resource_id, outcome
+         FROM public.security_audit ORDER BY created_at DESC, id DESC LIMIT 8`),
+      sitesByStatus: await client.all(`SELECT status, count(*)::int AS c FROM public.sites GROUP BY status`),
+      topSites: await client.all(
+        `SELECT s.id, s.name, count(mc.id)::int AS c
+         FROM public.sites s JOIN public.main_courante mc ON mc.site_id = s.id
+         GROUP BY s.id, s.name ORDER BY c DESC LIMIT 5`),
+    }));
+    const [mc7d, mcByCategory, storage] = await Promise.all([
+      db.get(`SELECT count(*)::int AS c FROM public.main_courante WHERE created_at >= now() - interval '7 days'`),
+      db.all(`SELECT categorie, count(*)::int AS c FROM public.main_courante WHERE categorie IS NOT NULL GROUP BY categorie ORDER BY c DESC LIMIT 10`),
+      db.get(`SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty, pg_database_size(current_database())::bigint AS bytes`),
+    ]);
+    res.json({
+      recent_activity: recentActivity,
+      sites_by_status: Object.fromEntries(sitesByStatus.map(r => [r.status, r.c])),
+      maincourante_last_7_days: mc7d.c,
+      maincourante_by_category: mcByCategory,
+      top_sites: topSites,
+      storage: { pretty: storage.pretty, bytes: Number(storage.bytes) },
+    });
   } catch (e) { next(e); }
 });
 

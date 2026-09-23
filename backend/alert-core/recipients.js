@@ -168,6 +168,43 @@ async function alertsForRecipient(userId, tenantId, client = db) {
     ORDER BY a.level DESC, a.created_at DESC`, [userId, tenantId]);
 }
 
+// Bouton SOS réel (mission « panic button ») — décision produit validée :
+// la désignation se fait par un simple booléen par compte (users.
+// sos_recipient, migration 021), global, jamais résolu depuis les
+// memberships (contrairement à resolveRecipients() ci-dessus). Appelée
+// UNIQUEMENT pour origin='SOS' (voir service.js#create) — jamais pour une
+// alerte COMMAND/INCIDENT/REGLE_BADGE, qui gardent le ciblage manuel
+// existant. users n'est pas protégé par RLS (pas de tenant_id, compte
+// global) : lu directement via le client de la transaction en cours,
+// aucun contexte d'acteur à poser ici (contrairement à resolveRecipients).
+async function broadcastToSosDesignated(alert, creatorUserId, transactionClient) {
+  return atomic(async client => {
+    const rows = await client.all(
+      `SELECT id FROM public.users WHERE sos_recipient = true AND status <> 'blocked' AND id <> $1`,
+      [creatorUserId]);
+    const ids = rows.map(r => r.id);
+    let inserted = 0;
+    for (const userId of ids) {
+      // recipient_type='user' + recipient_ref=son propre id : même forme
+      // exacte qu'une diffusion manuelle ciblant cet utilisateur précis
+      // (voir broadcast() ci-dessus) — aucune extension de schéma requise
+      // (la contrainte CHECK migration 011 autorise déjà 'user').
+      const result = await client.query(`
+        INSERT INTO public.alert_recipients(alert_id,user_id,recipient_type,recipient_ref,broadcast_by)
+        VALUES($1,$2,'user',$3,$4)
+        ON CONFLICT (alert_id,user_id) DO NOTHING`,
+        [alert.id, userId, String(userId), creatorUserId]);
+      inserted += result.rowCount;
+    }
+    if (inserted) {
+      await client.query(
+        'INSERT INTO public.alert_audit(alert_id,created_at,actor,action,detail) VALUES($1,$2,$3,$4,$5)',
+        [alert.id, new Date().toISOString(), 'system', 'DIFFUSION', `sos_designated — ${inserted} destinataire(s)`]);
+    }
+    return { recipientCount: inserted, recipientUserIds: ids };
+  }, transactionClient);
+}
+
 /** Candidats "utilisateur" pour le sélecteur de diffusion PCS01 — mêmes
  * comptes qu'une membership active sous ce tenant pourrait cibler
  * individuellement (recipientType='user' ci-dessus). Jamais depuis la
@@ -183,4 +220,4 @@ async function userCandidates(callerUserId, tenantId) {
     ORDER BY u.username`, [tenantId]));
 }
 
-module.exports = { resolveRecipients, broadcast, markReceipt, listReceipts, isRecipient, alertsForRecipient, userCandidates };
+module.exports = { resolveRecipients, broadcast, broadcastToSosDesignated, markReceipt, listReceipts, isRecipient, alertsForRecipient, userCandidates };

@@ -62,8 +62,27 @@
   <div class="nav-section nav-section-flat">
     <div class="nav-item" data-page="rapports"><span class="nav-icon">📈</span><span>Rapports</span></div>
   </div>
+  <div class="nav-section admin-only" id="adminNavSection">
+    <div class="nav-title">Administration système</div>
+    <div class="nav-item nav-sub-item active" data-page="administration" data-admin-tab="overview"><span class="nav-icon">📊</span><span>Vue générale</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="sites"><span class="nav-icon">🏢</span><span>Sites</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="groups"><span class="nav-icon">👥</span><span>Groupes</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="zones"><span class="nav-icon">📍</span><span>Zones & postes</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="users"><span class="nav-icon">🛡️</span><span>Utilisateurs</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="roles"><span class="nav-icon">🔑</span><span>Rôles & permissions</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="maincourante"><span class="nav-icon">📓</span><span>Main courante</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="alerts"><span class="nav-icon">🚨</span><span>Alertes & SOS</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="access"><span class="nav-icon">🔐</span><span>Contrôle d'accès</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="rounds"><span class="nav-icon">🚶</span><span>Rondes</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="notifications"><span class="nav-icon">🔔</span><span>Notifications</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="cameras"><span class="nav-icon">📷</span><span>Caméras / LAPI</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="integrations"><span class="nav-icon">🔗</span><span>Intégrations</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="data"><span class="nav-icon">🗄️</span><span>Données & archivage</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="settings"><span class="nav-icon">⚙️</span><span>Paramètres système</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="audit"><span class="nav-icon">📜</span><span>Journal d'audit</span></div>
+    <div class="nav-item nav-sub-item" data-page="administration" data-admin-tab="ai"><span class="nav-icon">🤖</span><span>Intelligence IA</span></div>
+  </div>
   <div class="nav-section">
-    <div class="nav-title">Administration</div>
     <div class="nav-item admin-only" data-page="utilisateurs"><span class="nav-icon">🛡️</span><span>Utilisateurs système</span></div>
     <div class="nav-item admin-only" data-page="parametres"><span class="nav-icon">⚙️</span><span>Paramètres</span></div>
   </div>
@@ -78,17 +97,17 @@
   <div class="topbar">
     <div class="topbar-left">
       <button class="menu-toggle" id="menuToggle" type="button" onclick="toggleSidebar()" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="sidebar">☰</button>
-      <div class="topbar-brand">
-        <img class="app-logo app-logo-topbar" src="assets/iron-global-securite-logo.png" alt="Iron Global Sécurité">
-        <div class="topbar-brand-text">
-          <strong>SécuriSite</strong>
-          <span>SOC</span>
-          <small>Centre de Sécurité</small>
-        </div>
-      </div>
       <div class="page-title" id="pageTitle" hidden>Tableau de bord</div>
       <div class="live-indicator"><span class="live-dot"></span> EN DIRECT</div>
     </div>
+    <!-- MISSION TOPBAR COMPACTE — visuel validé : le bloc marque (logo/
+         SécuriSite/SOC/Centre de Sécurité) est retiré UNIQUEMENT de la
+         topbar (le branding de la sidebar, lui, reste intact plus haut dans
+         ce fichier) — la recherche devient le premier élément important à
+         gauche. Largeur fixe et réduite (ajustement visuel demandé après
+         coup) : .topbar-spacer, juste après, absorbe l'espace restant pour
+         garder date/voyant/notifications/langue/utilisateur/SOS ancrés à
+         droite. -->
     <div class="topbar-search">
       <!-- Raccourci rapide vers les pages existantes (données déjà en mémoire
            côté client, aucune API dédiée) — pas une recherche plein texte sur
@@ -98,20 +117,54 @@
       <kbd>⌘K</kbd>
       <div class="topbar-search-results" id="topbarSearchResults" hidden></div>
     </div>
+    <div class="topbar-spacer" aria-hidden="true"></div>
+    <span class="topbar-sep" aria-hidden="true"></span>
+    <!-- Date/heure : un seul mécanisme (app.js#initTopbarStatus/
+         tickTopbarClock), inchangé depuis la mission TOPBAR GLOBALE — seule
+         la présentation change ici (date petite, heure renforcée). -->
+    <div class="topbar-datetime">
+      <span class="topbar-date-full" id="topbarDateFull">—</span>
+      <span class="topbar-date-short" id="topbarDateShort">—</span>
+      <span class="topbar-clock-full" id="topbarClockFull">--:--:--</span>
+      <span class="topbar-clock-short" id="topbarClockShort">--:--</span>
+    </div>
+    <span class="topbar-sep" aria-hidden="true"></span>
+    <!-- MISSION TOPBAR COMPACTE — voyant seul (plus de pilule texte
+         permanente "Système opérationnel / Tous les services critiques
+         disponibles", retirée) : même logique de santé réelle qu'avant
+         (app.js#refreshTopbarHealth/classifyTopbarHealth, GET /admin/system
+         pour un administrateur ou GET /api/ready en repli, jamais de
+         donnée inventée) — seul l'affichage devient une pastille compacte
+         cliquable, aria-label dynamique porte le texte d'état, le popover
+         détaillé reste inchangé au clic. -->
+    <div class="topbar-status">
+      <button type="button" class="topbar-health" id="topbarHealthButton"
+        aria-haspopup="true" aria-expanded="false" aria-controls="topbarHealthPopover"
+        aria-label="État système — cliquer pour le détail des services"
+        onclick="toggleTopbarHealthPopover()">
+        <span class="topbar-health-dot topbar-health-unknown" id="topbarHealthDot" aria-hidden="true"></span>
+      </button>
+      <div class="topbar-health-popover" id="topbarHealthPopover" hidden role="region" aria-label="État des services">
+        <div class="topbar-health-popover-title">État des services</div>
+        <ul id="topbarHealthList"></ul>
+      </div>
+    </div>
+    <span class="topbar-sep" aria-hidden="true"></span>
+    <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
+    <span class="topbar-sep" aria-hidden="true"></span>
     <div class="topbar-right">
-      <button class="btn-icon" title="Notifications" onclick="openNotifications()">🔔<span class="notif-dot"></span></button>
       <!-- Sélecteur réel (fonctionnel, synchronisé par applyLanguage() comme
            tout .lang-select) conservé mais masqué visuellement : le bouton
-           "FR / AR" ci-dessous est l'habillage visuel exact du modèle de
-           référence, jamais un second mécanisme — il appelle la même
-           setLanguage() et reste synchronisé avec ce select cachée. -->
+           compact ci-dessous est l'habillage visuel, jamais un second
+           mécanisme — il appelle la même setLanguage() et reste synchronisé
+           avec ce select caché. -->
       <select class="lang-select lang-select-hidden" id="langSelect" onchange="setLanguage(this.value)" title="Langue" tabindex="-1" aria-hidden="true">
         <option value="fr">Français</option>
         <option value="ar">العربية</option>
       </select>
       <div class="lang-menu">
         <button class="lang-menu-btn" id="langMenuButton" type="button" onclick="toggleLangMenu()" aria-haspopup="true" aria-expanded="false" aria-controls="langMenuDropdown" title="Langue">
-          <span>FR / AR</span>
+          <span id="langMenuButtonLabel">FR</span>
           <span class="lang-menu-chevron" aria-hidden="true">⌄</span>
         </button>
         <div class="lang-menu-dropdown" id="langMenuDropdown" hidden>
@@ -130,12 +183,16 @@
           <button type="button" onclick="doLogout()">🚪 <span>Déconnexion</span></button>
         </div>
       </div>
+      <span class="topbar-sep" aria-hidden="true"></span>
       <!-- PG-15 : bouton de détresse, appui maintenu ~1,5 s. Dans la barre
            supérieure : toujours visible et actionnable quelle que soit la
-           page affichée, sans flotter par-dessus la navigation. -->
+           page affichée, sans flotter par-dessus la navigation. MISSION
+           TOPBAR COMPACTE : nouvelle capsule rouge foncé/premium (CSS
+           uniquement, .topbar .sos-button) — logique de maintien/
+           déclenchement inchangée (frontend/js/sos.js). -->
       <button class="sos-button sos-trigger" id="sosButton" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
         <span class="sos-fill"></span>
-        <span class="sos-label">SOS</span>
+        <span class="sos-label"><span class="sos-icon" aria-hidden="true">⚠</span>SOS</span>
       </button>
     </div>
   </div>
@@ -215,14 +272,10 @@
       <div class="ui2-hero-photo" aria-hidden="true">
         <div class="ui2-hero-photo-caption">Des sites plus sûrs<br>Un monde plus serein</div>
       </div>
-      <div class="ui2-hero-time">
-        <div class="ui2-hero-date"><span aria-hidden="true">📅</span><span id="heroDate">—</span></div>
-        <div class="ui2-hero-clock" id="heroClock">--:--:--</div>
-        <div class="ui2-hero-status">
-          <span class="live-dot"></span>
-          <div><strong>Système opérationnel</strong><small><span id="cleanStatusText">OK</span> · tous les services sont actifs</small></div>
-        </div>
-      </div>
+      <!-- MISSION TOPBAR GLOBALE : ancien widget date/heure/état système
+           (.ui2-hero-time, ids heroDate/heroClock/cleanStatusText) déplacé
+           dans la topbar globale (voir plus haut, #topbarDateFull etc.) —
+           jamais affiché deux fois. -->
       <button class="sos-button sos-trigger ui2-hero-sos" type="button" aria-label="SOS — maintenir 1,5 seconde pour alerter le SOC">
         <span class="sos-fill"></span>
         <span class="sos-label"><span class="ui2-hero-sos-icon" aria-hidden="true">🔔</span>SOS<br><small>Alerte immédiate</small></span>
@@ -634,6 +687,18 @@
     <div class="card"><div class="card-header"><div class="card-title">Synthèse exécutive</div></div><div class="card-body" id="syntheseExec"></div></div>
   </div>
 
+  <!-- ADMINISTRATION SYSTÈME -->
+  <div class="page" id="page-administration">
+    <div class="admin-header">
+      <div>
+        <h2 class="admin-header-title">Administration Système</h2>
+        <p class="admin-header-subtitle">Configuration, gouvernance et supervision de SécuriSite</p>
+      </div>
+      <div class="admin-header-state" id="adminHeaderState"><span class="badge muted">…</span></div>
+    </div>
+    <div id="adminTabContent"><div class="empty-state">Chargement…</div></div>
+  </div>
+
   <!-- UTILISATEURS -->
   <div class="page" id="page-utilisateurs">
     <div class="grid-2">
@@ -702,6 +767,7 @@
 <script src="js/critical-alert.js"></script>
 <script src="js/push.js"></script>
 <script src="js/maincourante-workflows.js"></script>
+<script src="js/admin-system.js"></script>
 <script src="js/app.js"></script>
 <script>SOS.init();</script>
 <script>

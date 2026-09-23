@@ -42,7 +42,7 @@ function showApp(user){
 
 /* ===== NAVIGATION ===== */
 document.querySelectorAll('.nav-item').forEach(item=>{
-  item.addEventListener('click',()=>navTo(item.dataset.page));
+  item.addEventListener('click',()=>navTo(item.dataset.page, item));
 });
 
 // Mobile : la barre latérale est hors-écran par défaut sous le seuil de
@@ -154,13 +154,19 @@ document.addEventListener('click', e=>{
   if(!e.target.closest('.topbar-search')) document.getElementById('topbarSearchResults')?.setAttribute('hidden','');
 });
 
-function navTo(page){
+function navTo(page, el){
   closeSidebar(); // un choix de page referme toujours le menu mobile
-  if((page==='utilisateurs' || page==='parametres') && !isAdmin()) return navTo('dashboard');
+  if((page==='utilisateurs' || page==='parametres' || page==='administration') && !isAdmin()) return navTo('dashboard');
   if(page!=='lapi' && lapiStream){ try{ arreterCamera(); }catch{} }
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===page));
+  // Administration système : 16 sous-entrées partagent toutes data-page="administration"
+  // (sous-menu sidebar, RECETTE VISUELLE ÉCRAN 1) — la bascule générique ci-dessus les
+  // marquerait TOUTES actives ; seule celle réellement cliquée (el) doit l'être.
+  if(page==='administration'){
+    document.querySelectorAll('.nav-sub-item').forEach(n=>n.classList.toggle('active', n===el));
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+page));
-  const titles = {alertes:'Centre d’alertes',carte:'Carte & sites',dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:'Incidents',vehicules:'Véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Agents',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres'};
+  const titles = {alertes:'Centre d’alertes',carte:'Carte & sites',dashboard:'Tableau de bord',maincourante:'Main courante — Journal en temps réel',incidents:'Incidents',vehicules:'Véhicules',lapi:'Lecture automatique de plaques (LAPI)',pietons:'Accès piétons',visiteurs:'Visiteurs',employes:'Agents',parking:'Parking',badges:'Badges & QR codes',rapports:'Rapports & statistiques',utilisateurs:'Utilisateurs système',parametres:'Paramètres',administration:'⚙ Administration système'};
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if(page==='alertes') AlertCenter.load();
   if(page==='carte') SiteMap.load();
@@ -177,6 +183,7 @@ function navTo(page){
   if(page==='rapports') loadRapports();
   if(page==='utilisateurs') loadUsersModule();
   if(page==='parametres') loadParametres();
+  if(page==='administration') AdminSystem.showTab(el?.dataset.adminTab || 'overview');
 }
 
 function switchTab(el, target){
@@ -258,46 +265,173 @@ function agentsEnServiceCount(){
   return agents.size;
 }
 
-let heroClockTimer;
 function updateHeroGreeting(){
   const user = API.getUser();
   const nameEl = document.getElementById('heroUsername');
   if(nameEl) nameEl.textContent = user?.nom_complet || user?.username || '—';
-  tickHeroClock();
-  clearInterval(heroClockTimer);
-  heroClockTimer = setInterval(tickHeroClock, 1000);
-}
-function tickHeroClock(){
-  const now = new Date();
-  const dateEl = document.getElementById('heroDate');
-  const clockEl = document.getElementById('heroClock');
-  if(dateEl) dateEl.textContent = fmtDateLong(now);
-  if(clockEl) clockEl.textContent = now.toLocaleTimeString(currentDateLocale());
 }
 
+// L'ancien texte "Système opérationnel"/"CRITIQUE" de ce bloc n'était qu'un
+// proxy du nombre d'incidents, jamais une vérification système réelle — ce
+// texte a été retiré avec le widget (déplacé, mission TOPBAR GLOBALE, voir
+// js/app.js#refreshTopbarHealth pour l'état système réel). Seule la teinte
+// visuelle du bandeau d'accueil (danger/ok/analyzing) est conservée ici,
+// inchangée — une décoration du bandeau, distincte du widget déplacé.
 function updateCleanHeroStatus(stats){
   const hero = document.getElementById('cleanHeroStatus');
-  const text = document.getElementById('cleanStatusText');
-  if(!hero || !text) return;
+  if(!hero) return;
   const hasCritical = (stats.incidents_critiques || 0) > 0;
   const hasOpen = (stats.incidents_ouverts || 0) > 0;
   hero.classList.remove('analyzing');
   hero.classList.toggle('danger', hasCritical || hasOpen);
   hero.classList.toggle('ok', !hasCritical && !hasOpen);
-  text.textContent = hasCritical ? 'CRITIQUE' : (hasOpen ? 'À traiter' : 'OK');
 }
 
 async function runDashboardAnalysis(){
   const hero = document.getElementById('cleanHeroStatus');
-  const text = document.getElementById('cleanStatusText');
   if(hero){
     hero.classList.remove('danger','ok');
     hero.classList.add('analyzing');
   }
-  if(text) text.textContent = 'Analyse';
   await new Promise(resolve=>setTimeout(resolve, 900));
   await loadDashboard();
 }
+
+/* ===== TOPBAR — DATE / HEURE / ÉTAT SYSTÈME (globale, un seul exemplaire,
+   visible sur tout le shell principal — mission TOPBAR GLOBALE) =====
+   Remplace l'ancien widget du tableau de bord (.ui2-hero-time, retiré
+   d'index.html) : même source de date/heure locale (fmtDateLong/
+   currentDateLocale, js/ui.js) et même principe d'un seul minuteur jamais
+   recréé (clearInterval avant setInterval, comme heroClockTimer avant lui)
+   — mais un état système RÉEL au lieu de l'ancien proxy "nombre
+   d'incidents" : réutilise la MÊME règle critique que Administration
+   Système (js/admin-system.js#CRITICAL_SERVICES = ['application',
+   'postgresql']), jamais un second seuil divergent. GET /admin/system est
+   une capacité de compte globale (backend/routes.js, requireAdmin) : un
+   utilisateur non-administrateur ne peut pas l'appeler (403) — pour lui,
+   seul le socle critique est vérifiable, via la sonde publique déjà
+   existante GET /api/ready (backend/health.js, jamais un nouvel endpoint) ;
+   Push/Caméras restent alors simplement absents du détail plutôt
+   qu'inventés (§5 mission : ne jamais afficher "tous les services actifs"
+   si un service est en réalité non configuré/indisponible/inconnu). */
+let topbarClockTimer, topbarHealthTimer;
+function initTopbarStatus(){
+  tickTopbarClock();
+  clearInterval(topbarClockTimer);
+  topbarClockTimer = setInterval(tickTopbarClock, 1000);
+  refreshTopbarHealth();
+  clearInterval(topbarHealthTimer);
+  // §12 mission (performance) : l'état système ne change pas seconde par
+  // seconde — jamais un appel API dans la boucle de l'horloge locale.
+  topbarHealthTimer = setInterval(refreshTopbarHealth, 60000);
+}
+function tickTopbarClock(){
+  const now = new Date();
+  const locale = currentDateLocale();
+  const full = document.getElementById('topbarDateFull');
+  const short = document.getElementById('topbarDateShort');
+  const clockFull = document.getElementById('topbarClockFull');
+  const clockShort = document.getElementById('topbarClockShort');
+  if(full) full.textContent = fmtDateLong(now);
+  if(short) short.textContent = now.toLocaleDateString(locale, {day:'2-digit', month:'short', year:'numeric'});
+  if(clockFull) clockFull.textContent = now.toLocaleTimeString(locale);
+  if(clockShort) clockShort.textContent = now.toLocaleTimeString(locale, {hour:'2-digit', minute:'2-digit'});
+}
+
+const TOPBAR_CRITICAL_SERVICES = ['application', 'postgresql'];
+// Même seuil critique que Administration Système (admin-system.js#
+// CRITICAL_SERVICES) : application+postgresql opérationnels = "Système
+// opérationnel". Distingue en plus ici un état "partiel" quand un service
+// NON critique connu (push/caméras, visible seulement pour un
+// administrateur — voir refreshTopbarHealth) est réellement indisponible —
+// jamais résumé comme "tous les services actifs" s'il ne l'est pas.
+function classifyTopbarHealth(health){
+  const h = health || {};
+  const known = TOPBAR_CRITICAL_SERVICES.some(k => h[k] != null);
+  if(!known) return { level:'unknown', label:'État à vérifier', sublabel:'Vérification en cours' };
+  const criticalOk = TOPBAR_CRITICAL_SERVICES.every(k => h[k] === 'operational');
+  if(!criticalOk) return { level:'down', label:'Service indisponible', sublabel:'Un service critique ne répond pas' };
+  const otherKeys = Object.keys(h).filter(k => !TOPBAR_CRITICAL_SERVICES.includes(k));
+  const hasUnavailable = otherKeys.some(k => h[k] === 'unavailable');
+  if(hasUnavailable) return { level:'degraded', label:'Services partiellement disponibles', sublabel:'Un ou plusieurs services secondaires sont indisponibles' };
+  return { level:'ok', label:'Système opérationnel', sublabel:'Tous les services critiques disponibles' };
+}
+function topbarHealthBadge(value, lang){
+  if(value === 'operational') return '<span class="topbar-health-badge ok">● ' + escapeHtml(translateText('Opérationnel', lang)) + '</span>';
+  if(value === 'not_configured') return '<span class="topbar-health-badge muted">○ ' + escapeHtml(translateText('Non configuré', lang)) + '</span>';
+  if(value === 'unavailable') return '<span class="topbar-health-badge down">● ' + escapeHtml(translateText('Indisponible', lang)) + '</span>';
+  return '<span class="topbar-health-badge unknown">○ ' + escapeHtml(translateText('À vérifier', lang)) + '</span>';
+}
+// state.label/state.sublabel/les libellés Application-PostgreSQL-Push-
+// Caméras sont des clés FRANÇAISES canoniques, jamais affichées telles
+// quelles : traduites ici via translateText() au moment du rendu, comme
+// topbarHealthBadge() ci-dessus — jamais confiées au balayage DOM générique
+// de applyLanguage() (ui.js), qui ne mémorise le texte d'origine d'un nœud
+// qu'une seule fois et serait donc incohérent avec un contenu réécrit
+// périodiquement par un minuteur (même raison que fmtDateLong/
+// currentDateLocale pour l'horloge, jamais recalculées par ce balayage).
+let lastTopbarHealth = null, lastTopbarHealthDetailed = false;
+// MISSION TOPBAR COMPACTE §5 : la pilule texte permanente est retirée du
+// DOM — le bouton n'affiche plus que le voyant (cercle). Le texte d'état
+// réel ("Système opérationnel" ou l'état réel correspondant, jamais une
+// valeur statique) vit désormais uniquement dans l'aria-label du bouton,
+// recalculé à chaque rendu — jamais perdu, seulement déplacé hors du
+// rendu visuel permanent (le détail reste visible au clic, popover
+// inchangé).
+function renderTopbarHealth(){
+  const dot = document.getElementById('topbarHealthDot');
+  const button = document.getElementById('topbarHealthButton');
+  if(!dot || !button || !lastTopbarHealth) return;
+  const list = document.getElementById('topbarHealthList');
+  const lang = localStorage.getItem(I18N_KEY) || 'fr';
+  const state = classifyTopbarHealth(lastTopbarHealth);
+  dot.className = 'topbar-health-dot topbar-health-' + state.level;
+  const label = translateText(state.label, lang);
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  if(list){
+    const rows = [['Application', lastTopbarHealth.application], ['PostgreSQL', lastTopbarHealth.postgresql]];
+    if(lastTopbarHealthDetailed) rows.push(['Push', lastTopbarHealth.push], ['Caméras', lastTopbarHealth.cameras]);
+    list.innerHTML = rows.map(([label, value]) => `<li><span>${escapeHtml(translateText(label, lang))}</span>${topbarHealthBadge(value, lang)}</li>`).join('');
+  }
+}
+// Réaffichage immédiat (aucun appel API) sur changement de langue — appelé
+// depuis ui.js#setLanguage(), best-effort. La donnée réelle, elle, ne
+// change pas seconde par seconde (§12 mission) : voir refreshTopbarHealth.
+function retranslateTopbarStatus(){
+  tickTopbarClock();
+  renderTopbarHealth();
+}
+async function refreshTopbarHealth(){
+  let health = null, detailed = false;
+  if(API.getUser()?.role === 'admin'){
+    try{ health = (await API.get('/admin/system')).health || {}; detailed = true; }
+    catch{ health = null; }
+  }
+  if(!health){
+    try{ await API.get('/ready'); health = { application: 'operational', postgresql: 'operational' }; }
+    catch{ health = { application: 'unavailable', postgresql: 'unavailable' }; }
+  }
+  lastTopbarHealth = health; lastTopbarHealthDetailed = detailed;
+  renderTopbarHealth();
+}
+
+function openTopbarHealthPopover(){
+  document.getElementById('topbarHealthPopover')?.removeAttribute('hidden');
+  document.getElementById('topbarHealthButton')?.setAttribute('aria-expanded','true');
+}
+function closeTopbarHealthPopover(){
+  document.getElementById('topbarHealthPopover')?.setAttribute('hidden','');
+  document.getElementById('topbarHealthButton')?.setAttribute('aria-expanded','false');
+}
+function toggleTopbarHealthPopover(){
+  document.getElementById('topbarHealthPopover')?.hasAttribute('hidden') ? openTopbarHealthPopover() : closeTopbarHealthPopover();
+}
+document.addEventListener('click', e=>{
+  const wrap = document.getElementById('topbarHealthButton')?.closest('.topbar-status');
+  if(wrap && !wrap.contains(e.target)) closeTopbarHealthPopover();
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeTopbarHealthPopover(); });
 function renderActivite(){
   const items = [];
   cache.pietons.slice(0,8).forEach(p=>items.push({icone:p.sens==='entree'?'➡️':'⬅️',titre:p.nom+' — '+(p.sens==='entree'?'Entrée':'Sortie')+(p.resultat==='refus'?' REFUSÉE':''),meta:p.point+' • '+p.type,time:fmtTime(p.datetime),type:p.resultat==='refus'?'danger':(p.sens==='entree'?'success':'')}));
@@ -1885,6 +2019,7 @@ function initApp(){
   navTo('alertes');
   initI18nObserver();
   openAlertFromDeepLink();
+  initTopbarStatus();
   setInterval(()=>{
     if(document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
     if(document.getElementById('page-maincourante').classList.contains('active')){

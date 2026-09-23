@@ -309,6 +309,20 @@ const I18N_AR = {
   'Horodatage serveur': 'توقيت الخادم',
   'Site autorisé': 'الموقع المصرح به',
   'Tout le site': 'كل الموقع',
+  'Administration Système': 'إدارة النظام',
+  'Configuration, gouvernance et supervision de SécuriSite': 'التهيئة والحوكمة والإشراف على سيكوريسايت',
+  'Vue générale': 'اطلاع عام',
+  'Sites': 'المواقع',
+  'Groupes': 'المجموعات',
+  'Zones & postes': 'المناطق والمراكز',
+  'Rôles & permissions': 'الأدوار والصلاحيات',
+  'Alertes & SOS': 'التنبيهات وSOS',
+  'Caméras / LAPI': 'الكاميرات / اللوحات',
+  'Intégrations': 'التكاملات',
+  'Données & archivage': 'البيانات والأرشفة',
+  'Paramètres système': 'إعدادات النظام',
+  "Journal d'audit": 'سجل التدقيق',
+  'Intelligence IA': 'الذكاء الاصطناعي',
   '⚙️ Configuration du site': '⚙️ تهيئة الموقع',
   'Adresse': 'العنوان',
   'Téléphone': 'الهاتف',
@@ -633,7 +647,31 @@ const I18N_AR = {
   "Générer un rapport": "إنشاء تقرير",
   "Vérifier l'état d'un site": "التحقق من حالة موقع",
   "Posez votre question...": "اطرح سؤالك...",
-  "Envoyer": "إرسال"
+  "Envoyer": "إرسال",
+
+  /* MISSION TOPBAR GLOBALE — date/heure/état système. Opérationnel/Non
+     configuré/Indisponible/À vérifier/Application/PostgreSQL/Caméras/
+     Système opérationnel reprennent EXACTEMENT le même arabe que
+     js/admin-system.js#t() (son propre mécanisme local, non partagé ici) —
+     jamais un second choix de traduction divergent pour le même mot. */
+  "État système — cliquer pour le détail des services": "حالة النظام — انقر لعرض تفاصيل الخدمات",
+  "État des services": "حالة الخدمات",
+  "État à vérifier": "الحالة قيد التحقق",
+  "Vérification en cours": "جارٍ التحقق",
+  "Système opérationnel": "النظام يعمل بشكل طبيعي",
+  "Tous les services critiques disponibles": "جميع الخدمات الحيوية متاحة",
+  "Service indisponible": "خدمة غير متاحة",
+  "Un service critique ne répond pas": "خدمة حيوية لا تستجيب",
+  "Services partiellement disponibles": "خدمات متاحة جزئياً",
+  "Un ou plusieurs services secondaires sont indisponibles": "خدمة ثانوية واحدة أو أكثر غير متاحة",
+  "Opérationnel": "يعمل",
+  "Non configuré": "غير مُهيأ",
+  "Indisponible": "غير متاح",
+  "À vérifier": "يتطلب التحقق",
+  "Application": "التطبيق",
+  "PostgreSQL": "قاعدة البيانات",
+  "Push": "الإشعارات الفورية",
+  "Caméras": "الكاميرات"
 };
 
 // Many labels carry a leading/trailing icon or symbol (emoji, arrows, ✓, —)
@@ -685,6 +723,15 @@ function applyLanguage(lang = localStorage.getItem(I18N_KEY) || 'fr'){
   document.documentElement.lang = lang === 'ar' ? 'ar' : 'fr';
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   document.querySelectorAll('.lang-select').forEach(sel=>{ sel.value = lang; });
+  // MISSION TOPBAR COMPACTE §7 : bouton langue ultra-compact — n'affiche
+  // plus jamais "FR / AR" simultanément, seulement la langue ACTIVE. Posé
+  // ici (dans applyLanguage() elle-même, jamais seulement dans
+  // setLanguage()) pour rester correct quel que soit le point d'entrée
+  // réel (setLanguage, le ré-appliquage différé de initI18nObserver, ou
+  // tout autre appelant déjà existant) — jamais un second mécanisme de
+  // synchronisation divergent.
+  const langBtnLabel = document.getElementById?.('langMenuButtonLabel');
+  if(langBtnLabel) langBtnLabel.textContent = lang === 'ar' ? 'AR' : 'FR';
   document.querySelectorAll('body *').forEach(el=>{
     if(['SCRIPT','STYLE','CANVAS','VIDEO'].includes(el.tagName)) return;
     [...el.childNodes].forEach(node=>{
@@ -731,6 +778,7 @@ const UI4_SAFE_RERENDER = {
   visiteurs: 'renderVisiteurs', vehicules: 'renderVehicules',
   pietons: 'renderPietons', employes: 'renderEmployes',
   badges: 'renderBadges', lapi: 'renderLapiTable', parking: 'renderParking',
+  administration: 'renderAdminCurrentTab',
 };
 function setLanguage(lang){
   applyLanguage(lang);
@@ -738,6 +786,13 @@ function setLanguage(lang){
   const fn = page && UI4_SAFE_RERENDER[page];
   if(fn && typeof window[fn] === 'function'){
     try{ window[fn](); }catch{ /* re-render best-effort, jamais bloquant */ }
+  }
+  // Topbar globale (mission TOPBAR GLOBALE) : date/heure/état système sont
+  // réécrits périodiquement par leur propre minuteur (js/app.js), hors de
+  // portée du balayage DOM générique ci-dessus — même best-effort que
+  // ci-dessus, jamais bloquant si la topbar n'est pas encore initialisée.
+  if(typeof retranslateTopbarStatus === 'function'){
+    try{ retranslateTopbarStatus(); }catch{ /* best-effort */ }
   }
 }
 

@@ -100,20 +100,34 @@ test('provisionLocalMembership: idempotent, role-mapped, audited, transaction-sc
   } finally { await pool.close(); }
 });
 
-test('composite foreign keys keep a membership coherent with the site and zone hierarchy', async t => {
+test('foreign keys keep a membership coherent with the site and zone hierarchy', async t => {
   const { env } = await member(t, { users: [['agent', 'u']] });
   await withClient(env, async c => {
     const uid = (await c.query("SELECT id FROM public.users WHERE username='u'")).rows[0].id;
     await c.query("INSERT INTO public.tenants(id,code,name) VALUES('33333333-3333-3333-3333-333333333333','t2','T2')");
     const zoneId = (await c.query("INSERT INTO public.zones(site_id,tenant_id,code,name) VALUES($1,$2,'z','Z') RETURNING id", [MAIN_SITE, LOCAL_TENANT])).rows[0].id;
-    // site of a different tenant
-    await rejects(c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,role) VALUES($1,'33333333-3333-3333-3333-333333333333',$2,'agent')", [uid, MAIN_SITE]), '23503');
-    // zone without a site
+    // MISSION — TRANSFERT INTER-GROUPES DES SITES (migration 019) : la
+    // contrainte composite (site_id, tenant_id) → sites(id, tenant_id) a été
+    // délibérément remplacée par une contrainte simple site_id → sites(id)
+    // — elle supposait implicitement que sites.tenant_id ne changerait
+    // jamais, ce qui n'est plus vrai (transfert de site). site_id doit
+    // toujours pointer vers un site RÉEL (invariant conservé, vérifié
+    // ci-dessous) ; la cohérence (site_id, tenant_id) au moment de la
+    // création est désormais de la responsabilité de l'application
+    // (backend/admin-groups.js#POST /groups/:id/users la vérifie déjà
+    // explicitement avant tout INSERT — jamais recalculée après coup pour
+    // les lignes historiques, voir backend/admin-sites.js#POST /transfer).
+    await c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,role) VALUES($1,'33333333-3333-3333-3333-333333333333',$2,'agent')", [uid, MAIN_SITE]);
+    // site_id must still point to a REAL site
+    await rejects(c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,role) VALUES($1,$2,gen_random_uuid(),'agent')", [uid, LOCAL_TENANT]), '23503');
+    // zone_id must still point to a REAL zone
+    await rejects(c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,zone_id,role) VALUES($1,$2,$3,gen_random_uuid(),'agent')", [uid, LOCAL_TENANT, MAIN_SITE]), '23503');
+    // zone without a site (still a plain CHECK constraint, unaffected by migration 019)
     await rejects(c.query("INSERT INTO public.memberships(user_id,tenant_id,zone_id,role) VALUES($1,$2,$3,'agent')", [uid, LOCAL_TENANT, zoneId]), '23514');
     // a coherent site-level then zone-level membership are accepted
     await c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,role) VALUES($1,$2,$3,'site_manager')", [uid, LOCAL_TENANT, MAIN_SITE]);
     await c.query("INSERT INTO public.memberships(user_id,tenant_id,site_id,zone_id,role) VALUES($1,$2,$3,$4,'agent')", [uid, LOCAL_TENANT, MAIN_SITE, zoneId]);
-    assert.deepEqual((await c.query('SELECT scope FROM public.memberships ORDER BY scope')).rows.map(r => r.scope), ['site', 'zone']);
+    assert.deepEqual((await c.query('SELECT scope FROM public.memberships ORDER BY scope')).rows.map(r => r.scope), ['site', 'site', 'zone']);
   });
 });
 
@@ -186,7 +200,10 @@ test('readiness fails if the membership guard function is dropped', async t => {
 });
 
 test('PG-7 activates nothing at the grant level; PG-9 row-level security requires a real actor context', async t => {
-  assert.equal(PRIVILEGES.memberships, 'SELECT');
+  // memberships gagne INSERT,UPDATE à la migration 018 (LOT Groupes —
+  // affectation utilisateur↔groupe/site et révocation par statut ; les
+  // lignes restent immuables en identité, imposé par trigger, migration 004).
+  assert.equal(PRIVILEGES.memberships, 'SELECT,INSERT,UPDATE');
   assert.equal(PRIVILEGES.membership_audit, 'SELECT,INSERT');
   const { env, n } = await member(t, { users: [['agent', 'u']] });
   const role = 'sec_test_member_app_' + tag();
@@ -199,6 +216,10 @@ test('PG-7 activates nothing at the grant level; PG-9 row-level security require
     await c.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
     await c.query(`GRANT USAGE ON SCHEMA securisite_meta TO "${role}"`);
     await c.query(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_tenant_ids() TO "${role}"`);
+    // Migration 017 : la politique memberships_actor_tenant évalue aussi
+    // current_actor_is_global_admin() désormais — EXECUTE requis même pour
+    // conclure "false" (rôle 'agent' non admin ici).
+    await c.query(`GRANT EXECUTE ON FUNCTION securisite_meta.current_actor_is_global_admin() TO "${role}"`);
     await c.query(`GRANT SELECT ON public.memberships TO "${role}"`);
     await c.query(`GRANT SELECT, INSERT ON public.membership_audit TO "${role}"`);
   });

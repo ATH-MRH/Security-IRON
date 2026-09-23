@@ -77,6 +77,12 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   if ((lat !== null || lng !== null) && (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180)) fail('Coordonnées GPS invalides');
   const id = 'ALT-' + randomUUID(), stamp = now();
   if (!user.tenantId) fail('Périmètre non résolu', 403);
+  // Bouton SOS réel (« panic button ») : rempli UNIQUEMENT pour origin='SOS'
+  // par recipients.broadcastToSosDesignated() ci-dessous — la seule
+  // information nouvelle dont realtime.js/realtime-routes.js a besoin pour
+  // livrer aussi aux destinataires désignés "own" qui ne verraient sinon
+  // jamais cet événement (même contrat que broadcastAlert() plus bas).
+  let sosRecipientIds = [];
   const result = await atomic(async client => {
     // PCS01 (Lot E) : atomic() ouvre sa propre transaction, jamais encore
     // posée comme contexte d'acteur (contrairement à scope.withActorContext) —
@@ -86,6 +92,16 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
     await repository.insertAlert(id,stamp,stamp,site,zone,type,input.level,origin,user.id,user.username,'NOTIFIEE',text(input.comment,4000),lat,lng,text(input.equipment),JSON.stringify((await config(client)).escalation),user.tenantId,client);
     await audit(id,user.username,'CREATION', `${type} — niveau ${input.level}`,client);
     const a = await get(id,user,client); await notify(a, `${type} — ${site}`,client);
+    // Bouton SOS réel : chaque compte désigné (users.sos_recipient=true,
+    // migration 021) reçoit une ligne alert_recipients dans CETTE MÊME
+    // transaction — jamais un second appel séparé qui pourrait réussir
+    // alors que la création elle-même échoue. Réservé à origin='SOS' :
+    // une alerte COMMAND/INCIDENT/REGLE_BADGE garde le ciblage manuel
+    // existant (broadcastAlert(), plus bas), jamais un envoi automatique.
+    if (origin === 'SOS') {
+      const sosResult = await recipients.broadcastToSosDesignated(a, user.id, client);
+      sosRecipientIds = sosResult.recipientUserIds;
+    }
     // PG-10 : même transaction que la mutation (règle 13) — un échec d'audit
     // annule aussi la création. origin='COMMAND'/'SOS' (action humaine directe)
     // est 'http' ; INCIDENT/REGLE_BADGE (déclenchement automatique par une
@@ -104,7 +120,7 @@ async function create(input, user, origin = 'COMMAND', transactionClient = null)
   // (une transaction PARENTE peut encore annuler après coup un appel
   // fromIncident/fromBadge imbriqué : au pire un rafraîchissement client
   // inutile, jamais une fuite — aucun contenu n'est transmis, voir realtime.js).
-  realtime.emit('alert:created', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by });
+  realtime.emit('alert:created', { id: result.id, tenantId: user.tenantId ?? null, createdBy: result.created_by, recipientUserIds: sosRecipientIds });
   return result;
 }
 // PG-15 : bouton de détresse. Zéro champ requis — sous contrainte réelle,

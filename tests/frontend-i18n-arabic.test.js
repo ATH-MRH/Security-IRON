@@ -148,9 +148,10 @@ test('a language switcher exists both on the login screen and in the app topbar'
   assert.match(loginOverlay, /<option value="ar">/);
   const topbar = htmlSource.slice(htmlSource.indexOf('class="topbar-right"'), htmlSource.indexOf('class="content"'));
   // The topbar's real <select class="lang-select"> now also carries a second
-  // class (visually hidden in favour of a custom "FR / AR" dropdown button
-  // that calls the same setLanguage() — see frontend/js/app.js#toggleLangMenu),
-  // so the class attribute is no longer exactly "lang-select" alone.
+  // class (visually hidden in favour of a custom compact dropdown button —
+  // "FR"/"AR" only, mission TOPBAR COMPACTE — that calls the same
+  // setLanguage() — see frontend/js/app.js#toggleLangMenu), so the class
+  // attribute is no longer exactly "lang-select" alone.
   assert.match(topbar, /class="lang-select\b/);
   assert.match(topbar, /<option value="ar">/);
 });
@@ -187,7 +188,11 @@ function stripSymbols(s) {
 // in Arabic UIs too, same as "PDF" or "URL"), and one example placeholder
 // person name (form sample data, not UI chrome).
 const ALLOWED_UNTRANSLATED = new Set([
-  'FR / AR', 'Français', 'SOS', 'SOC', 'OK', '⌘K',
+  // MISSION TOPBAR COMPACTE : "FR / AR" (les deux langues affichées à la
+  // fois) a été retiré — le bouton compact n'affiche plus que la langue
+  // ACTIVE ("FR" ou "AR" seuls, app.js#applyLanguage), même famille que les
+  // codes courts déjà tolérés ci-dessous (SOC, OK...).
+  'FR', 'AR', 'Français', 'SOS', 'SOC', 'OK', '⌘K',
   '📥 CSV', '24h', '7j', 'VL', 'PL', '2R', 'N1', 'N2', 'N3', 'N4',
   'Marie Dupont',
 ]);

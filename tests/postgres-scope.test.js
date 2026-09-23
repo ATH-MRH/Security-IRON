@@ -133,6 +133,64 @@ test('zone-level membership covers only that exact zone, not a sibling zone of t
   assert.equal(s.allows(ids.tenantA, ids.siteA1, ids.zoneA1b), false, 'sibling zone A1b not covered');
 });
 
+/* ============================================================ */
+/*  LOT GROUPES §17 — helper central visibleSiteIds(tenantId)      */
+/*  Groupe = tenants (réutilisé, jamais dupliqué) ; la formule       */
+/*  SITES_DU_GROUPE ∩ SITES_AUTORISÉS, JAMAIS UNION, verrouillée ici.*/
+/* ============================================================ */
+test('visibleSiteIds: no membership at all in this tenant returns an empty restriction, never null (never "all" by accident)', async () => {
+  const u = await createUser('agent');
+  const s = await resolveScope(u.id, pool);
+  assert.deepEqual(s.visibleSiteIds(ids.tenantA), []);
+});
+
+test('visibleSiteIds: a tenant-level membership returns null — the explicit "all sites" sentinel, never an enumerated (and staleable) list', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, role: 'agent', alertAccess: 'own' });
+  const s = await resolveScope(u.id, pool);
+  assert.equal(s.visibleSiteIds(ids.tenantA), null);
+});
+
+test('visibleSiteIds: site-level memberships only (no tenant-level row) return exactly that restricted set — the real "utilisateur restreint" case', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA1, role: 'agent', alertAccess: 'own' });
+  const s = await resolveScope(u.id, pool);
+  assert.deepEqual(s.visibleSiteIds(ids.tenantA), [ids.siteA1]);
+});
+
+test('visibleSiteIds: multiple site-level memberships accumulate into one set, still never a leak of a sibling tenant\'s sites', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA1, role: 'agent', alertAccess: 'own' });
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA2, role: 'site_manager', alertAccess: 'own' });
+  await grant(u.id, { tenantId: ids.tenantB, siteId: ids.siteB1, role: 'agent', alertAccess: 'own' });
+  const s = await resolveScope(u.id, pool);
+  const visibleA = s.visibleSiteIds(ids.tenantA).slice().sort();
+  assert.deepEqual(visibleA, [ids.siteA1, ids.siteA2].sort());
+  assert.deepEqual(s.visibleSiteIds(ids.tenantB), [ids.siteB1]);
+});
+
+test('visibleSiteIds: a coexisting tenant-level membership always wins over narrower site-level rows in the same tenant — never a union that widens past "all", never an intersection that silently narrows the tenant-level grant', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA1, role: 'agent', alertAccess: 'own' });
+  await grant(u.id, { tenantId: ids.tenantA, role: 'supervisor', alertAccess: 'own' });
+  const s = await resolveScope(u.id, pool);
+  assert.equal(s.visibleSiteIds(ids.tenantA), null, 'the tenant-level row already covers every site (coverageOf) — a coexisting site-level row cannot narrow that back down');
+});
+
+test('visibleSiteIds: a zone-level-only membership still resolves to its site as the visible unit (no zone-granular narrowing at this layer)', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA1, zoneId: ids.zoneA1a, role: 'agent', alertAccess: 'own' });
+  const s = await resolveScope(u.id, pool);
+  assert.deepEqual(s.visibleSiteIds(ids.tenantA), [ids.siteA1]);
+});
+
+test('visibleSiteIds: a suspended/archived membership contributes nothing — loadActiveMemberships already excludes it, this helper never recomputes activity itself', async () => {
+  const u = await createUser('agent');
+  await grant(u.id, { tenantId: ids.tenantA, siteId: ids.siteA1, role: 'agent', alertAccess: 'own', status: 'suspended' });
+  const s = await resolveScope(u.id, pool);
+  assert.deepEqual(s.visibleSiteIds(ids.tenantA), []);
+});
+
 test('own vs scope is the alert_access column, independent of the membership role label', async () => {
   const u = await createUser('agent'); // NOT an admin/soc account
   await grant(u.id, { tenantId: ids.tenantA, role: 'agent', alertAccess: 'scope' });

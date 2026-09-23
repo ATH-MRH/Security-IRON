@@ -55,8 +55,22 @@ test('assertReady resolves on a freshly migrated database and is read-only', asy
     // main_courante) puis la migration 14 (moteur de workflows : postes/
     // profils APS/rondes/matériel/PCS01 par site). ADMINISTRATION SYSTÈME
     // ajoute la migration 15 (sites/zones/mc_posts : coordonnées + cycle de
-    // vie ; memberships.role étendu à 10 valeurs).
-    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    // vie ; memberships.role étendu à 10 valeurs), la migration 16
+    // (users.status : actif/bloqué) puis la migration 17 (exception RLS
+    // Administrateur global sur le référentiel tenant/site/zone/memberships).
+    // LOT GROUPES ajoute la migration 18 (tenants.description/updated_at/
+    // archived_at — groupe = tenant réutilisé, jamais une table dupliquée).
+    // TRANSFERT INTER-GROUPES DES SITES ajoute la migration 19 (relâche les
+    // FK ON UPDATE RESTRICT zones/memberships qui rendaient tout transfert
+    // de site définitivement impossible — voir backend/admin-sites.js
+    // #POST /sites/:id/transfer) puis la migration 20 (même relâchement,
+    // oublié par la 19, pour les huit contraintes composites équivalentes
+    // introduites par la migration 14 : main_courante/mc_posts/mc_aps/
+    // mc_presence/round_circuits/rounds/equipment/mc_pcs01_config). Bouton
+    // SOS réel ajoute la migration 21 (users.sos_recipient — destinataires
+    // désignés de l'alarme SOS, backend/alert-core/recipients.js
+    // #broadcastToSosDesignated).
+    assert.deepEqual(rows.map(r => r.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
   } finally { await pool.close(); }
 });
 

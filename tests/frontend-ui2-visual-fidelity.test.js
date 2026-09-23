@@ -129,13 +129,16 @@ test('the dashboard has the hero, 4-KPI row, and both 3-panel rows (map/incident
   assert.match(dashboardHtml, /id="dashAssistantQuestion"/, 'Assistant SOC panel');
 });
 
-test('the hero keeps its photo band, greeting, date/clock, status and SOS — no element removed', () => {
+test('the hero keeps its photo band, greeting and SOS — date/clock/status moved to the global topbar (mission TOPBAR GLOBALE), never duplicated', () => {
   assert.match(dashboardHtml, /id="heroUsername"/);
-  assert.match(dashboardHtml, /id="heroDate"/);
-  assert.match(dashboardHtml, /id="heroClock"/);
-  assert.match(dashboardHtml, /id="cleanStatusText"/);
   assert.match(dashboardHtml, /class="ui2-hero-photo"/);
   assert.match(dashboardHtml, /\bui2-hero-sos\b/);
+  // The old hero-local date/clock/status widget (heroDate/heroClock/
+  // cleanStatusText) was relocated into the global topbar — it must never
+  // exist a second time inside the dashboard hero itself.
+  assert.doesNotMatch(dashboardHtml, /id="heroDate"/);
+  assert.doesNotMatch(dashboardHtml, /id="heroClock"/);
+  assert.doesNotMatch(dashboardHtml, /id="cleanStatusText"/);
 });
 
 /* ============================================================ */
@@ -161,8 +164,20 @@ test('the two new dashboard charts constrain their canvas height (maintainAspect
 test('the sidebar still exposes navigation to all existing pages (no page removed by the redesign)', () => {
   const sidebar = htmlSource.slice(htmlSource.indexOf('id="sidebar"'), htmlSource.indexOf('class="sidebar-footer"'));
   const navItems = [...sidebar.matchAll(/data-page="([a-z-]+)"/g)].map(m => m[1]);
-  assert.equal(navItems.length, 15, `expected 15 sidebar nav items, found ${navItems.length}: ${navItems.join(', ')}`);
-  for (const page of ['dashboard', 'carte', 'alertes', 'incidents', 'vehicules', 'lapi', 'pietons', 'visiteurs', 'employes', 'parking', 'badges', 'rapports', 'utilisateurs', 'parametres', 'maincourante']) {
-    assert.ok(navItems.includes(page), `expected nav item for "${page}"`);
+  // "administration" apparaît désormais 16 fois (RECETTE VISUELLE ÉCRAN 1 :
+  // sous-menu sidebar à 16 entrées .nav-sub-item, chacune data-page=
+  // "administration" + data-admin-tab distinct) — on compte les PAGES
+  // distinctes, pas les occurrences brutes.
+  const distinctPages = new Set(navItems);
+  assert.equal(distinctPages.size, 16, `expected 16 distinct sidebar pages, found ${distinctPages.size}: ${[...distinctPages].join(', ')}`);
+  for (const page of ['dashboard', 'carte', 'alertes', 'incidents', 'vehicules', 'lapi', 'pietons', 'visiteurs', 'employes', 'parking', 'badges', 'rapports', 'administration', 'utilisateurs', 'parametres', 'maincourante']) {
+    assert.ok(distinctPages.has(page), `expected nav item for "${page}"`);
   }
+  const adminTabs = [...sidebar.matchAll(/data-admin-tab="([a-z]+)"/g)].map(m => m[1]);
+  // LOT GROUPES : nouvelle entrée sidebar "groups", positionnée Sites →
+  // Groupes → Zones & postes — un vrai onglet supplémentaire, jamais une
+  // régression du redesign.
+  const expectedAdminTabs = ['overview', 'sites', 'groups', 'zones', 'users', 'roles', 'maincourante', 'alerts', 'access', 'rounds', 'notifications', 'cameras', 'integrations', 'data', 'settings', 'audit', 'ai'];
+  assert.equal(adminTabs.length, expectedAdminTabs.length, `expected ${expectedAdminTabs.length} admin sub-menu entries, found ${adminTabs.length}: ${adminTabs.join(', ')}`);
+  for (const tab of expectedAdminTabs) assert.ok(adminTabs.includes(tab), `expected admin sub-menu entry for "${tab}"`);
 });

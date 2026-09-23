@@ -246,3 +246,124 @@ test('PCS01 (Lot E): the escalation job (no HTTP request, no actor) still escala
   assert.equal(check1.body.escalation_step, 3, 'tenant 1 alert must have escalated through all 3 tiers under the real app role, no actor context');
   assert.equal(check2.body.escalation_step, 3, 'tenant 2 alert must ALSO have escalated — proves the job is not scoped to a single tenant');
 });
+
+// Administration Système (LOT 3) : backend/admin-sites.js et l'extension
+// /admin/system (routes.js) interrogent tenants/sites — RLS-protégées
+// (migration 005/017). Un bug réel a été trouvé en développement : un
+// db.get()/db.all() nu y voyait silencieusement ZÉRO ligne sous le rôle
+// applicatif restreint, jamais une erreur (même classe que les tests
+// ci-dessus, seule cette suite l'aurait détecté — tests/postgres-
+// admin-sites.test.js tourne sous SECURISITE_TEST_DATABASE_URL, presque
+// toujours le superutilisateur, qui contourne RLS et n'aurait jamais vu
+// le bug). Verrouillé ici, sous le rôle réellement restreint.
+test('Administration Système : un compte admin sans AUCUNE appartenance voit et modifie quand même tenants/sites (migration 017, exception explicite)', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  const admin = await setupPool.get(
+    "INSERT INTO public.users(username,password_hash,role) VALUES('rls_admin_no_membership',$1,'admin') RETURNING id",
+    [await bcrypt.hash('x', 10)]);
+  // Délibérément AUCUNE ligne memberships pour ce compte — c'est exactement
+  // l'état d'un compte créé via POST /admin/users (qui n'en provisionne
+  // jamais) et le cas que la migration 017 doit couvrir.
+  await setupPool.close();
+
+  const login = await request('POST', '/auth/login', { username: 'rls_admin_no_membership', password: 'x' }, null);
+  assert.equal(login.status, 200);
+  const token = login.body.token;
+
+  const created = await request('POST', '/admin/sites', { code: 'rls-admin-site', name: 'Site Admin Sans Appartenance' }, token);
+  assert.equal(created.status, 201, 'creating a site must succeed even with zero memberships');
+
+  const list = await request('GET', '/admin/sites', undefined, token);
+  assert.equal(list.status, 200);
+  assert.ok(list.body.sites.some(s => s.id === created.body.id), 'the created site must be visible in the list, not hidden by RLS');
+
+  const updated = await request('PUT', '/admin/sites/' + created.body.id, { name: 'Renamed' }, token);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.name, 'Renamed');
+
+  const system = await request('GET', '/admin/system', undefined, token);
+  assert.equal(system.status, 200);
+  assert.ok(system.body.kpis.sites_total >= 1, 'the cockpit KPI must reflect the real site count, never a silent 0 from an unwrapped RLS query');
+
+  // RECETTE VISUELLE ÉCRAN 1 : /admin/overview et /admin/zones interrogent
+  // aussi sites (RLS) — même exception globale requise, sous le même rôle
+  // applicatif restreint réel, pas le superutilisateur.
+  const overview = await request('GET', '/admin/overview', undefined, token);
+  assert.equal(overview.status, 200);
+  assert.ok(overview.body.sites_by_status.active >= 1, 'overview sites_by_status must reflect real data under RLS, admin exception included');
+  // security_audit reste intentionnellement restreint au rôle memberships
+  // 'soc' (security_audit_soc_read, migration 006 — jamais étendu par la
+  // migration 017, voir son commentaire) : un admin sans appartenance voit
+  // une liste vide ici, PAS une erreur — fail-closed voulu, pas un bug.
+  assert.deepEqual(overview.body.recent_activity, [], 'recent_activity must stay empty for a non-soc admin — security_audit read stays soc-gated by design, unlike sites');
+
+  const zones = await request('GET', '/admin/zones?site_id=' + created.body.id, undefined, token);
+  assert.equal(zones.status, 200, 'zones for a site owned by a membership-less admin must resolve, not 404 from an invisible site');
+
+  // Suppression réelle (LOT 19 allégé) : même exception RLS requise, sous
+  // le rôle applicatif restreint réel.
+  const del = await request('DELETE', '/admin/sites/' + created.body.id, { reason: 'rls test cleanup' }, token);
+  assert.equal(del.status, 200, 'a membership-less admin must be able to delete a real, dependency-free site under RLS');
+});
+
+// LOT GROUPES : Groupe = tenants (réutilisé). Le test le plus important de
+// tout le lot — l'isolation inter-groupes réelle — doit être vérifié sous
+// le VRAI rôle applicatif restreint (RLS pleinement appliquée), pas
+// seulement sous le superutilisateur des autres suites d'intégration.
+test('LOT GROUPES : un utilisateur d\'un groupe ne voit jamais un autre groupe, sous le rôle applicatif restreint réel (RLS)', async () => {
+  const setupPool = db.createDatabase(migratorEnv);
+  let groupA, groupB, siteA, siteB, adminToken;
+  try {
+    groupA = await setupPool.get("INSERT INTO public.tenants(code,name) VALUES('rls-dhl','DHL RLS') RETURNING id");
+    groupB = await setupPool.get("INSERT INTO public.tenants(code,name) VALUES('rls-fiat','FIAT RLS') RETURNING id");
+    siteA = await setupPool.get("INSERT INTO public.sites(tenant_id,code,name) VALUES($1,'rls-dhl-site','DHL Site') RETURNING id", [groupA.id]);
+    siteB = await setupPool.get("INSERT INTO public.sites(tenant_id,code,name) VALUES($1,'rls-fiat-site','FIAT Site') RETURNING id", [groupB.id]);
+    const admin = await setupPool.get(
+      "INSERT INTO public.users(username,password_hash,role) VALUES('rls_groups_admin',$1,'admin') RETURNING id",
+      [await bcrypt.hash('x', 10)]);
+    const dhlUser = await setupPool.get(
+      "INSERT INTO public.users(username,password_hash,role) VALUES('rls_groups_dhluser',$1,'agent') RETURNING id",
+      [await bcrypt.hash('x', 10)]);
+    // Appartenance de niveau TENANT = "tous les sites du groupe" (périmètre
+    // maximal) — la même règle que backend/scope.js#visibleSiteIds.
+    await setupPool.query(
+      "INSERT INTO public.memberships(user_id,tenant_id,role,alert_access) VALUES($1,$2,'agent','own')",
+      [dhlUser.id, groupA.id]);
+  } finally { await setupPool.close(); }
+
+  const adminLogin = await request('POST', '/auth/login', { username: 'rls_groups_admin', password: 'x' }, null);
+  adminToken = adminLogin.body.token;
+  const dhlLogin = await request('POST', '/auth/login', { username: 'rls_groups_dhluser', password: 'x' }, null);
+  const dhlToken = dhlLogin.body.token;
+
+  // Admin global (sans appartenance) : gère les deux groupes normalement.
+  const groupsList = await request('GET', '/admin/groups', undefined, adminToken);
+  assert.equal(groupsList.status, 200);
+  assert.ok(groupsList.body.groups.some(g => g.id === groupA.id) && groupsList.body.groups.some(g => g.id === groupB.id));
+
+  // Utilisateur DHL (memberships réelles, rôle applicatif restreint réel) :
+  // son propre groupe passe, le groupe voisin est refusé — jamais une
+  // liste vide qui masquerait un vrai 403, jamais une fuite inter-groupe.
+  const ownGroup = await request('GET', '/incidents?tenant_id=' + groupA.id + '&site_id=' + siteA.id, undefined, dhlToken);
+  assert.equal(ownGroup.status, 200, 'DHL user must reach their own group/site under real RLS');
+  const siblingGroup = await request('GET', '/incidents?tenant_id=' + groupB.id + '&site_id=' + siteB.id, undefined, dhlToken);
+  assert.equal(siblingGroup.status, 403, 'DHL user must NEVER reach FIAT — real RLS, real cross-group isolation, no leak');
+
+  // dhlUser n'a qu'une appartenance de niveau TENANT (aucune ligne
+  // site_id/zone_id) : countSiteDependencies ne compte que les dépendances
+  // RATTACHÉES AU SITE (zones, postes, main courante, appartenances
+  // SITE-level…), jamais les appartenances tenant-wide qui le couvrent
+  // implicitement — siteA est donc réaffectable sous RLS réelle, sans 409.
+  const reassign = await request('PUT', '/admin/groups/' + groupB.id + '/sites', { add: [siteA.id] }, adminToken);
+  assert.equal(reassign.status, 200, 'a site covered only by a tenant-wide membership (no site-level dependency row) must remain movable');
+
+  // Preuve de non-fuite après réaffectation : la portée n'est jamais mise en
+  // cache — elle est relue en direct sur tenant_id à chaque requête. siteA
+  // appartient désormais réellement à groupB (FIAT) ; dhlUser (toujours
+  // seulement membre de DHL, aucune ligne memberships modifiée — elles sont
+  // immuables) n'a aucune appartenance dans groupB et doit être refusé dès
+  // la résolution du périmètre, sans qu'aucun code n'ait eu besoin d'être
+  // touché pour "invalider un cache".
+  const staleAccess = await request('GET', '/incidents?tenant_id=' + groupB.id + '&site_id=' + siteA.id, undefined, dhlToken);
+  assert.equal(staleAccess.status, 403, 'after moving siteA out of DHL into FIAT, the DHL user must never reach it via FIAT\'s tenant_id — scope is resolved live, never stale/cached');
+});
