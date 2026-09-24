@@ -118,6 +118,30 @@ router.get('/sites/:id/dependencies', wrap(async (req, res) => {
   res.json(result);
 }));
 
+// MISSION — DÉPENDANCES SITE : détail réel de la SEULE dépendance identifiée
+// comme réellement bloquante et exploitable dans ce lot (utilisateurs/
+// appartenances — voir GET /sites/:id/dependencies#active_memberships).
+// MÊME condition WHERE que countSiteDependencies() (site-dependencies.js) —
+// jamais un second calcul qui pourrait diverger du compteur déjà affiché.
+router.get('/sites/:id/dependencies/memberships', wrap(async (req, res) => {
+  const id = req.params.id;
+  const rows = await scope.withActorContext(req.user.id, async client => {
+    const site = await client.get(`SELECT id FROM public.sites WHERE id=$1`, [id]);
+    if (!site) fail(404, 'Site introuvable');
+    return client.all(
+      `SELECT m.id AS membership_id, m.user_id, u.username, u.nom_complet, u.role AS account_role,
+              m.role AS membership_role, m.scope, m.tenant_id, t.name AS tenant_name, t.code AS tenant_code,
+              m.site_id, s.name AS site_name, m.status, m.created_at
+       FROM public.memberships m
+       JOIN public.users u ON u.id = m.user_id
+       JOIN public.tenants t ON t.id = m.tenant_id
+       LEFT JOIN public.sites s ON s.id = m.site_id
+       WHERE m.site_id=$1 AND m.status='active'
+       ORDER BY u.username`, [id]);
+  });
+  res.json({ memberships: rows });
+}));
+
 /* ============================================================ */
 /*  Création (LOT 3 + étape 1 de l'assistant LOT 4)                */
 /* ============================================================ */

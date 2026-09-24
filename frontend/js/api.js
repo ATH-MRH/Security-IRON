@@ -29,7 +29,14 @@ const API = (() => {
     if (!res.ok) {
       let err = { error: 'Erreur ' + res.status };
       try { err = await res.json(); } catch {}
-      throw new Error(err.error || 'Erreur réseau');
+      const e = new Error(err.error || 'Erreur réseau');
+      // Additif, jamais lu par un appelant existant jusqu'ici : certains
+      // écrans doivent distinguer UN refus métier précis (ex. 409
+      // dépendances réelles sur DELETE /admin/sites/:id) d'une erreur
+      // générique, sans reparser le texte français du message — voir
+      // frontend/js/admin-system.js#confirmDeleteSite.
+      e.status = res.status;
+      throw e;
     }
     return res.status === 204 ? null : res.json();
   }

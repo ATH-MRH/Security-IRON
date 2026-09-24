@@ -138,6 +138,74 @@ test('dependencies reports only what the schema genuinely scopes by site, and is
   assert.deepEqual(r.body.not_scoped_by_site, ['incidents', 'security_alerts']);
 });
 
+/* ============================================================ */
+/*  MISSION — DÉPENDANCES SITE : drill-down réel de la dépendance   */
+/*  "utilisateurs / appartenances" (GET .../dependencies/            */
+/*  memberships) — le cas réellement observé (Site principal / main) */
+/* ============================================================ */
+test('GET /sites/:id/dependencies/memberships est vide pour un site sans appartenance réelle — jamais une ligne fictive', async () => {
+  const created = await request('POST', '/admin/sites', { code: uniqCode(), name: 'Site sans membership' });
+  const r = await request('GET', '/admin/sites/' + created.body.id + '/dependencies/memberships');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.memberships, []);
+});
+
+test('GET /sites/:id/dependencies/memberships renvoie EXACTEMENT les lignes qui bloquent la suppression (même WHERE que le compteur active_memberships), avec l\'identité réelle du destinataire', async () => {
+  const site = await request('POST', '/admin/sites', { code: uniqCode(), name: 'Site Avec Membership' });
+  const pool = db.createDatabase(env);
+  let userId;
+  try {
+    const u = await pool.get(`INSERT INTO public.users (username, password_hash, role, nom_complet) VALUES ($1,$2,'agent','Agent Test') RETURNING id`,
+      ['depmember_' + randomUUID().slice(0, 8), await bcrypt.hash('x', 10)]);
+    userId = u.id;
+    await pool.query(`INSERT INTO public.memberships (user_id, tenant_id, site_id, role, alert_access, status) VALUES ($1,$2,$3,'agent','own','active')`,
+      [u.id, site.body.tenant_id, site.body.id]);
+  } finally { await pool.close(); }
+  const deps = await request('GET', '/admin/sites/' + site.body.id + '/dependencies');
+  assert.equal(deps.body.active_memberships, 1);
+  const r = await request('GET', '/admin/sites/' + site.body.id + '/dependencies/memberships');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.memberships.length, 1, 'même nombre de lignes que le compteur affiché — jamais divergent');
+  const m = r.body.memberships[0];
+  assert.equal(m.user_id, userId);
+  assert.equal(m.nom_complet, 'Agent Test');
+  assert.equal(m.account_role, 'agent');
+  assert.equal(m.membership_role, 'agent');
+  assert.equal(m.scope, 'site');
+  assert.equal(m.site_id, site.body.id);
+  assert.equal(m.status, 'active');
+  assert.ok(m.membership_id, 'id réel requis pour l\'action Gérer');
+  assert.ok(m.tenant_name, 'nom du groupe réel, jamais un id nu');
+});
+
+test('GET /sites/:id/dependencies/memberships n\'inclut jamais une appartenance déjà archivée ou d\'un autre site', async () => {
+  const site = await request('POST', '/admin/sites', { code: uniqCode(), name: 'Site Ciblé' });
+  const otherSite = await request('POST', '/admin/sites', { code: uniqCode(), name: 'Autre Site' });
+  const pool = db.createDatabase(env);
+  try {
+    const u1 = await pool.get(`INSERT INTO public.users (username, password_hash, role) VALUES ($1,$2,'agent') RETURNING id`,
+      ['depmember_archived_' + randomUUID().slice(0, 8), await bcrypt.hash('x', 10)]);
+    await pool.query(`INSERT INTO public.memberships (user_id, tenant_id, site_id, role, alert_access, status) VALUES ($1,$2,$3,'agent','own','archived')`,
+      [u1.id, site.body.tenant_id, site.body.id]);
+    const u2 = await pool.get(`INSERT INTO public.users (username, password_hash, role) VALUES ($1,$2,'agent') RETURNING id`,
+      ['depmember_othersite_' + randomUUID().slice(0, 8), await bcrypt.hash('x', 10)]);
+    await pool.query(`INSERT INTO public.memberships (user_id, tenant_id, site_id, role, alert_access, status) VALUES ($1,$2,$3,'agent','own','active')`,
+      [u2.id, otherSite.body.tenant_id, otherSite.body.id]);
+  } finally { await pool.close(); }
+  const r = await request('GET', '/admin/sites/' + site.body.id + '/dependencies/memberships');
+  assert.deepEqual(r.body.memberships, []);
+});
+
+test('GET /sites/:id/dependencies/memberships requiert le rôle admin (401/403), même porte que le reste de /admin/sites', async () => {
+  const site = await request('POST', '/admin/sites', { code: uniqCode(), name: 'Site Gate' });
+  assert.equal((await request('GET', '/admin/sites/' + site.body.id + '/dependencies/memberships', undefined, null)).status, 401);
+  assert.equal((await request('GET', '/admin/sites/' + site.body.id + '/dependencies/memberships', undefined, agentToken)).status, 403);
+});
+
+test('GET /sites/:id/dependencies/memberships sur un site inexistant est un 404 propre', async () => {
+  assert.equal((await request('GET', '/admin/sites/' + randomUUID() + '/dependencies/memberships')).status, 404);
+});
+
 test('/admin/system reports a real site count reflecting an actual insert (basic correctness — the RLS-under-the-real-restricted-role guarantee itself is locked in separately in tests/postgres-scope-rls.test.js, since this file runs against SECURISITE_TEST_DATABASE_URL which is typically the superuser and would not catch an unwrapped RLS query)', async () => {
   await request('POST', '/admin/sites', { code: uniqCode(), name: 'KPI Regression Site' });
   const system = await request('GET', '/admin/system');

@@ -346,16 +346,52 @@ router.delete('/groups/:id/users/:userId', wrap(async (req, res) => {
   res.json(result);
 }));
 
+// MISSION — DÉPENDANCES SITE : retirer UNE appartenance précise (identifiée
+// par son id, ex. depuis le drill-down des dépendances d'un site), jamais
+// TOUTES les appartenances d'un utilisateur sur le groupe (DELETE /groups/
+// :id/users/:userId ci-dessus reste inchangée pour ce cas plus large — un
+// utilisateur restreint à plusieurs sites du même groupe ne doit pas tout
+// perdre pour n'en avoir retiré qu'un seul). Même mécanisme d'archivage
+// (status='archived', jamais une suppression — trigger memberships_
+// no_delete l'interdirait de toute façon), même convention d'audit.
+// Un Administrateur global (users.role='admin') ne tire AUCUN privilège de
+// ses lignes memberships (voir backend/permissions.js, backend/scope.js) :
+// archiver l'une des siennes ne retire jamais son statut global — vérifié
+// explicitement par un test dédié plutôt que simplement supposé.
+router.delete('/memberships/:id', wrap(async (req, res) => {
+  const result = await scope.withActorContext(req.user.id, async client => {
+    const m = await client.get(
+      `SELECT m.*, u.username FROM public.memberships m JOIN public.users u ON u.id = m.user_id WHERE m.id=$1`,
+      [req.params.id]);
+    if (!m) fail(404, 'Appartenance introuvable');
+    if (m.status !== 'active') fail(409, 'Cette appartenance n\'est plus active');
+    await client.query(`UPDATE public.memberships SET status='archived' WHERE id=$1`, [m.id]);
+    await securityAudit.record({
+      ...auditFields(req), tenantId: m.tenant_id,
+      eventType: 'system_admin.membership.archive', resourceType: 'membership', resourceId: m.id, action: 'update', outcome: 'success',
+      detail: { user_id: m.user_id, username: m.username, tenant_id: m.tenant_id, site_id: m.site_id, zone_id: m.zone_id, role: m.role, scope: m.scope },
+    }, client);
+    return { archived: true, membership_id: m.id, user_id: m.user_id, site_id: m.site_id };
+  });
+  res.json(result);
+}));
+
 /* ============================================================ */
 /*  Onglet Audit — réutilise security_audit (migration 006),       */
 /*  jamais un journal parallèle.                                   */
 /* ============================================================ */
 router.get('/groups/:id/audit', wrap(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  // MISSION — DÉPENDANCES SITE : system_admin.membership.archive (retrait
+  // d'une appartenance précise depuis le drill-down des dépendances d'un
+  // site) est posé avec tenantId=memberships.tenant_id — donc réellement
+  // rattaché à CE groupe — jamais visible ici auparavant faute d'un motif
+  // LIKE correspondant, alors même que l'action a bien eu lieu et est déjà
+  // auditée dans security_audit.
   const rows = await scope.withActorContext(req.user.id, client => client.all(
     `SELECT id, created_at, actor_username, event_type, resource_type, resource_id, action, outcome, detail
      FROM public.security_audit
-     WHERE tenant_id=$1 AND (event_type LIKE 'system_admin.group.%' OR event_type LIKE 'system_admin.site.%')
+     WHERE tenant_id=$1 AND (event_type LIKE 'system_admin.group.%' OR event_type LIKE 'system_admin.site.%' OR event_type LIKE 'system_admin.membership.%')
      ORDER BY created_at DESC, id DESC LIMIT $2`, [req.params.id, limit]));
   res.json({ events: rows });
 }));

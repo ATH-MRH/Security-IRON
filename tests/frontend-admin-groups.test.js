@@ -232,9 +232,9 @@ test('les tableaux de la fiche groupe restent dans des conteneurs .table-wrap (s
   assert.match(block, /class="table-wrap"/);
 });
 
-test('sw.js : CACHE_VERSION a bien été incrémenté depuis le LOT GROUPES (v11…v18, puis v19 mission TOPBAR COMPACTE)', () => {
+test('sw.js : CACHE_VERSION a bien été incrémenté depuis le LOT GROUPES (v11…v20, puis v21 drill-down des dépendances de site)', () => {
   const swSrc = fs.readFileSync(path.resolve(__dirname, '../frontend/sw.js'), 'utf8');
-  assert.match(swSrc, /const CACHE_VERSION = 'securisite-shell-v19';/);
+  assert.match(swSrc, /const CACHE_VERSION = 'securisite-shell-v21';/);
 });
 
 /* ============================================================ */

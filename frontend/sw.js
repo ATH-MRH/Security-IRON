@@ -12,7 +12,7 @@
  * poste partagé). Seul l'app shell (HTML/CSS/JS/manifest/icône/vendor
  * statique) est mis en cache.
  */
-const CACHE_VERSION = 'securisite-shell-v19';
+const CACHE_VERSION = 'securisite-shell-v21';
 const SHELL_ASSETS = [
   './',
   'index.html',

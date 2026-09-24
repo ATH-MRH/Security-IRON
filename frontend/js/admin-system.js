@@ -26,6 +26,12 @@ const AdminSystem = (() => {
   ];
   let currentTab = 'overview';
   let sitesCache = [];
+  // MISSION — DÉPENDANCES SITE : dernière liste d'appartenances réellement
+  // chargée par viewSiteMembershipDependencies() — permet à "Gérer" de
+  // retrouver l'objet complet depuis un simple id dans l'attribut onclick,
+  // même convention que sitesCache/groupUsersCache ci-dessous (jamais de
+  // JSON brut embarqué dans un attribut HTML).
+  let siteMembershipsCache = [];
   let mcSiteId = null;
   let zonesSiteId = null;
   // Groupes (LOT GROUPES) — groupe = tenant (backend/admin-groups.js, jamais
@@ -326,7 +332,7 @@ const AdminSystem = (() => {
     }
     bar.innerHTML = `<span>${sitesSelected.size} site(s) sélectionné(s)</span><button class="btn btn-danger btn-sm" onclick="AdminSystem.confirmDeleteSelectedSites()">Supprimer la sélection</button>`;
   }
-  function confirmDeleteSite(id, name) {
+  function confirmDeleteSite(id, name, code) {
     showModal('🗑 Supprimer ce site', `
       <p>Vous êtes sur le point de supprimer définitivement <strong>${escapeHtml(name)}</strong>.</p>
       <p class="mc-detail-note">Refusée automatiquement si des données réelles y sont associées (zones, postes, appartenances, événements Main courante, rondes, équipement) — archivez-le plutôt dans ce cas.</p>
@@ -340,38 +346,276 @@ const AdminSystem = (() => {
         notify('Site supprimé');
         document.getElementById('adminSiteDetail').innerHTML = '';
         await reloadSites();
-      } catch (e) { notify(e.message || 'Erreur', 'error'); }
+      } catch (e) {
+        // MISSION CORRECTION CIBLÉE — SITES : un refus 409 pour dépendances
+        // réelles n'est plus un simple toast — l'administrateur doit
+        // comprendre pourquoi et pouvoir agir (voir showSiteDeleteRefusedModal).
+        if (e.status === 409) { closeModal(); showSiteDeleteRefusedModal({ id, name, code }); return; }
+        notify(e.message || 'Erreur', 'error');
+      }
     }, 'Supprimer définitivement');
   }
   function confirmDeleteSelectedSites() {
-    const names = sitesCache.filter(s => sitesSelected.has(s.id)).map(s => s.name);
-    showModal('🗑 Supprimer ' + names.length + ' site(s)', `
+    const targets = sitesCache.filter(s => sitesSelected.has(s.id));
+    showModal('🗑 Supprimer ' + targets.length + ' site(s)', `
       <p>Vous êtes sur le point de supprimer définitivement :</p>
-      <ul>${names.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+      <ul>${targets.map(s => `<li>${escapeHtml(s.name)}</li>`).join('')}</ul>
       <p class="mc-detail-note">Refusée automatiquement pour tout site avec des données réelles associées (zones, postes, appartenances, événements Main courante, rondes, équipement) — archivez-le plutôt dans ce cas.</p>
       <div class="form-group"><label>Motif *</label><input type="text" id="deleteSitesReason" placeholder="ex: site de test / recette"></div>
     `, async () => {
       const reason = document.getElementById('deleteSitesReason').value.trim();
       if (!reason) { notify('Motif requis', 'error'); return; }
-      const ids = [...sitesSelected];
-      let ok = 0, refused = 0;
-      for (const id of ids) {
-        try { await API.del('/admin/sites/' + id, { reason }); ok++; }
-        catch { refused++; }
+      let ok = 0; const refused = [];
+      for (const s of targets) {
+        try { await API.del('/admin/sites/' + s.id, { reason }); ok++; }
+        catch (e) { if (e.status === 409) refused.push(s); }
       }
       closeModal();
-      notify(ok + ' supprimé(s)' + (refused ? ', ' + refused + ' refusé(s) (dépendances réelles)' : ''), refused ? 'error' : 'success');
+      if (ok) notify(ok + ' site(s) supprimé(s)', 'success');
       sitesSelectMode = false; sitesSelected = new Set();
       const btn = document.getElementById('adminSitesDeleteToggle');
       if (btn) { btn.textContent = '🗑 Supprimer'; btn.classList.remove('btn-danger'); btn.classList.add('btn-outline'); }
       await reloadSites();
       updateSitesDeleteBar();
+      // MISSION CORRECTION CIBLÉE — SITES : un refus se comprend désormais
+      // et se traite (Voir dépendances / Désactiver / Archiver), site par
+      // site — jamais plus un simple compteur technique agrégé.
+      if (refused.length === 1) showSiteDeleteRefusedModal(refused[0]);
+      else if (refused.length > 1) showMultipleSitesRefusedModal(refused);
     }, 'Supprimer définitivement');
   }
   function statusBadge(s) {
     if (s === 'active') return '<span class="badge success">Actif</span>';
     if (s === 'suspended') return '<span class="badge warning">Suspendu</span>';
     return '<span class="badge muted">Archivé</span>';
+  }
+  // MISSION CORRECTION CIBLÉE — ADMINISTRATION SYSTÈME → SITES : gestion
+  // d'une suppression refusée. Ne contourne AUCUNE protection existante
+  // (409/FK/motif/audit/permissions/RLS — toutes inchangées, backend/
+  // admin-sites.js) — remplace uniquement le message technique brut par
+  // une interface qui explique le refus et propose les actions déjà
+  // supportées par le cycle de vie du site (Désactiver=suspended,
+  // Archiver=archived, tous deux déjà audités par PUT /sites/:id/status).
+  // MISSION — DÉPENDANCES SITE : sous-titre demandé + mise en évidence
+  // (⚠, gras) UNIQUEMENT des compteurs > 0 — jamais une alerte rouge sur
+  // une catégorie à 0. [Voir] n'apparaît que sur "Utilisateurs /
+  // appartenances actives" : c'est la SEULE catégorie pour laquelle un
+  // vrai détail (identité réelle, action Gérer) existe dans ce lot —
+  // ajouter [Voir] sur les autres catégories sans détail réel derrière
+  // serait un bouton qui ne fait rien d'honnête. `targetId` identifie le
+  // conteneur à réutiliser pour le drill-down (la modale de refus et
+  // l'onglet Dépendances de la fiche site partagent ce même mécanisme).
+  function renderDependenciesTable(deps, siteId, targetId) {
+    const row = (label, value, viewAction) => {
+      const positive = value > 0;
+      const cell = positive ? `<strong>${value}</strong> ⚠` : String(value);
+      const action = (positive && viewAction) ? `<button class="btn btn-sm btn-outline" onclick="${viewAction}">Voir</button>` : '';
+      return `<tr${positive ? ' class="dep-row-blocking"' : ''}><td>${label}</td><td>${cell}</td><td>${action}</td></tr>`;
+    };
+    return `
+      <p class="mc-detail-note" style="margin-top:0">Dépendances empêchant la suppression</p>
+      <table><tbody>
+        ${row('Zones', deps.zones)}
+        ${row('Postes', deps.postes)}
+        ${row('Utilisateurs / appartenances actives', deps.active_memberships, `AdminSystem.viewSiteMembershipDependencies('${siteId}','${targetId}')`)}
+        ${row('Événements Main courante', deps.main_courante_events)}
+        ${row('Rondes', deps.rounds)}
+        ${row('Équipements', deps.equipment)}
+        ${row('Circuits de ronde', deps.round_circuits)}
+        ${row('Profils APS', deps.aps)}
+        ${row('Présences (cycles APS)', deps.presence)}
+        ${row('PCS01', deps.pcs01_config)}
+      </tbody></table>
+      <p class="mc-detail-note">Non comptabilisé ici (aucune colonne site dans le schéma actuel — jamais une valeur fictive) : ${deps.not_scoped_by_site.join(', ')}.</p>`;
+  }
+  async function showRefusedModalDependencies(id) {
+    const target = document.getElementById('siteDeleteRefusedDeps');
+    if (!target) return;
+    target.innerHTML = '<p class="mc-detail-note">Chargement…</p>';
+    try { target.innerHTML = renderDependenciesTable(await API.get('/admin/sites/' + id + '/dependencies'), id, 'siteDeleteRefusedDeps'); }
+    catch (e) { target.innerHTML = `<p class="mc-wf-error">${escapeHtml(e.message || 'Erreur')}</p>`; }
+  }
+  function scopeLabel(scope) {
+    if (scope === 'tenant') return 'Groupe entier';
+    if (scope === 'zone') return 'Zone';
+    return 'Site';
+  }
+  // Détail réel des appartenances qui bloquent la suppression — réutilise
+  // exactement le même filtre que le compteur affiché (GET .../
+  // dependencies/memberships, backend/admin-sites.js, même WHERE que
+  // countSiteDependencies()) : jamais une seconde source qui pourrait
+  // diverger. Rend DANS le même conteneur que le tableau récapitulatif
+  // (targetId) — fonctionne aussi bien depuis la modale de refus que
+  // depuis l'onglet Dépendances de la fiche site.
+  async function viewSiteMembershipDependencies(siteId, targetId) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    target.innerHTML = '<p class="mc-detail-note">Chargement…</p>';
+    try {
+      const { memberships } = await API.get('/admin/sites/' + siteId + '/dependencies/memberships');
+      siteMembershipsCache = memberships;
+      // MISSION §6 (modale utilisable à 1920/1440/820/390px) : un tableau à
+      // 9 colonnes ne tient dans AUCUNE largeur de modale (max-width:580px)
+      // sans défilement horizontal qui cacherait le bouton Gérer — une
+      // carte empilée par appartenance reste lisible et actionnable à
+      // toutes les tailles, y compris 390px, sans rien couper.
+      target.innerHTML = `
+        <p class="mc-detail-note" style="margin-top:0"><a href="#" onclick="event.preventDefault();AdminSystem.backToSiteDependencies('${siteId}','${targetId}')">← Retour aux dépendances</a></p>
+        ${memberships.map(m => `
+          <div class="dep-membership-card">
+            <div class="dep-membership-card-head">
+              <strong>${escapeHtml(m.nom_complet || m.username)}</strong>
+              ${m.account_role === 'admin' ? ' <span class="badge muted" title="Administrateur global — privilège de compte, indépendant de cette appartenance">Admin global</span>' : ''}
+              ${m.status === 'active' ? '<span class="badge success">Actif</span>' : '<span class="badge muted">Archivé</span>'}
+            </div>
+            <dl class="dep-membership-card-fields">
+              <div><dt>Identifiant</dt><dd>${escapeHtml(m.username)}</dd></div>
+              <div><dt>Rôle</dt><dd>${escapeHtml(roleLabel(m.membership_role))}</dd></div>
+              <div><dt>Groupe</dt><dd>${escapeHtml(m.tenant_name)}</dd></div>
+              <div><dt>Type de scope</dt><dd>${escapeHtml(scopeLabel(m.scope))}</dd></div>
+              <div><dt>Site</dt><dd>${escapeHtml(m.site_name || '—')}</dd></div>
+              <div><dt>Créé le</dt><dd>${m.created_at ? new Date(m.created_at).toLocaleString('fr-FR') : '—'}</dd></div>
+            </dl>
+            <button class="btn btn-sm btn-outline" onclick="AdminSystem.manageMembershipModal('${m.membership_id}','${siteId}','${targetId}')">Gérer</button>
+          </div>`).join('') || `<p class="empty-state">Aucune appartenance active — le compteur a peut-être déjà été mis à jour, revenez et rafraîchissez.</p>`}`;
+    } catch (e) { target.innerHTML = `<p class="mc-wf-error">${escapeHtml(e.message || 'Erreur')}</p>`; }
+  }
+  async function backToSiteDependencies(siteId, targetId) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    target.innerHTML = '<p class="mc-detail-note">Chargement…</p>';
+    try { target.innerHTML = renderDependenciesTable(await API.get('/admin/sites/' + siteId + '/dependencies'), siteId, targetId); }
+    catch (e) { target.innerHTML = `<p class="mc-wf-error">${escapeHtml(e.message || 'Erreur')}</p>`; }
+  }
+  // "Gérer" une appartenance précise — UNIQUEMENT les actions réellement
+  // compatibles avec le modèle memberships existant (statut actif/archivé,
+  // immuable par ailleurs — trigger memberships_no_delete) :
+  //  - Retirer l'accès à ce site = archiver CETTE appartenance précise
+  //    (DELETE /admin/memberships/:id, jamais toutes celles de
+  //    l'utilisateur sur le groupe — voir backend/admin-groups.js) ;
+  //  - Réaffecter = archiver puis créer une nouvelle appartenance ailleurs
+  //    (POST /admin/groups/:id/users déjà existant, jamais un second
+  //    mécanisme de "déplacement" qui n'existe pas dans le modèle).
+  // Un Administrateur global (compte) ne perd JAMAIS son statut global en
+  // retirant une de ses appartenances — users.role est indépendant des
+  // memberships (voir backend/permissions.js/scope.js) : rappelé ici
+  // explicitement pour ne jamais laisser croire le contraire.
+  function manageMembershipModal(membershipId, siteId, targetId) {
+    const m = siteMembershipsCache.find(x => x.membership_id === membershipId);
+    if (!m) { notify('Appartenance introuvable — rafraîchissez la liste', 'error'); return; }
+    const globalAdminNote = m.account_role === 'admin'
+      ? `<p class="mc-detail-note">⚠ <strong>${escapeHtml(m.username)}</strong> est Administrateur global : retirer cette appartenance ne retire JAMAIS ses privilèges globaux (indépendants des appartenances) — seul son accès via CE groupe/site change.</p>` : '';
+    showModal('👤 Gérer l\'appartenance', `
+      <p>Utilisateur : <strong>${escapeHtml(m.nom_complet || m.username)}</strong> (${escapeHtml(m.username)})</p>
+      <p>Groupe : <strong>${escapeHtml(m.tenant_name)}</strong> — Site : <strong>${escapeHtml(m.site_name || '—')}</strong> — Rôle : ${escapeHtml(roleLabel(m.membership_role))}</p>
+      ${globalAdminNote}
+      <p class="mc-detail-note">Impact : ${escapeHtml(m.username)} perdra l'accès à ce site via ce groupe. Aucune autre appartenance n'est modifiée. Action auditée.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-danger btn-sm" onclick="AdminSystem.archiveMembershipAction('${m.membership_id}','${siteId}','${targetId}')">🚫 Retirer l'accès à ce site</button>
+        <button class="btn btn-outline btn-sm" onclick="AdminSystem.reassignMembershipModal('${m.membership_id}','${siteId}','${targetId}')">↪ Réaffecter à un autre groupe/site</button>
+      </div>
+    `, () => closeModal(), 'Fermer');
+  }
+  // showModal() ne s'empile pas (un seul emplacement #modalContent,
+  // réutilisé) : ouvrir "Gérer" DEPUIS la modale de refus remplace son
+  // contenu — #siteDeleteRefusedDeps n'existe donc plus après coup, jamais
+  // récupérable. §5 mission ("rafraîchir automatiquement les dépendances")
+  // est donc satisfait ici par une modale de confirmation DÉDIÉE, toujours
+  // ouverte après une action réussie, quel que soit le point d'entrée
+  // (modale de refus OU onglet Dépendances de la fiche site) — jamais un
+  // simple toast qui ne montrerait pas réellement "1 → 0".
+  async function showUpdatedDependenciesModal(siteId) {
+    let deps;
+    try { deps = await API.get('/admin/sites/' + siteId + '/dependencies'); }
+    catch (e) { notify(e.message || 'Erreur', 'error'); return; }
+    showModal('✅ Dépendances mises à jour', `
+      <div id="depsUpdatedModalBody">${renderDependenciesTable(deps, siteId, 'depsUpdatedModalBody')}</div>
+      <p class="mc-detail-note">La suppression du site n'est jamais automatique — revenez sur sa fiche et cliquez vous-même sur Supprimer si vous le souhaitez.</p>
+    `, () => closeModal(), 'Fermer');
+  }
+  async function archiveMembershipAction(membershipId, siteId, targetId) {
+    try {
+      await API.del('/admin/memberships/' + membershipId);
+      closeModal();
+      notify('Accès retiré — appartenance archivée (historique conservé)');
+      // §5 mission : rafraîchir automatiquement les dépendances, jamais
+      // déclencher la suppression du site — l'administrateur doit revenir
+      // cliquer lui-même sur Supprimer. Rafraîchit EN PLACE si le
+      // conteneur d'origine existe encore (onglet Dépendances de la fiche
+      // site) — sinon (modale de refus, détruite par "Gérer" ci-dessus),
+      // une modale de confirmation dédiée montre le compteur à jour.
+      if (document.getElementById(targetId)) await viewSiteMembershipDependencies(siteId, targetId);
+      else await showUpdatedDependenciesModal(siteId);
+      await reloadSites();
+    } catch (e) { notify(e.message || 'Erreur', 'error'); }
+  }
+  async function reassignMembershipModal(membershipId, siteId, targetId) {
+    const m = siteMembershipsCache.find(x => x.membership_id === membershipId);
+    if (!m) { notify('Appartenance introuvable — rafraîchissez la liste', 'error'); return; }
+    let groups = [];
+    try { groups = (await API.get('/admin/groups?limit=200')).groups; } catch (e) { notify(e.message || 'Erreur', 'error'); return; }
+    const groupOptions = groups.filter(g => g.status === 'active').map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    const roleOptions = MEMBERSHIP_ROLES.map(r => `<option value="${r}" ${r === m.membership_role ? 'selected' : ''}>${escapeHtml(roleLabel(r))}</option>`).join('');
+    showModal('↪ Réaffecter ' + escapeHtml(m.username), `
+      <p class="mc-detail-note" style="margin-top:0">Retire l'accès actuel (${escapeHtml(m.tenant_name)} / ${escapeHtml(m.site_name || '—')}) puis affecte ${escapeHtml(m.username)} au nouveau groupe/site choisi ci-dessous.</p>
+      <div class="form-row"><div class="form-group"><label>Nouveau groupe *</label><select id="reassignGroup" onchange="AdminSystem.reassignLoadSites(this.value)">${groupOptions}</select></div>
+        <div class="form-group"><label>Rôle *</label><select id="reassignRole">${roleOptions}</select></div></div>
+      <div class="form-group"><label><input type="checkbox" id="reassignAllSites" checked onchange="document.getElementById('reassignSitesBox').style.display=this.checked?'none':'block'"> Tous les sites du groupe</label></div>
+      <div id="reassignSitesBox" style="display:none"><p class="empty-state">Choisissez d'abord un groupe.</p></div>
+    `, async () => {
+      const groupId = document.getElementById('reassignGroup').value;
+      const role = document.getElementById('reassignRole').value;
+      const allSites = document.getElementById('reassignAllSites').checked;
+      const siteIds = [...document.querySelectorAll('.reassign-site:checked')].map(c => c.value);
+      if (!groupId) { notify('Groupe requis', 'error'); return; }
+      if (!allSites && !siteIds.length) { notify('Sélectionnez au moins un site ou « Tous les sites »', 'error'); return; }
+      try {
+        await API.del('/admin/memberships/' + m.membership_id);
+        await API.post('/admin/groups/' + groupId + '/users', { user_id: m.user_id, role, all_sites: allSites, site_ids: siteIds });
+        closeModal();
+        notify('Utilisateur réaffecté');
+        if (document.getElementById(targetId)) await viewSiteMembershipDependencies(siteId, targetId);
+        else await showUpdatedDependenciesModal(siteId);
+        await reloadSites();
+      } catch (e) { notify(e.message || 'Erreur', 'error'); }
+    }, 'Réaffecter');
+  }
+  async function reassignLoadSites(groupId) {
+    const box = document.getElementById('reassignSitesBox');
+    if (!box) return;
+    box.innerHTML = '<p class="mc-detail-note">Chargement…</p>';
+    try {
+      const { sites } = await API.get('/admin/groups/' + groupId + '/sites');
+      box.innerHTML = sites.length
+        ? sites.map(s => `<label style="display:block"><input type="checkbox" class="reassign-site" value="${s.id}"> ${escapeHtml(s.name)} <span class="muted">(${escapeHtml(s.code)})</span></label>`).join('')
+        : '<p class="empty-state">Ce groupe ne contient encore aucun site</p>';
+    } catch (e) { box.innerHTML = `<p class="mc-wf-error">${escapeHtml(e.message || 'Erreur')}</p>`; }
+  }
+  function showSiteDeleteRefusedModal(site) {
+    showModal('🚫 Suppression impossible — dépendances existantes', `
+      <p>Le site « <strong>${escapeHtml(site.name)}</strong> (${escapeHtml(site.code)}) » contient des données ou éléments rattachés.</p>
+      <p class="mc-detail-note">La suppression directe est bloquée afin de préserver l'intégrité et l'historique du système.</p>
+      <div id="siteDeleteRefusedDeps"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-outline btn-sm" onclick="closeModal();AdminSystem.setSiteStatus('${site.id}','suspended')">⏸ Désactiver</button>
+        <button class="btn btn-outline btn-sm" onclick="closeModal();AdminSystem.setSiteStatus('${site.id}','archived')">🗄 Archiver</button>
+      </div>
+      <p class="mc-detail-note" style="margin-top:12px">La purge définitive des données est une opération d'administration avancée et doit être réalisée depuis <strong>Données &amp; archivage</strong>.</p>
+    `, () => showRefusedModalDependencies(site.id), '🔍 Voir les dépendances');
+  }
+  function showMultipleSitesRefusedModal(sites) {
+    showModal('🚫 ' + sites.length + ' site(s) non supprimé(s) — dépendances existantes', `
+      <p class="mc-detail-note">La suppression directe est bloquée pour ces sites afin de préserver l'intégrité et l'historique du système. Choisissez un site pour voir ses dépendances et le désactiver ou l'archiver.</p>
+      <table><tbody>
+        ${sites.map(s => `<tr><td><strong>${escapeHtml(s.name)}</strong><br><span class="muted">${escapeHtml(s.code)}</span></td>
+          <td style="text-align:end"><button class="btn btn-sm btn-outline" onclick="AdminSystem.manageRefusedSite('${s.id}','${escapeHtml(s.name).replace(/'/g, "\\'")}','${s.code}')">Gérer →</button></td></tr>`).join('')}
+      </tbody></table>
+      <p class="mc-detail-note" style="margin-top:12px">La purge définitive des données est une opération d'administration avancée et doit être réalisée depuis <strong>Données &amp; archivage</strong>.</p>
+    `, () => closeModal(), 'Fermer');
+  }
+  function manageRefusedSite(id, name, code) {
+    closeModal();
+    showSiteDeleteRefusedModal({ id, name, code });
   }
 
   async function openSiteDetail(id) {
@@ -398,21 +642,10 @@ const AdminSystem = (() => {
               ${site.status !== 'active' ? `<button class="btn btn-success" onclick="AdminSystem.setSiteStatus('${site.id}','active')">Activer</button>` : ''}
               ${site.status !== 'suspended' ? `<button class="btn btn-outline" onclick="AdminSystem.setSiteStatus('${site.id}','suspended')">Suspendre</button>` : ''}
               ${site.status !== 'archived' ? `<button class="btn btn-danger" onclick="AdminSystem.setSiteStatus('${site.id}','archived')">Archiver</button>` : ''}
-              <button class="btn btn-danger" onclick="AdminSystem.confirmDeleteSite('${site.id}','${escapeHtml(site.name).replace(/'/g, "\\'")}')">🗑 Supprimer</button>
+              <button class="btn btn-danger" onclick="AdminSystem.confirmDeleteSite('${site.id}','${escapeHtml(site.name).replace(/'/g, "\\'")}','${site.code}')">🗑 Supprimer</button>
             </div>
           </div>
-          <div id="siteTab-deps" style="display:none">
-            <table><tbody>
-              <tr><td>Zones</td><td>${deps.zones}</td></tr>
-              <tr><td>Postes</td><td>${deps.postes}</td></tr>
-              <tr><td>Appartenances actives</td><td>${deps.active_memberships}</td></tr>
-              <tr><td>Événements Main courante</td><td>${deps.main_courante_events}</td></tr>
-              <tr><td>Rondes</td><td>${deps.rounds}</td></tr>
-              <tr><td>Équipement</td><td>${deps.equipment}</td></tr>
-              <tr><td>Circuits de ronde</td><td>${deps.round_circuits}</td></tr>
-            </tbody></table>
-            <p class="mc-detail-note">Non comptés ici (schéma sans colonne site) : ${deps.not_scoped_by_site.join(', ')}.</p>
-          </div>
+          <div id="siteTab-deps" style="display:none">${renderDependenciesTable(deps, site.id, 'siteTab-deps')}</div>
         </div>
       </div>`;
   }
@@ -1336,6 +1569,8 @@ const AdminSystem = (() => {
     showTab, get currentTab() { return currentTab; }, tabLabel,
     reloadSites, openSiteDetail, switchSiteTab, saveSite, setSiteStatus, openSiteWizard,
     toggleSitesSelectMode, toggleSiteSelected, toggleSelectAllSites, confirmDeleteSelectedSites, confirmDeleteSite,
+    manageRefusedSite, viewSiteMembershipDependencies, backToSiteDependencies, manageMembershipModal,
+    archiveMembershipAction, reassignMembershipModal, reassignLoadSites,
     reloadZones, setUserStatus, setUserSosRecipient, openCreateUserModal, reloadMcAdmin, reloadAudit,
     reloadGroups, setGroupsStatusFilter, openGroupWizard, openGroupDetail, openGroupDetailAndEdit, closeGroupDetail, switchGroupTab, groupTabKeydown,
     toggleGroupEditMode, cancelGroupInfoEdit, saveGroupInfo, setGroupStatus, toggleGroupActionsMenu, closeGroupActionsMenu,

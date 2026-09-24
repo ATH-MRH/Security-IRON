@@ -370,28 +370,28 @@ test('sw.js : install() peuple un cache nommé d\'après CACHE_VERSION', async (
   let waited;
   await listeners.install({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.ok(caches.stores.has('securisite-shell-v19'), 'le cache actuel doit exister après install()');
+  assert.ok(caches.stores.has('securisite-shell-v21'), 'le cache actuel doit exister après install()');
 });
 
 test('sw.js : activate() évince un cache resté sous un ancien nom (le vrai mécanisme derrière le hotfix)', async () => {
   const { listeners, caches } = loadServiceWorker();
   // Simule un navigateur déjà visité sous l'ancienne version, jamais évincé
   // faute de CACHE_VERSION incrémenté — exactement le bug de production.
-  caches.stores.set('securisite-shell-v18', {});
-  caches.stores.set('securisite-shell-v19', {});
+  caches.stores.set('securisite-shell-v20', {});
+  caches.stores.set('securisite-shell-v21', {});
   let waited;
   await listeners.activate({ waitUntil: p => { waited = p; } });
   await waited;
-  assert.equal(caches.stores.has('securisite-shell-v18'), false, 'l\'ancien cache doit être évincé par activate()');
-  assert.equal(caches.stores.has('securisite-shell-v19'), true, 'le cache courant doit être conservé');
+  assert.equal(caches.stores.has('securisite-shell-v20'), false, 'l\'ancien cache doit être évincé par activate()');
+  assert.equal(caches.stores.has('securisite-shell-v21'), true, 'le cache courant doit être conservé');
 });
 
 test('sw.js : SHELL_ASSETS inclut le moteur de workflows (js/maincourante-workflows.js, entré dans SHELL_ASSETS au bump v4 → v5)', () => {
   assert.match(swSource, /'js\/maincourante-workflows\.js'/);
 });
 
-test('sw.js : CACHE_VERSION a bien été incrémenté pour la mission TOPBAR COMPACTE — visuel validé appliqué (v18 → v19)', () => {
-  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v19';/);
+test('sw.js : CACHE_VERSION a bien été incrémenté pour le drill-down des dépendances de site (v20 → v21)', () => {
+  assert.match(swSource, /const CACHE_VERSION = 'securisite-shell-v21';/);
   assert.match(swSource, /'js\/admin-system\.js'/);
 });
 

@@ -452,16 +452,28 @@ td strong{color:var(--text-bright)}
   align-items:center;justify-content:center;padding:20px;
 }
 .modal-backdrop.show{display:flex;animation:fadeIn .2s}
+/* MISSION — DÉPENDANCES SITE (correctif visuel demandé explicitement) :
+   .modal faisait défiler l'ENSEMBLE header+body+footer comme un seul bloc
+   (overflow-y:auto posé sur .modal lui-même) — dès que le contenu dépassait
+   90vh (ex. le tableau de dépendances + le drill-down des appartenances),
+   le footer (boutons Désactiver/Archiver/Annuler) sortait du cadre visible,
+   parfois rogné. Header et footer sont désormais FIXES (flex:0 0 auto),
+   seule .modal-body défile (flex:1 1 auto, min-height:0 indispensable pour
+   qu'un enfant flex accepte réellement de rétrécir sous son contenu plutôt
+   que de forcer le parent à grandir) — vérifié réellement à 1920/1440/820/
+   390px, jamais supposé correct par la seule lecture du CSS. */
 .modal{
   background:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.86);
   border-radius:30px;overflow:hidden;
-  width:100%;max-width:580px;max-height:90vh;overflow-y:auto;
+  width:100%;max-width:580px;max-height:90vh;
+  display:flex;flex-direction:column;
   box-shadow:var(--shadow);position:relative;
 }
 .modal-header{
   padding:16px 22px;border-bottom:1px solid var(--border-subtle);
   display:flex;align-items:center;justify-content:space-between;
   background:linear-gradient(90deg,var(--surface-2),transparent);
+  flex:0 0 auto;
 }
 .modal-title{font-family:var(--font-sans);font-size:15px;font-weight:600;color:var(--text-bright)}
 .modal-close{
@@ -470,8 +482,12 @@ td strong{color:var(--text-bright)}
   display:flex;align-items:center;justify-content:center;transition:all var(--transition-base);
 }
 .modal-close:hover{color:var(--accent);border-color:var(--accent)}
-.modal-body{padding:22px}
-.modal-footer{padding:14px 22px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:10px;background:var(--bg-2)}
+.modal-body{padding:22px;flex:1 1 auto;overflow-y:auto;min-height:0}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:10px;background:var(--bg-2);flex:0 0 auto;flex-wrap:wrap}
+@media(max-width:420px){
+  .modal-footer{justify-content:stretch}
+  .modal-footer .btn{flex:1 1 auto}
+}
 
 /* ===== Toolbar / search / filters ===== */
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}
@@ -2216,6 +2232,20 @@ body{
    référence (icône + code + libellé, puis Code/Libellé/Catégorie). */
 .mc-detail-note{font-size:12px;color:var(--text-muted);background:var(--bg-2);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
 .mc-detail-instructions{font-size:12px;color:#8a5a00;background:rgba(247,169,40,.12);border-radius:var(--radius-sm);padding:8px 10px;margin:0 0 12px}
+/* MISSION — DÉPENDANCES SITE : met en évidence UNIQUEMENT les catégories
+   de dépendance réellement bloquantes (compteur > 0) — jamais une alerte
+   rouge/orange sur une catégorie à 0, qui n'a rien à signaler. */
+.dep-row-blocking{background:rgba(247,169,40,.08)}
+.dep-row-blocking td:first-child{font-weight:600}
+/* Détail d'une appartenance bloquante — carte empilée (jamais un tableau
+   large à 9 colonnes, illisible/coupé dans une modale à toute largeur,
+   y compris 390px — voir viewSiteMembershipDependencies). */
+.dep-membership-card{border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:12px;margin-bottom:10px}
+.dep-membership-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.dep-membership-card-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:0 0 10px}
+.dep-membership-card-fields dt{font-size:11px;color:var(--text-muted);margin:0}
+.dep-membership-card-fields dd{font-size:13px;margin:0}
+@media(max-width:420px){.dep-membership-card-fields{grid-template-columns:1fr}}
 
 /* Moteur de workflows — formulaire réel par code, rendu dans la modale
    partagée (showModal/closeModal, déjà stylée/accessible ailleurs). */

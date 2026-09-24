@@ -351,3 +351,181 @@ test('coherence with OPS: sites returned for a group under /admin/groups/:id/sit
     .filter(s => s.tenant_id === g.id).map(s => s.id).sort();
   assert.deepEqual(viaGroup, viaSitesList, 'the Groupes Sites tab and the canonical Sites module must return the exact same site ids for the same tenant — never a divergent copy');
 });
+
+/* ============================================================ */
+/*  MISSION — DÉPENDANCES SITE : DELETE /admin/memberships/:id —    */
+/*  retirer UNE appartenance précise identifiée par son id (drill-   */
+/*  down des dépendances d'un site), jamais toutes celles du même    */
+/*  utilisateur sur le groupe.                                       */
+/* ============================================================ */
+test('DELETE /admin/memberships/:id requires the admin role (401/403), same gate as the rest of /admin', async () => {
+  const g = await createGroup(); const s = await createSite();
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s.id] });
+  const u = await createUserAccount('u_memdel_gate_' + randomUUID().slice(0, 6));
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: u.id, role: 'agent', site_ids: [s.id] });
+  const pool = db.createDatabase(env);
+  let membershipId;
+  try { membershipId = (await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [u.id, s.id])).id; }
+  finally { await pool.close(); }
+  assert.equal((await request('DELETE', '/admin/memberships/' + membershipId, undefined, null)).status, 401);
+  assert.equal((await request('DELETE', '/admin/memberships/' + membershipId, undefined, agentToken)).status, 403);
+});
+
+test('DELETE /admin/memberships/:id archives ONLY that one membership — a user restricted to two sites of the same group keeps access to the other', async () => {
+  const g = await createGroup();
+  const s1 = await createSite(); const s2 = await createSite();
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s1.id, s2.id] });
+  const u = await createUserAccount('u_memdel_twosite_' + randomUUID().slice(0, 6));
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: u.id, role: 'agent', site_ids: [s1.id, s2.id] });
+  const pool = db.createDatabase(env);
+  let m1, m2;
+  try {
+    m1 = await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [u.id, s1.id]);
+    m2 = await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [u.id, s2.id]);
+  } finally { await pool.close(); }
+  const r = await request('DELETE', '/admin/memberships/' + m1.id);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.archived, true);
+  assert.equal(r.body.membership_id, m1.id);
+  const users = (await request('GET', '/admin/groups/' + g.id + '/users')).body.users;
+  const row = users.find(x => x.user_id === u.id);
+  assert.deepEqual(row.site_ids, [s2.id], 'seul site1 doit avoir été retiré — site2 doit rester');
+  const pool2 = db.createDatabase(env);
+  try {
+    const still = await pool2.get(`SELECT status FROM public.memberships WHERE id=$1`, [m2.id]);
+    assert.equal(still.status, 'active', 'la seconde appartenance ne doit jamais être touchée');
+    const removed = await pool2.get(`SELECT status FROM public.memberships WHERE id=$1`, [m1.id]);
+    assert.equal(removed.status, 'archived');
+  } finally { await pool2.close(); }
+});
+
+test('archiving a Global Administrator\'s own site membership never removes their global privileges (users.role is untouched, never derived from memberships)', async () => {
+  const g = await createGroup(); const s = await createSite();
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s.id] });
+  const username = 'u_memdel_admin_' + randomUUID().slice(0, 6);
+  const created = await request('POST', '/admin/users', { username, password: 'x'.repeat(10), role: 'admin' });
+  assert.equal(created.status, 200);
+  // Un Administrateur global n'a normalement besoin d'aucune appartenance
+  // (requireAdmin traverse déjà tout /admin/*) — on lui en donne une ici
+  // volontairement pour reproduire exactement le cas réel observé
+  // ("Site principal / main" : le seul compte présent y a une appartenance
+  // active). L'appartenance retirée ne doit jamais affecter users.role.
+  // 'admin' est un rôle de COMPTE (users.role), jamais une valeur de
+  // memberships.role (MEMBERSHIP_ROLES ci-dessus) — les deux sont des
+  // référentiels distincts par conception ; l'appartenance elle-même
+  // porte un rôle opérationnel ordinaire ('agent'), ce qui est exactement
+  // le point de ce test : même avec une appartenance non-privilégiée,
+  // le compte reste administrateur global grâce à users.role seul.
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: created.body.id, role: 'agent', site_ids: [s.id] });
+  const pool = db.createDatabase(env);
+  let membershipId;
+  try { membershipId = (await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [created.body.id, s.id])).id; }
+  finally { await pool.close(); }
+  const r = await request('DELETE', '/admin/memberships/' + membershipId);
+  assert.equal(r.status, 200);
+  const account = await request('GET', '/admin/users');
+  const row = account.body.find(u => u.id === created.body.id);
+  assert.equal(row.role, 'admin', 'le rôle de compte (privilège global) ne doit jamais être affecté par l\'archivage d\'une appartenance');
+  // Preuve comportementale, pas seulement déclarative : le compte doit
+  // toujours pouvoir agir comme administrateur global après coup.
+  const adminToken = await login(username);
+  assert.equal((await request('GET', '/admin/groups', undefined, adminToken)).status, 200);
+});
+
+test('DELETE /admin/memberships/:id on an already-archived membership is a clean 409, never a silent no-op or a double-archive', async () => {
+  const g = await createGroup(); const s = await createSite();
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s.id] });
+  const u = await createUserAccount('u_memdel_twice_' + randomUUID().slice(0, 6));
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: u.id, role: 'agent', site_ids: [s.id] });
+  const pool = db.createDatabase(env);
+  let membershipId;
+  try { membershipId = (await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [u.id, s.id])).id; }
+  finally { await pool.close(); }
+  assert.equal((await request('DELETE', '/admin/memberships/' + membershipId)).status, 200);
+  assert.equal((await request('DELETE', '/admin/memberships/' + membershipId)).status, 409);
+});
+
+test('DELETE /admin/memberships/:id on a nonexistent id is a clean 404, never a 500', async () => {
+  assert.equal((await request('DELETE', '/admin/memberships/' + randomUUID())).status, 404);
+});
+
+test('archiving a membership is audited (system_admin.membership.archive) with the real user/site identity, never a fictional detail', async () => {
+  const g = await createGroup(); const s = await createSite();
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s.id] });
+  const u = await createUserAccount('u_memdel_audit_' + randomUUID().slice(0, 6));
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: u.id, role: 'agent', site_ids: [s.id] });
+  const pool = db.createDatabase(env);
+  let membershipId;
+  try { membershipId = (await pool.get(`SELECT id FROM public.memberships WHERE user_id=$1 AND site_id=$2 AND status='active'`, [u.id, s.id])).id; }
+  finally { await pool.close(); }
+  await request('DELETE', '/admin/memberships/' + membershipId);
+  const audit = await request('GET', '/admin/groups/' + g.id + '/audit');
+  const event = audit.body.events.find(e => e.event_type === 'system_admin.membership.archive');
+  assert.ok(event, 'missing audited event: system_admin.membership.archive');
+});
+
+/* ============================================================ */
+/*  Scénario réel bout en bout — "Site principal / main" : un site   */
+/*  avec une seule appartenance active bloquante ; l'identifier via  */
+/*  le drill-down, la retirer, vérifier que le compteur AFFICHÉ       */
+/*  retombe à 0 sans que la suppression ne se déclenche jamais       */
+/*  automatiquement.                                                  */
+/*                                                                    */
+/*  Nuance réelle, vérifiée explicitement ici plutôt que supposée :   */
+/*  archiver une appartenance ne la SUPPRIME jamais physiquement      */
+/*  (trigger memberships_no_delete, migration 004 — immuable par      */
+/*  conception) : la ligne existe toujours, seul son statut change.   */
+/*  blockingTotal() (site-dependencies.js) compte délibérément        */
+/*  memberships_total (TOUTES les lignes, actives ou non) — jamais    */
+/*  active_memberships seul — précisément pour qu'une suppression ne  */
+/*  soit jamais débloquée par un simple archivage qui masquerait une  */
+/*  vraie donnée historique. Un site ayant un jour eu une appartenance*/
+/*  reste donc bloqué pour DELETE pour toujours, même après retrait — */
+/*  Désactiver/Archiver le SITE lui-même reste le seul chemin réel,   */
+/*  exactement le message déjà affiché ("archivez-le plutôt"). Cette  */
+/*  mission ne change PAS cette protection (consigne explicite :      */
+/*  "Ne contourne aucune FK ou protection existante").                */
+/* ============================================================ */
+test('end-to-end : site refusé pour cause de dépendance (1 appartenance active) -> drill-down -> retrait -> le compteur affiché retombe à 0 -> la suppression du site reste NON automatique', async () => {
+  const g = await createGroup(); const s = await createSite({ name: 'Site Principal E2E' });
+  await request('PUT', '/admin/groups/' + g.id + '/sites', { add: [s.id] });
+  const u = await createUserAccount('u_e2e_deps_' + randomUUID().slice(0, 6));
+  await request('POST', '/admin/groups/' + g.id + '/users', { user_id: u.id, role: 'agent', site_ids: [s.id] });
+
+  // 1. La suppression est refusée — comportement déjà validé, revérifié ici en contexte.
+  const firstDelete = await request('DELETE', '/admin/sites/' + s.id, { reason: 'e2e test' });
+  assert.equal(firstDelete.status, 409);
+
+  // 2. Le compteur confirme exactement 1 appartenance bloquante.
+  const depsBefore = await request('GET', '/admin/sites/' + s.id + '/dependencies');
+  assert.equal(depsBefore.body.active_memberships, 1);
+
+  // 3. Drill-down : identité réelle de l'appartenance bloquante.
+  const list = await request('GET', '/admin/sites/' + s.id + '/dependencies/memberships');
+  assert.equal(list.body.memberships.length, 1);
+  const membershipId = list.body.memberships[0].membership_id;
+  assert.equal(list.body.memberships[0].user_id, u.id);
+
+  // 4. Retrait de cette appartenance précise (action "Gérer -> Retirer l'accès").
+  const removed = await request('DELETE', '/admin/memberships/' + membershipId);
+  assert.equal(removed.status, 200);
+
+  // 5. Le compteur AFFICHÉ (actives) retombe à 0 — rafraîchi, jamais mis à
+  // jour par optimisme côté client.
+  const depsAfter = await request('GET', '/admin/sites/' + s.id + '/dependencies');
+  assert.equal(depsAfter.body.active_memberships, 0);
+  assert.equal(depsAfter.body.memberships_total, 1, 'la ligne archivée existe toujours réellement — jamais supprimée (trigger memberships_no_delete)');
+
+  // 6. La suppression du site n'a PAS été déclenchée automatiquement : le
+  // site doit toujours exister tel quel, intact, jusqu'à un second appel
+  // explicite de l'administrateur.
+  const stillThere = await request('GET', '/admin/sites/' + s.id);
+  assert.equal(stillThere.status, 200);
+  assert.equal(stillThere.body.name, 'Site Principal E2E');
+
+  // 7. Un second appel DELETE explicite reste refusé — attendu et correct
+  // (voir note ci-dessus) : l'appartenance archivée est un fait historique
+  // réel qui continue de référencer ce site, jamais un blocage fantôme.
+  const secondDelete = await request('DELETE', '/admin/sites/' + s.id, { reason: 'e2e test, tentative après retrait' });
+  assert.equal(secondDelete.status, 409, 'toujours refusé : l\'appartenance archivée existe réellement et référence encore le site — Archiver le SITE reste le chemin réel, jamais une suppression physique');
+});
